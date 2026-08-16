@@ -38,12 +38,18 @@ __all__ = [
 PRIMITIVES: frozenset[str] = frozenset({"int", "float", "str", "bool", "bytes"})
 """`list[T]` 는 매개변수를 가지므로 여기 없다 — `is_list()` 로 따로 본다."""
 
-FORBIDDEN: frozenset[str] = frozenset({"dict", "Dict", "Optional", "None", "NoneType", "Any"})
-"""이름만 보고 즉시 거절하는 것들. `dict` → `STR-TYPE-001`, `Optional`/`None` → `STR-TYPE-002`."""
+_FORBIDDEN_RULE: dict[str, str] = {
+    "dict": "STR-TYPE-001",
+    "Dict": "STR-TYPE-001",
+    "Optional": "STR-TYPE-002",
+    "None": "STR-TYPE-002",
+    "NoneType": "STR-TYPE-002",
+    "Any": "STR-TYPE-003",
+}
+"""이름만 보고 즉시 거절하는 것들 → 그때 내는 규칙. **판정의 유일한 근거 표다.**"""
 
-
-_DICT_NAMES: frozenset[str] = frozenset({"dict", "Dict"})
-_OPTIONAL_NAMES: frozenset[str] = frozenset({"Optional", "None", "NoneType"})
+FORBIDDEN: frozenset[str] = frozenset(_FORBIDDEN_RULE)
+"""거절 이름 집합. `_FORBIDDEN_RULE` 에서 파생된다 — 표를 두 벌 두면 갈라진다."""
 
 _UNION = "Union"
 """`A | B` 표기를 담는 내부 이름. 허용 어휘가 아니므로 언제나 거절된다."""
@@ -140,17 +146,16 @@ def check_allowed(t: TypeRef, *, known: frozenset[str], path: str, node: str = "
     """
     base = t.base
 
-    if base in _DICT_NAMES:
-        return [rules.finding("STR-TYPE-001", path=path, node=node, type=str(t))]
-    if base in _OPTIONAL_NAMES:
-        return [rules.finding("STR-TYPE-002", path=path, node=node, type=str(t))]
+    forbidden_rule = _FORBIDDEN_RULE.get(base)
+    if forbidden_rule is not None:
+        return [rules.finding(forbidden_rule, path=path, node=node)]
 
     if t.name == _UNION:
         # `str | None` 은 안쪽 `None` 이 STR-TYPE-002 를 낸다. 그 밖의 합집합은 어휘 밖이다.
         inner: list[Finding] = []
         for arg in t.args:
             inner.extend(check_allowed(arg, known=known, path=path, node=node))
-        return inner or [rules.finding("STR-TYPE-003", path=path, node=node, type=str(t))]
+        return inner or [rules.finding("STR-TYPE-003", path=path, node=node)]
 
     if is_primitive(t):
         return []
@@ -158,7 +163,7 @@ def check_allowed(t: TypeRef, *, known: frozenset[str], path: str, node: str = "
         return check_allowed(element_type(t), known=known, path=path, node=node)
     if base in known and not t.args:
         return []
-    return [rules.finding("STR-TYPE-003", path=path, node=node, type=str(t))]
+    return [rules.finding("STR-TYPE-003", path=path, node=node)]
 
 
 # --- 파서 내부 ------------------------------------------------------------

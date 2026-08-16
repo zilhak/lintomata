@@ -3,6 +3,17 @@
 `schema.md` 7절이 근거다. 이름이 `registry` 지만 **등록소(`strictler.store`)와 무관하다** —
 이건 *타입 등록기*다.
 
+**★ 키는 `(origin, name)` 이다.** 모든 노드 스크립트가 `Args` 라는 **고정 이름**을 선언하므로
+(`schema.md` 6절) 이름만으로는 두 번째 노드부터 충돌한다. 그래서:
+
+| | 규칙 |
+|---|---|
+| **키** | `(origin, name)` — `origin` 은 그 dataclass 를 선언한 스크립트 경로 |
+| **필드 타입 참조 해석** | **같은 `origin` 스코프 안에서**. `Button` 은 그 스크립트의 `Button` 이다 |
+| **타입 동일성 판정** | **전역, 그리고 구조로.** 이름이 달라도 구조가 같으면 같은 타입이다 |
+
+즉 **이름은 스코프 안에서만 의미가 있고, 동일성은 구조로 전역 판정**한다.
+
 **엔진은 구성 시점에 모든 dataclass 를 등록하고 집합 검사를 전체에 건다.**
 각 dataclass 를 **`(필드명, 타입)` 쌍의 집합**으로 다루면 별도 규칙이 필요 없어진다:
 
@@ -16,6 +27,7 @@
 `A ⊂ B`, `A ⊂ C`, `B`·`C` 무관 — "가장 큰 것"이 유일하지 않지만, **그래프 검사가
 선언된 정의로 이뤄지므로 어느 쪽으로 병합해도 정확성에 영향이 없다.** 연결 성분을
 통째로 합집합 내면 모호함 자체가 생기지 않고 잃는 것도 없다.
+(합집합이 성립하지 않는 경우 — 같은 필드명의 타입이 갈릴 때 — 는 `STR-TYPE-006`)
 
 ⚠ 오배선 탐지력이 약해지는 것은 **감수한다**. `ButtonCount(count:int)` 와
 `MenuCount(count:int)` 는 동일하다. 배선은 파이프라인 JSON 에 노드 id 로 명시적으로
@@ -24,14 +36,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, create_model
 
-from strictler.errors import StrictlerError
+from strictler import rules
+from strictler.errors import Finding, StrictlerError
 from strictler.typesys.primitives import PRIMITIVES, TypeRef, element_type, is_list, is_primitive
 
-__all__ = ["FieldSpec", "DataclassSpec", "TypeRegistry"]
+__all__ = ["TypeKey", "FieldSpec", "DataclassSpec", "TypeRegistry"]
 
 
 _PY_PRIMITIVES: dict[str, type] = {
@@ -41,6 +54,20 @@ _PY_PRIMITIVES: dict[str, type] = {
     "bool": bool,
     "bytes": bytes,
 }
+
+
+class TypeKey(NamedTuple):
+    """등록기의 키 — `(origin, name)`.
+
+    `origin` 은 선언한 스크립트 경로. 노드마다 `Args` 가 있으므로 이름만으로는 키가 안 된다.
+    `tuple` 이므로 `("a.py", "Args")` 를 그대로 넘겨도 된다.
+    """
+
+    origin: str
+    name: str
+
+    def __str__(self) -> str:
+        return f"`{self.name}`({self.origin})" if self.origin else f"`{self.name}`"
 
 
 class FieldSpec:
@@ -80,6 +107,11 @@ class DataclassSpec:
     def __repr__(self) -> str:
         return f"DataclassSpec({self.name!r}, {self.fields!r}, origin={self.origin!r})"
 
+    @property
+    def key(self) -> TypeKey:
+        """등록기 키 `(origin, name)`."""
+        return TypeKey(self.origin, self.name)
+
     def raw_set(self) -> frozenset[tuple[str, str]]:
         """정규화 전의 `(필드명, 선언 표기)` 집합. 중복 등록 판정에만 쓴다."""
         return frozenset((f.name, str(f.type)) for f in self.fields)
@@ -89,32 +121,39 @@ class TypeRegistry:
     """모든 노드의 dataclass 선언을 모아 집합 검사를 거는 등록기.
 
     사용 순서: `register()` 를 전부 부른 뒤 `normalize()` 한 번 → 이후 조회.
+    조회는 전부 `TypeKey`(= `(origin, name)`)로 한다.
     """
 
     def __init__(self) -> None:
-        self._specs: dict[str, DataclassSpec] = {}
+        self._specs: dict[TypeKey, DataclassSpec] = {}
         self._normalized = False
         # 정규화 산출물
-        self._struct: dict[str, str] = {}
-        """dataclass 이름 → 구조 서명. 이름이 아니라 구조로 비교하기 위한 것."""
-        self._fields: dict[str, dict[str, TypeRef]] = {}
-        self._canon_fields: dict[str, frozenset[tuple[str, str]]] = {}
+        self._struct: dict[TypeKey, str] = {}
+        """dataclass 키 → 구조 서명. 이름이 아니라 구조로 비교하기 위한 것."""
+        self._fields: dict[TypeKey, dict[str, TypeRef]] = {}
+        self._canon_fields: dict[TypeKey, frozenset[tuple[str, str]]] = {}
         # 병합 산출물 (지연 계산)
-        self._merge_map: dict[str, str] | None = None
-        self._merged_fields: dict[str, dict[str, TypeRef]] = {}
-        self._models: dict[str, type[BaseModel]] = {}
+        self._merge_map: dict[TypeKey, TypeKey] | None = None
+        self._merged_fields: dict[TypeKey, dict[str, TypeRef]] = {}
+        self._models: dict[TypeKey, type[BaseModel]] = {}
 
     # --- 등록 ------------------------------------------------------------
 
     def register(self, spec: DataclassSpec) -> None:
-        """dataclass 선언 하나를 등록한다. 같은 이름이 다른 정의로 오면 오류."""
-        existing = self._specs.get(spec.name)
+        """dataclass 선언 하나를 등록한다.
+
+        **같은 `origin` 안에서** 같은 이름이 다른 정의로 오면 오류다. 다른 스크립트가
+        같은 이름(`Args`)을 쓰는 것은 충돌이 아니다 — 키가 `(origin, name)` 이기 때문이다.
+        """
+        key = spec.key
+        existing = self._specs.get(key)
         if existing is not None:
             if existing.raw_set() != spec.raw_set():
                 raise StrictlerError(
-                    f"dataclass `{spec.name}` 가 서로 다른 정의로 두 번 등록됐습니다 "
-                    f"({existing.origin or '?'} / {spec.origin or '?'}). "
-                    "같은 이름은 같은 필드 구성이어야 합니다 — 다른 개념이면 이름을 다르게 두세요."
+                    f"dataclass `{spec.name}` 가 같은 스크립트({spec.origin or '?'}) 안에서 "
+                    "서로 다른 정의로 두 번 선언됐습니다. "
+                    "한 스크립트 안에서 같은 이름은 같은 필드 구성이어야 합니다 — "
+                    "다른 개념이면 이름을 다르게 두세요."
                 )
             return
         names = [f.name for f in spec.fields]
@@ -123,7 +162,7 @@ class TypeRegistry:
                 f"dataclass `{spec.name}` 에 같은 이름의 필드가 두 번 있습니다. "
                 "필드 이름은 dataclass 안에서 유일해야 합니다."
             )
-        self._specs[spec.name] = spec
+        self._specs[key] = spec
         self._invalidate()
 
     def _invalidate(self) -> None:
@@ -140,60 +179,63 @@ class TypeRegistry:
     def normalize(self) -> None:
         """위상 정렬해 **바닥부터** 정규화한다. 중첩 dataclass 가 여기서 재귀적으로 풀린다.
 
-        순환 참조(A 가 B 를, B 가 A 를 필드로)가 있으면 오류.
+        순환 참조(A 가 B 를, B 가 A 를 필드로)가 있으면 `STR-TYPE-007`.
         """
         order = self._topo_order()
-        for name in order:
-            spec = self._specs[name]
+        for key in order:
+            spec = self._specs[key]
             fields = {f.name: f.type for f in spec.fields}
             canon = frozenset((f.name, self._canon(f.type, spec)) for f in spec.fields)
-            self._fields[name] = fields
-            self._canon_fields[name] = canon
-            self._struct[name] = "{" + ",".join(sorted(f"{n}:{t}" for n, t in canon)) + "}"
+            self._fields[key] = fields
+            self._canon_fields[key] = canon
+            self._struct[key] = "{" + ",".join(sorted(f"{n}:{t}" for n, t in canon)) + "}"
         self._normalized = True
 
-    def _topo_order(self) -> list[str]:
-        """의존하는 것이 먼저 오도록 정렬한다. 순환이면 오류."""
-        order: list[str] = []
-        state: dict[str, int] = {}  # 0=방문중, 1=완료
-        stack: list[str] = []
+    def _topo_order(self) -> list[TypeKey]:
+        """의존하는 것이 먼저 오도록 정렬한다. 순환이면 `STR-TYPE-007`."""
+        order: list[TypeKey] = []
+        state: dict[TypeKey, int] = {}  # 0=방문중, 1=완료
+        stack: list[TypeKey] = []
 
-        def visit(name: str) -> None:
-            mark = state.get(name)
+        def visit(key: TypeKey) -> None:
+            mark = state.get(key)
             if mark == 1:
                 return
             if mark == 0:
-                cycle = " → ".join([*stack[stack.index(name) :], name])
-                raise StrictlerError(
-                    f"dataclass 가 순환 참조합니다: {cycle}. "
-                    "중첩 dataclass 는 바닥부터 정규화하므로 순환이 있으면 정의가 확정되지 않습니다."
+                loop = [*stack[stack.index(key) :], key]
+                raise _rule_error(
+                    "STR-TYPE-007",
+                    path=key.origin,
+                    fields={"cycle": " → ".join(k.name for k in loop)},
                 )
-            state[name] = 0
-            stack.append(name)
-            for dep in self._deps(self._specs[name]):
+            state[key] = 0
+            stack.append(key)
+            for dep in self._deps(self._specs[key]):
                 visit(dep)
             stack.pop()
-            state[name] = 1
-            order.append(name)
+            state[key] = 1
+            order.append(key)
 
-        for name in sorted(self._specs):
-            visit(name)
+        for key in sorted(self._specs):
+            visit(key)
         return order
 
-    def _deps(self, spec: DataclassSpec) -> list[str]:
-        found: list[str] = []
+    def _deps(self, spec: DataclassSpec) -> list[TypeKey]:
+        found: list[TypeKey] = []
         for field in spec.fields:
             self._collect_refs(field.type, spec, found)
         return found
 
-    def _collect_refs(self, t: TypeRef, spec: DataclassSpec, out: list[str]) -> None:
+    def _collect_refs(self, t: TypeRef, spec: DataclassSpec, out: list[TypeKey]) -> None:
         if is_primitive(t):
             return
         if is_list(t):
             self._collect_refs(element_type(t), spec, out)
             return
-        if t.name in self._specs and not t.args:
-            out.append(t.name)
+        ref = TypeKey(spec.origin, t.name)
+        if ref in self._specs and not t.args:
+            # 이름 해석은 같은 origin 스코프 안에서만 한다.
+            out.append(ref)
             return
         raise StrictlerError(self._unknown_type_message(t, spec))
 
@@ -202,7 +244,8 @@ class TypeRegistry:
         return (
             f"{where} 의 필드 타입 `{t}` 를 해석할 수 없습니다. "
             "쓸 수 있는 타입은 `int` `float` `str` `bool` `bytes` `list[T]` 와 "
-            "같은 스크립트가 선언한 dataclass 뿐입니다."
+            "**같은 스크립트가** 선언한 dataclass 뿐입니다 — 다른 스크립트의 dataclass 는 "
+            "이름으로 참조할 수 없습니다."
         )
 
     def _canon(self, t: TypeRef, spec: DataclassSpec) -> str:
@@ -210,13 +253,15 @@ class TypeRegistry:
 
         중첩 dataclass 는 이미 정규화가 끝나 있으므로(위상 정렬) 그 구조 서명을 쓴다.
         → `Outer(b: ButtonCount)` 와 `Outer2(b: MenuCount)` 는 같은 정의가 된다.
+        서명에 이름도 origin 도 들어가지 않으므로 **동일성 판정은 전역**이다.
         """
         if is_primitive(t):
             return t.name
         if is_list(t):
             return f"list[{self._canon(element_type(t), spec)}]"
-        if t.name in self._struct:
-            return self._struct[t.name]
+        ref = TypeKey(spec.origin, t.name)
+        if ref in self._struct:
+            return self._struct[ref]
         raise StrictlerError(self._unknown_type_message(t, spec))
 
     def _require_normalized(self) -> None:
@@ -226,99 +271,113 @@ class TypeRegistry:
                 "`register()` 를 전부 부른 뒤 `normalize()` 를 한 번 부르고 조회하세요."
             )
 
-    def _require_known(self, name: str) -> None:
-        if name not in self._specs:
+    def _require_known(self, key: TypeKey) -> None:
+        if key not in self._specs:
             raise StrictlerError(
-                f"dataclass `{name}` 가 등록되어 있지 않습니다. "
-                "스크립트가 선언한 dataclass 만 타입으로 쓸 수 있습니다."
+                f"dataclass {TypeKey(*key)} 가 등록되어 있지 않습니다. "
+                "스크립트가 선언한 dataclass 만 타입으로 쓸 수 있고, "
+                "조회 키는 `(origin, name)` 입니다."
             )
 
     # --- 조회 ------------------------------------------------------------
 
-    def field_set(self, name: str) -> frozenset[tuple[str, str]]:
-        """정규화된 `(필드명, 타입표기)` 쌍의 집합. 모든 비교의 기반이다."""
-        self._require_normalized()
-        self._require_known(name)
-        return self._canon_fields[name]
+    def field_set(self, key: TypeKey) -> frozenset[tuple[str, str]]:
+        """정규화된 `(필드명, 타입표기)` 쌍의 집합. 모든 비교의 기반이다.
 
-    def same_definition(self, a: str, b: str) -> bool:
+        타입표기는 **구조 서명**이므로 origin 이 달라도 구조가 같으면 같은 집합이 나온다.
+        """
+        self._require_normalized()
+        self._require_known(key)
+        return self._canon_fields[key]
+
+    def same_definition(self, a: TypeKey, b: TypeKey) -> bool:
         """**그래프 검사용 — 엄격한 동일성.** 두 필드 집합이 완전히 같은가.
 
-        파이프라인 배선 검사(`STR-TYPE-004`)가 이걸 쓴다.
+        파이프라인 배선 검사(`STR-TYPE-004`)가 이걸 쓴다. 이름·origin 이 달라도
+        구조가 같으면 참이다 — **구조적 동일성이지 명목적 동일성이 아니다.**
         """
         return self.field_set(a) == self.field_set(b)
 
-    def is_subset(self, a: str, b: str) -> bool:
+    def is_subset(self, a: TypeKey, b: TypeKey) -> bool:
         """`a` 의 필드 집합이 `b` 의 부분집합인가. 병합 대상 판정용."""
         return self.field_set(a) <= self.field_set(b)
 
     # --- 병합 (표현 층) ---------------------------------------------------
 
-    def merge_components(self) -> dict[str, str]:
+    def merge_components(self) -> dict[TypeKey, TypeKey]:
         """부분집합 격자의 **연결 성분 전체를 합집합**으로 병합한다.
 
-        반환: `{원래 이름: 병합 클래스 이름}`. 런타임 표현 층에서만 쓰인다 —
+        반환: `{원래 키: 병합 클래스 키}`. 런타임 표현 층에서만 쓰인다 —
         그래프 검사는 여전히 선언된 정의로 한다.
         """
         self._require_normalized()
         if self._merge_map is not None:
             return dict(self._merge_map)
 
-        names = sorted(self._specs)
-        parent = {n: n for n in names}
+        keys = sorted(self._specs)
+        parent = {k: k for k in keys}
 
-        def find(x: str) -> str:
+        def find(x: TypeKey) -> TypeKey:
             while parent[x] != x:
                 parent[x] = parent[parent[x]]
                 x = parent[x]
             return x
 
-        def union(x: str, y: str) -> None:
+        def union(x: TypeKey, y: TypeKey) -> None:
             rx, ry = find(x), find(y)
             if rx != ry:
                 parent[max(rx, ry)] = min(rx, ry)
 
-        for i, a in enumerate(names):
-            for b in names[i + 1 :]:
+        for i, a in enumerate(keys):
+            for b in keys[i + 1 :]:
                 fa, fb = self._canon_fields[a], self._canon_fields[b]
                 if fa <= fb or fb <= fa:
                     union(a, b)
 
-        components: dict[str, list[str]] = {}
-        for n in names:
-            components.setdefault(find(n), []).append(n)
+        components: dict[TypeKey, list[TypeKey]] = {}
+        for k in keys:
+            components.setdefault(find(k), []).append(k)
 
-        merge_map: dict[str, str] = {}
-        merged_fields: dict[str, dict[str, TypeRef]] = {}
+        merge_map: dict[TypeKey, TypeKey] = {}
+        merged_fields: dict[TypeKey, dict[str, TypeRef]] = {}
         for members in components.values():
-            # 병합 클래스 이름 = 필드가 가장 많은 것, 동수면 사전순. 결정적이면 충분하다.
-            label = sorted(members, key=lambda n: (-len(self._canon_fields[n]), n))[0]
-            fields: dict[str, TypeRef] = {}
-            seen_canon: dict[str, str] = {}
-            for member in sorted(members):
-                for fname, ftype in self._fields[member].items():
-                    canon = dict(self._canon_fields[member])[fname]
-                    if fname in seen_canon and seen_canon[fname] != canon:
-                        raise StrictlerError(
-                            f"병합 대상 {sorted(members)} 에서 필드 `{fname}` 의 타입이 갈립니다 "
-                            f"({seen_canon[fname]} / {canon}). "
-                            "부분집합으로 이어진 타입들은 같은 이름의 필드가 같은 타입이어야 "
-                            "하나의 표현으로 합쳐집니다 — 다른 개념이면 필드 이름을 다르게 두세요."
-                        )
-                    seen_canon[fname] = canon
-                    fields.setdefault(fname, ftype)
+            # 병합 클래스 = 필드가 가장 많은 것, 동수면 키 사전순. 결정적이면 충분하다.
+            label = sorted(members, key=lambda k: (-len(self._canon_fields[k]), k))[0]
+            merged_fields[label] = self._union_fields(members)
             for member in members:
                 merge_map[member] = label
-            merged_fields[label] = fields
 
         self._merge_map = merge_map
         self._merged_fields = merged_fields
         return dict(merge_map)
 
+    def _union_fields(self, members: list[TypeKey]) -> dict[str, TypeRef]:
+        """연결 성분 하나의 필드 합집합. 같은 필드명의 타입이 갈리면 `STR-TYPE-006`."""
+        fields: dict[str, TypeRef] = {}
+        seen: dict[str, tuple[TypeKey, str]] = {}
+        for member in sorted(members):
+            canon_of = dict(self._canon_fields[member])
+            for fname, ftype in self._fields[member].items():
+                canon = canon_of[fname]
+                previous = seen.get(fname)
+                if previous is not None and previous[1] != canon:
+                    owner, owner_canon = previous
+                    raise _rule_error(
+                        "STR-TYPE-006",
+                        fields={
+                            "names": ", ".join(str(m) for m in sorted(members)),
+                            "field": fname,
+                            "types": f"{owner} 는 {owner_canon} / {member} 는 {canon}",
+                        },
+                    )
+                seen[fname] = (member, canon)
+                fields.setdefault(fname, ftype)
+        return fields
+
     # --- pydantic 경계 ----------------------------------------------------
 
-    def build_model(self, name: str) -> type[BaseModel]:
-        """이름에 해당하는(병합된) 타입의 pydantic 모델을 만든다.
+    def build_model(self, key: TypeKey) -> type[BaseModel]:
+        """키에 해당하는(병합된) 타입의 pydantic 모델을 만든다.
 
         **pydantic 경계 검증이 실제 값을 만나는 자리**는 노드 단위테스트와
         엔진의 input/output 검증 둘뿐이다 (`schema.md` 14절).
@@ -329,47 +388,62 @@ class TypeRegistry:
         연결된다는 것을 그래프 검사가 이미 보장했다.
         """
         self._require_normalized()
-        self._require_known(name)
-        cached = self._models.get(name)
+        self._require_known(key)
+        key = TypeKey(*key)
+        cached = self._models.get(key)
         if cached is not None:
             return cached
 
-        merge_map = self.merge_components()
-        label = merge_map[name]
-        own = self._fields[name]
+        label = self.merge_components()[key]
+        own = self._fields[key]
         merged = self._merged_fields[label]
 
         definitions: dict[str, Any] = {}
         for fname in sorted(merged):
-            annotation = self._py_type(merged[fname])
+            annotation = self._py_type(merged[fname], key.origin)
             if fname in own:
                 definitions[fname] = (annotation, ...)
             else:
                 definitions[fname] = (annotation | None, None)
 
         model = create_model(
-            label,
+            label.name,
             __config__=ConfigDict(extra="forbid", from_attributes=True, protected_namespaces=()),
             **definitions,
         )
-        self._models[name] = model
+        self._models[key] = model
         return model
 
-    def _py_type(self, t: TypeRef) -> Any:
+    def _py_type(self, t: TypeRef, origin: str) -> Any:
         if is_primitive(t):
             return _PY_PRIMITIVES[t.name]
         if is_list(t):
-            return list[self._py_type(element_type(t))]  # type: ignore[misc]
-        if t.name in self._specs:
-            return self.build_model(t.name)
+            return list[self._py_type(element_type(t), origin)]  # type: ignore[misc]
+        ref = TypeKey(origin, t.name)
+        if ref in self._specs:
+            return self.build_model(ref)
         raise StrictlerError(
             f"타입 `{t}` 를 값 검증 모델로 만들 수 없습니다. "
-            f"쓸 수 있는 타입은 {sorted(PRIMITIVES)} 와 `list[T]`, 등록된 dataclass 뿐입니다."
+            f"쓸 수 있는 타입은 {sorted(PRIMITIVES)} 와 `list[T]`, "
+            "같은 스크립트가 선언한 dataclass 뿐입니다."
         )
 
-    def to_value(self, name: str, raw: Any) -> Any:
+    def to_value(self, key: TypeKey, raw: Any) -> Any:
         """JSON 원값을 그 타입의 인스턴스로 만든다. 단위테스트 fixture 와 리포트가 쓴다."""
-        model = self.build_model(name)
+        model = self.build_model(key)
         if isinstance(raw, BaseModel):
             raw = raw.model_dump()
         return model.model_validate(raw, from_attributes=True)
+
+
+def _rule_error(
+    rule_id: str, *, path: str = "", node: str = "", fields: dict[str, object]
+) -> StrictlerError:
+    """규칙 id 가 붙은 `StrictlerError` 를 만든다.
+
+    타입 등록기가 내는 것은 전부 **오류**다 — 위반이 아니다. 하지만 규칙 id 없이
+    맨 예외로 나가면 리포트에서 무엇이 걸렸는지 기계적으로 알 수 없으므로,
+    `Finding` 을 함께 실어 보낸다 (`errors.StrictlerError.findings`).
+    """
+    found: Finding = rules.finding(rule_id, path=path, node=node, fields=fields)
+    return StrictlerError(found.message or rule_id, [found])

@@ -4,7 +4,9 @@
 쓸 수 있는 타입을 강제해 범위를 좁힌다.
 
 - `primitives` — 허용 타입 어휘(`int` `float` `str` `bool` `bytes` `list[T]`)와 파싱
-- `registry` — dataclass 등록기, 집합 정규화, 부분집합 병합, 그래프 검사용 동일성 판정
+- `registry` — dataclass 등록기, 집합 정규화, 부분집합 병합, 그래프 검사용 동일성 판정.
+  **키는 `(origin, name)`** — 모든 스크립트가 `Args` 를 선언하므로 이름은 전역 키가 될 수 없다.
+  이름 해석은 origin 스코프 안에서, 동일성 판정은 구조로 전역
 
 **★ 그래프 검사와 데이터 취급은 서로 다른 층이다:**
 
@@ -26,7 +28,7 @@ from strictler.typesys.primitives import (
     is_primitive,
     parse_type,
 )
-from strictler.typesys.registry import DataclassSpec, FieldSpec, TypeRegistry
+from strictler.typesys.registry import DataclassSpec, FieldSpec, TypeKey, TypeRegistry
 
 __all__ = [
     "FORBIDDEN",
@@ -39,5 +41,6 @@ __all__ = [
     "parse_type",
     "DataclassSpec",
     "FieldSpec",
+    "TypeKey",
     "TypeRegistry",
 ]
