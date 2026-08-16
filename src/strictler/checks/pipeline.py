@@ -1088,6 +1088,14 @@ def _resolved_contract(
     findings.extend(
         item.model_copy(update={"node": item.node or node_id}) for item in extracted
     )
+    # 라이브러리 배선도 여기서 다시 본다 — **어느 스크립트가 도는지가 config 로
+    # 갈리므로** 요구하는 슬롯도 갈릴 수 있다 (`schema.md` 6.5·12절).
+    findings.extend(
+        item.model_copy(update={"node": item.node or node_id})
+        for item in node_checks.check_libraries(
+            node, contract, source_path, store=store, env=env
+        )
+    )
     return contract, findings
 
 

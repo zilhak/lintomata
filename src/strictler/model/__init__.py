@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
     "ENGINE_STATE_FIELDS",
+    "LIBRARY_NAMESPACE",
     "EntryKind",
     "ID_PREFIXES",
     "NodeType",
@@ -78,6 +79,18 @@ ENGINE_STATE_FIELDS: frozenset[str] = frozenset({"__startedAt"})
 ★ **정본은 여기 하나다.** `engine/state.py`(`ENGINE_FIELDS`) · `refs.py` · `checks/script.py`
 셋이 여기서 가져다 쓴다. 복제해 두면 엔진 제공 필드가 늘 때 `STR-BAN-004` 오탐이 난다.
 `model` 은 최하층이라 세 곳 어디서 import 해도 순환이 없다."""
+
+LIBRARY_NAMESPACE = "strictler_lib"
+"""배선된 라이브러리가 들어오는 네임스페이스 (`schema.md` 6.5절).
+
+    from strictler_lib import buttons          # 스크립트 — **능력 선언**
+
+**네임스페이스를 쓰는 이유**는 같은 이름의 실제 패키지를 가리는 사고를 막기 위해서다.
+`import buttons` 였다면 PyPI 의 `buttons` 를 조용히 덮어쓸 수 있다.
+
+★ **정본은 여기 하나다.** `checks/script.py`(슬롯 추출) · `checks/library.py`(중첩 금지) ·
+`engine/exec.py`(주입) 셋이 여기서 가져다 쓴다 — 이름이 갈리면 *선언한 슬롯*과
+*주입되는 이름*이 어긋나 조용히 `ImportError` 가 난다."""
 
 
 # ── Spec (`schema.md` 3절) ───────────────────────────────────────────────────
@@ -304,6 +317,18 @@ class Node(BaseModel):
     script: str
     """스크립트 파일 경로 또는 `${ref.sc_...}`. `${config.X}` 도 올 수 있다 —
     비교 파이프라인에서 target 별로 스크립트가 갈리는 자리 (`schema.md` 12절)."""
+
+    libraries: dict[str, str] = Field(default_factory=dict)
+    """`{슬롯 이름: 라이브러리 참조}` — **사용 선언** (`schema.md` 6.5절).
+
+    스크립트의 `from strictler_lib import buttons` 가 *"`buttons` 슬롯이 필요합니다"*
+    라는 **능력 선언**이고, 여기가 *"그 슬롯엔 이걸 씁니다"* 라는 **사용 선언**이다.
+    1절의 선언/사용 분리와 그대로 겹친다 — 새 개념이 늘지 않는다.
+
+    값은 `${ref.lb_...}` 또는 절대경로(`${env.X}` 포함). **ref 는 로컬 최적화이고
+    경로가 이식 가능하다** (2절) — 커밋할 것은 경로로 쓴다.
+
+    ⚠ **슬롯 이름은 스크립트가 정한다.** 여기서 마음대로 지으면 `STR-LIB-002` 다."""
 
 
 # ── Node 단위테스트 (`schema.md` 14절) ───────────────────────────────────────

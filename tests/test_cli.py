@@ -1506,3 +1506,322 @@ def test_STRICTLER_HOME_을_따른다(
     assert (home / "registry.json").is_file()
     assert list((home / "scripts").glob("sc_*.py"))
     assert not (fake_user_home / ".strictler").exists()
+
+
+# ── 라이브러리 배선 — 선언(스크립트) / 사용(노드) 분리 (`schema.md` 6.5절) ──
+
+
+SHARED_LIBRARY = """
+    \"\"\"여러 스크립트가 나눠 쓰는 판정 — 본체는 하나다.\"\"\"
+
+    def measure(text):
+        return len(text)
+"""
+
+SHARED_LIBRARY_V2 = """
+    \"\"\"본체를 고쳤다 — 이것을 쓰는 노드·파이프라인·Spec 이 재검증된다.\"\"\"
+
+    def measure(text):
+        return len(text) * 2
+"""
+
+USES_LIBRARY = """
+    from dataclasses import dataclass
+
+    from strictler_lib import shared
+
+    @dataclass
+    class Scene:
+        url: str
+
+    @dataclass
+    class Percept:
+        count: int
+
+    @dataclass
+    class Args:
+        input: Scene
+
+    def runNode(args: Args) -> Percept:
+        return returnResult(Percept(count=shared.measure(args.input.url)))
+"""
+
+USES_OTHER_SLOT = """
+    from dataclasses import dataclass
+
+    from strictler_lib import 다른슬롯
+
+    @dataclass
+    class Scene:
+        url: str
+
+    @dataclass
+    class Percept:
+        count: int
+
+    @dataclass
+    class Args:
+        input: Scene
+
+    def runNode(args: Args) -> Percept:
+        return returnResult(Percept(count=다른슬롯.measure(args.input.url)))
+"""
+
+
+def node_with_libraries(
+    project: Project, name: str, script: Path, libraries: dict[str, str]
+) -> Path:
+    """`libraries` 배선을 갖는 Perceive 노드 파일."""
+    return write_json(
+        project.root / "nodes" / f"{name}.json",
+        {
+            "info": {"name": name, "description": f"{name} 노드"},
+            "type": "perceive",
+            "script": str(script),
+            "libraries": libraries,
+        },
+    )
+
+
+def library_project(project: Project, *, by_ref: bool) -> dict[str, str]:
+    """라이브러리 → 스크립트 → 노드 → 파이프라인 → Spec 을 전부 등록한다.
+
+    `by_ref` 가 참이면 배선을 `${ref.lb_...}` 로, 아니면 절대경로로 한다 —
+    **둘 다 돌아야 한다** (`schema.md` 2절: ref 는 로컬 최적화, 경로는 이식 가능).
+    """
+    library = write(project.root / "libraries" / "shared.py", SHARED_LIBRARY)
+    assert project.run("library", "add", str(library)) == 0
+    lb = project.only("library")
+
+    buttons = project.script("buttons", USES_LIBRARY)
+    wiring_value = f"${{ref.{lb}}}" if by_ref else str(library)
+    page = project.node("page", "vantage", project.script("page", VANTAGE))
+    node = node_with_libraries(project, "buttons", buttons, {"shared": wiring_value})
+    assert project.run("node", "add", str(page)) == 0
+    assert project.run("node", "add", str(node)) == 0
+    nd = project.id_of("node", "buttons")
+
+    pipeline = project.pipeline(
+        "with-library",
+        [
+            {"id": "page", "source": str(page), "params": {"url": "${config.url}"}},
+            {"id": "buttons", "source": f"${{ref.{nd}}}", "inputs": {"scene": "page"}},
+        ],
+    )
+    assert project.run("pipeline", "add", str(pipeline)) == 0
+    pl = project.only("pipeline")
+
+    spec = project.spec("uses", f"${{ref.{pl}}}", {"url": "https://x", "expected": 9})
+    assert project.run("spec", "add", str(spec)) == 0
+    return {"library": lb, "node": nd, "pipeline": pl, "spec": project.only("spec")}
+
+
+@pytest.mark.parametrize("by_ref", [True, False], ids=["ref-로-배선", "절대경로로-배선"])
+def test_배선된_라이브러리가_실행까지_주입된다(
+    project: Project, capsys: pytest.CaptureFixture[str], by_ref: bool
+) -> None:
+    """`from strictler_lib import shared` 가 **로드 직전에** 심긴다."""
+    ids = library_project(project, by_ref=by_ref)
+    capsys.readouterr()
+
+    assert project.run("check", ids["spec"]) == 0
+
+
+def test_슬롯을_요구하는데_배선이_없으면_등록되지_않는다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """능력 선언(스크립트)에 사용 선언(노드)이 답하지 않았다."""
+    node = project.node("buttons", "perceive", project.script("buttons", USES_LIBRARY))
+
+    assert project.run("node", "add", str(node)) == 2
+
+    assert "STR-LIB-001" in rule_ids(capsys.readouterr().out)
+    assert project.ids("node") == []
+
+
+def test_안_쓰는_배선은_등록되지_않는다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """남는 배선은 참조 그래프만 넓혀 **상관없는 노드까지 재검증**하게 만든다."""
+    library = write(project.root / "libraries" / "shared.py", SHARED_LIBRARY)
+    assert project.run("library", "add", str(library)) == 0
+    capsys.readouterr()
+
+    node = node_with_libraries(
+        project, "buttons", project.script("buttons", PERCEIVE), {"shared": str(library)}
+    )
+    assert project.run("node", "add", str(node)) == 2
+
+    assert "STR-LIB-002" in rule_ids(capsys.readouterr().out)
+
+
+def test_라이브러리_자리에_스크립트를_배선하면_STR_REG_003(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**새 규칙을 파지 않았다** — 자리와 접두가 안 맞는 것은 이미 그 규칙의 자리다."""
+    assert project.run("script", "add", str(project.script("page", VANTAGE))) == 0
+    sc = project.only("script")
+    capsys.readouterr()
+
+    node = node_with_libraries(
+        project,
+        "buttons",
+        project.script("buttons", USES_LIBRARY),
+        {"shared": f"${{ref.{sc}}}"},
+    )
+    assert project.run("node", "add", str(node)) == 2
+    assert "STR-REG-003" in rule_ids(capsys.readouterr().out)
+
+
+def test_없는_라이브러리를_배선하면_STR_REF_001(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    node = node_with_libraries(
+        project,
+        "buttons",
+        project.script("buttons", USES_LIBRARY),
+        {"shared": str(project.root / "libraries" / "없다.py")},
+    )
+    assert project.run("node", "add", str(node)) == 2
+    assert "STR-REF-001" in rule_ids(capsys.readouterr().out)
+
+
+def test_배선된_라이브러리의_금지_패턴도_노드_등록이_막는다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**경로로 배선한 라이브러리는 등록을 안 지났다** — 여기가 유일한 관문이다."""
+    library = write(project.root / "libraries" / "shared.py", LIBRARY_BANNED)
+    node = node_with_libraries(
+        project,
+        "buttons",
+        project.script("buttons", USES_LIBRARY),
+        {"shared": str(library)},
+    )
+
+    assert project.run("node", "add", str(node)) == 2
+    assert "STR-BAN-001" in rule_ids(capsys.readouterr().out)
+
+
+def test_라이브러리_update_는_상위를_전이적으로_재검증한다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """수정은 참조를 깨지 않고 **검증만 조용히 무효화**한다 — 그래서 다시 태운다.
+
+    새 본체가 검사를 통과하면 상위도 통과한 채로 남는다. 재검증이 **돌았다는 것**은
+    참조 그래프에 노드 → 라이브러리 엣지가 있다는 사실로 드러난다.
+    """
+    ids = library_project(project, by_ref=True)
+    capsys.readouterr()
+
+    new = write(project.root / "libraries" / "shared_v2.py", SHARED_LIBRARY_V2)
+    assert project.run("library", "update", ids["library"], str(new)) == 0
+    capsys.readouterr()
+
+    # id 가 유지된다 — 참조가 안 깨진다.
+    assert project.only("library") == ids["library"]
+    # 상위 전부가 여전히 성립한다.
+    for kind in ("node", "pipeline", "spec"):
+        assert project.run(kind, "list") == 0
+        assert "✕" not in capsys.readouterr().out
+    # 그리고 새 본체로 실제로 돈다.
+    assert project.run("check", ids["spec"]) == 0
+
+
+def test_라이브러리를_쓰는_노드가_상위_재검증에서_깨질_수_있다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """슬롯 규칙이 **전이적 재검증에 실제로 참여한다.**
+
+    스크립트가 요구하는 슬롯 이름이 바뀌면 노드의 배선은 그대로인데 답이 안 맞는다 —
+    노드는 손대지 않았는데 **검증만 조용히 무효화**되는 자리가 정확히 이것이다.
+    """
+    library = write(project.root / "libraries" / "shared.py", SHARED_LIBRARY)
+    assert project.run("library", "add", str(library)) == 0
+    lb = project.only("library")
+
+    script = project.script("buttons", USES_LIBRARY)
+    assert project.run("script", "add", str(script)) == 0
+    sc = project.only("script")
+
+    node = node_with_libraries(
+        project, "buttons", f"${{ref.{sc}}}", {"shared": f"${{ref.{lb}}}"}
+    )
+    assert project.run("node", "add", str(node)) == 0
+    capsys.readouterr()
+
+    # 스크립트가 다른 슬롯을 요구하게 바뀌었다.
+    changed = write(project.root / "scripts" / "buttons_v2.py", USES_OTHER_SLOT)
+    assert project.run("script", "update", sc, str(changed)) == 1
+
+    out = capsys.readouterr().out
+    assert "STR-REG-005" in rule_ids(out)
+    assert project.run("node", "list") == 1
+    assert "✕ 검증 깨짐 — STR-LIB-001" in capsys.readouterr().out
+
+
+def test_라이브러리를_지우면_상위가_전이적으로_깨진다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """삭제도 막지 않는다 — 대신 목록에서 드러낸다."""
+    ids = library_project(project, by_ref=True)
+    capsys.readouterr()
+
+    assert project.run("library", "remove", ids["library"]) == 1
+    capsys.readouterr()
+
+    assert project.run("node", "list") == 1
+    assert "✕ 참조 깨짐" in capsys.readouterr().out
+    for kind in ("pipeline", "spec"):
+        assert project.run(kind, "list") == 1
+        assert "✕ 검증 깨짐" in capsys.readouterr().out
+
+
+def test_등록_이후_직접_고친_라이브러리는_실행에서_걸린다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**정적 검사 루트를 피해 고치는 것**을 막는 자리가 해시다 (`STR-REG-001`)."""
+    ids = library_project(project, by_ref=True)
+    capsys.readouterr()
+
+    copied = project.store.path_of(ids["library"])
+    copied.write_text(
+        copied.read_text(encoding="utf-8") + "\n# 몰래 고쳤다\n", encoding="utf-8"
+    )
+
+    assert project.run("check", ids["spec"]) == 2
+    assert "STR-REG-001" in rule_ids(capsys.readouterr().out)
+
+
+def test_node_test_에서도_라이브러리가_주입된다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`check` 와 `node test` 가 갈리면 안 된다 — 같은 함수로 푼다."""
+    library = write(project.root / "libraries" / "shared.py", SHARED_LIBRARY)
+    assert project.run("library", "add", str(library)) == 0
+    lb = project.only("library")
+
+    node = node_with_libraries(
+        project,
+        "buttons",
+        project.script("buttons", USES_LIBRARY),
+        {"shared": f"${{ref.{lb}}}"},
+    )
+    write_json(
+        node.with_suffix(".test.json"),
+        {
+            "node": str(node),
+            "cases": [
+                {
+                    "name": "라이브러리가 센 길이가 그대로 나온다",
+                    "args": {"input": {"url": "abcd"}},
+                    "expect": {"count": 4},
+                }
+            ],
+        },
+    )
+    assert project.run("node", "add", str(node)) == 0
+    node_id = project.only("node")
+    capsys.readouterr()
+
+    assert project.run("node", "test", node_id) == 0
+    assert "[pass]" in capsys.readouterr().out

@@ -44,7 +44,7 @@ from typing import TYPE_CHECKING, Iterable
 
 from strictler import deps, rules
 from strictler.errors import Finding, StrictlerError
-from strictler.model import ENGINE_STATE_FIELDS, NodeType
+from strictler.model import ENGINE_STATE_FIELDS, LIBRARY_NAMESPACE, NodeType
 from strictler.typesys.primitives import TypeRef, check_allowed, parse_type
 from strictler.typesys.registry import DataclassSpec, FieldSpec
 
@@ -59,6 +59,7 @@ __all__ = [
     "check_args_shape",
     "check_types",
     "check_bans",
+    "check_library_imports",
     "check_node_type_form",
     "check_tool_calls",
     "VERDICT_FIELD",
@@ -133,6 +134,8 @@ class ScriptContract:
       `state_names`  — `Args.state` dataclass 의 필드 이름들 = **노드가 요구하는 상태 이름**
       `output_type`  — `returnResult()` 로 나가는 dataclass 이름
       `tool_calls`   — `(함수명, 실행파일 경로 인자)` 목록. 실행 시 Spec `tool` 과 대조
+      `library_slots`— `from strictler_lib import X` 로 요구한 슬롯 이름들.
+                       **노드가 배선해야 할 목록**이다 (`schema.md` 6.5절)
 
     `_` 로 시작하는 나머지는 **검사기끼리만 쓰는 기록**이다 (공개 계약이 아니다).
     `check_entrypoint` 등이 소스를 다시 파싱하지 않아도 되게 여기 담아 둔다.
@@ -147,6 +150,7 @@ class ScriptContract:
         self.state_names: tuple[str, ...] = ()
         self.output_type: str = ""
         self.tool_calls: list[tuple[str, str]] = []
+        self.library_slots: tuple[str, ...] = ()
 
         # --- 내부 기록 (공개 계약 아님) ---
         self._has_args: bool = False
@@ -197,6 +201,7 @@ def extract_contract(source: str, path: str) -> tuple[ScriptContract, list[Findi
     _fill_output(contract, entrypoint, tree)
     _fill_type_uses(contract, entrypoint)
     contract.tool_calls = _collect_tool_calls(tree)
+    contract.library_slots = _collect_library_slots(tree)
 
     return contract, findings
 
@@ -237,6 +242,7 @@ def check_script(
     findings.extend(check_args_shape(contract))
     findings.extend(check_types(contract))
     findings.extend(check_bans(source, path, contract))
+    findings.extend(check_library_imports(source, path))
     findings.extend(deps.check_dependencies(source, path, known_dependencies))
     if node_type is not None:
         findings.extend(check_node_type_form(contract, node_type))
@@ -373,6 +379,80 @@ def check_bans(source: str, path: str, contract: ScriptContract | None) -> list[
         rules.finding(rule_id, path=path, fields={"name": name, "file": path})
         for (rule_id, name), _ in sorted(hits.items(), key=lambda item: (item[1], item[0]))
     ]
+
+
+def check_library_imports(source: str, path: str) -> list[Finding]:
+    """`strictler_lib` 를 쓰는 형태가 **슬롯을 뽑을 수 있는 형태**인지 (`STR-LIB-005`).
+
+    허용되는 것은 **모듈 최상단의 `from strictler_lib import <이름>`** 하나뿐이다:
+
+    | 형태 | 왜 안 되나 |
+    |---|---|
+    | `import strictler_lib` | 어느 슬롯을 쓰는지 정적으로 알 수 없다 |
+    | `from strictler_lib.x import y` | 라이브러리는 한 층이고 서브모듈이 없다 |
+    | `from strictler_lib import *` | 이름이 안 적혀 있으니 뽑을 것이 없다 |
+    | 함수 안에서의 import | **주입 시점이 로드 시점**이라 그때 이미 지나갔다 |
+
+    마지막 줄이 형식 제한의 실질적 이유다. 엔진은 스크립트를 로드하기 **직전에**
+    `strictler_lib` 를 심고 로드가 끝나면 걷는다 — 그래야 다음 노드가 남의 배선을
+    보지 않는다. 늦은 import 는 그 창을 놓치므로 조용히 다른 것을 집는 대신
+    **`ImportError` 로 터지는 편이 낫고**, 애초에 등록 시점에 막는 편이 더 낫다.
+
+    별칭(`as`)은 허용한다 — 슬롯은 **가져오는 이름**이고 지역 별칭은 배선과 무관하다.
+    """
+    tree = _parse(source, path)
+    allowed = {id(node) for node in tree.body if isinstance(node, ast.ImportFrom)}
+    findings: list[Finding] = []
+    seen: set[str] = set()
+
+    for node in ast.walk(tree):
+        form = ""
+        if isinstance(node, ast.Import):
+            form = next(
+                (
+                    alias.name
+                    for alias in node.names
+                    if _is_namespace(alias.name)
+                ),
+                "",
+            )
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if not _is_namespace(module):
+                continue
+            if module != LIBRARY_NAMESPACE:
+                form = f"from {module} import ..."
+            elif any(alias.name == "*" for alias in node.names):
+                form = f"from {LIBRARY_NAMESPACE} import *"
+            elif id(node) not in allowed:
+                form = (
+                    f"함수/클래스 안의 from {LIBRARY_NAMESPACE} import "
+                    + ", ".join(alias.name for alias in node.names)
+                )
+        if form and form not in seen:
+            seen.add(form)
+            findings.append(rules.finding("STR-LIB-005", path=path, fields={"form": form}))
+    return findings
+
+
+def _is_namespace(module: str) -> bool:
+    return module == LIBRARY_NAMESPACE or module.startswith(f"{LIBRARY_NAMESPACE}.")
+
+
+def _collect_library_slots(tree: ast.Module) -> tuple[str, ...]:
+    """`from strictler_lib import X, Y` 의 이름들 — **노드가 배선해야 할 슬롯**.
+
+    **최상단의 올바른 형태만 본다.** 나머지는 `check_library_imports` 가 잡으므로
+    여기서 억지로 주워담으면 *"뽑히지도 않는 슬롯을 배선하라"* 는 모순이 생긴다.
+    """
+    found: list[str] = []
+    for stmt in tree.body:
+        if not isinstance(stmt, ast.ImportFrom) or stmt.module != LIBRARY_NAMESPACE:
+            continue
+        for alias in stmt.names:
+            if alias.name != "*" and alias.name not in found:
+                found.append(alias.name)
+    return tuple(found)
 
 
 def check_node_type_form(contract: ScriptContract, node_type: NodeType) -> list[Finding]:

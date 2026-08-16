@@ -21,15 +21,17 @@ import dataclasses
 import hashlib
 import importlib.util
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
 from pydantic import BaseModel, ValidationError
 
 from strictler import deps
 from strictler.checks.script import RESULT_FN, ScriptContract
 from strictler.errors import Finding, StrictlerError
+from strictler.model import LIBRARY_NAMESPACE
 from strictler.typesys.primitives import PRIMITIVES, TypeRef, element_type, is_list
 from strictler.typesys.registry import TypeKey, TypeRegistry
 
@@ -66,7 +68,7 @@ def _return_result(value: Any) -> Any:
 # ── 로드 ─────────────────────────────────────────────────────────────────────
 
 
-def load_script(path: Path) -> ModuleType:
+def load_script(path: Path, libraries: Mapping[str, Path] | None = None) -> ModuleType:
     """스크립트 파일을 모듈로 로드한다.
 
     **의존성 격리는 없다 — 스크립트는 strictler 와 같은 프로세스에 로드된다**
@@ -81,6 +83,11 @@ def load_script(path: Path) -> ModuleType:
     **`returnResult` 를 모듈 전역에 심어 준다** — 스크립트가 정의하지 않는 고정
     이름이기 때문이다. 스크립트가 자기 것을 정의하거나 import 하면 그쪽이 이긴다
     (exec 이 나중이므로).
+
+    `libraries` 는 **노드가 배선한 것**이다 (`{슬롯: 파일}`, `schema.md` 6.5절).
+    로드 **직전에** `strictler_lib.<슬롯>` 으로 심고 로드가 끝나면 **걷는다** —
+    `_installed_libraries` 참조. `sys.path` 는 건드리지 않는다: 형제 파일 import 를
+    되게 만드는 것이 아니라, **배선된 것만** 그 네임스페이스로 들어오게 하는 것이다.
     """
     tag = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
     name = f"strictler_node_{tag}"
@@ -94,10 +101,81 @@ def load_script(path: Path) -> ModuleType:
     setattr(module, RESULT_FN, _return_result)
     sys.modules[name] = module
     try:
-        spec.loader.exec_module(module)
+        with _installed_libraries(libraries or {}):
+            spec.loader.exec_module(module)
     except BaseException as exc:  # noqa: BLE001 - 사용자 코드는 무엇이든 던질 수 있다
         sys.modules.pop(name, None)
         raise StrictlerError(_load_failure(path, exc)) from exc
+    return module
+
+
+@contextmanager
+def _installed_libraries(libraries: Mapping[str, Path]) -> Iterator[None]:
+    """`strictler_lib.<슬롯>` 을 **로드하는 동안만** 심는다 (`schema.md` 6.5절).
+
+    ### 왜 네임스페이스인가
+    같은 이름의 실제 패키지를 가리는 사고를 막기 위해서다. `import buttons` 였다면
+    PyPI 의 `buttons` 를 조용히 덮어쓴다.
+
+    ### 왜 끝나면 걷는가 — **남의 배선을 보지 않게**
+    `sys.modules` 는 프로세스 전역이라 남겨두면 **다음 노드가 앞 노드의 배선을
+    본다.** 스크립트는 `from strictler_lib import X` 를 모듈 최상단에서만 쓰므로
+    (`STR-LIB-005`) 로드가 끝난 시점에 필요한 참조는 이미 붙잡혀 있고, 그 뒤에
+    남은 것은 사고의 재료뿐이다. 늦은 import 는 조용히 남의 것을 집는 대신
+    `ImportError` 로 터진다 — **틀린 값보다 오류가 낫다.**
+
+    라이브러리 모듈 자체는 스크립트와 마찬가지로 **경로 해시**로 이름 지어
+    `sys.modules` 에 남는다. 여기서 걷는 것은 `strictler_lib` **네임스페이스**뿐이다.
+    """
+    package = ModuleType(LIBRARY_NAMESPACE)
+    package.__doc__ = "strictler 가 노드 배선에 따라 심어주는 라이브러리 네임스페이스."
+    installed = [LIBRARY_NAMESPACE]
+    saved = {LIBRARY_NAMESPACE: sys.modules.get(LIBRARY_NAMESPACE)}
+
+    for slot, source in libraries.items():
+        setattr(package, slot, _load_library(source))
+        full = f"{LIBRARY_NAMESPACE}.{slot}"
+        saved[full] = sys.modules.get(full)
+        installed.append(full)
+        sys.modules[full] = getattr(package, slot)
+    sys.modules[LIBRARY_NAMESPACE] = package
+
+    try:
+        yield
+    finally:
+        for full in installed:
+            previous = saved.get(full)
+            if previous is None:
+                sys.modules.pop(full, None)
+            else:
+                sys.modules[full] = previous
+
+
+def _load_library(path: Path) -> ModuleType:
+    """라이브러리 파일 하나를 모듈로. **`returnResult` 는 심지 않는다** — 노드가 아니다.
+
+    이름은 스크립트와 같은 규칙(경로 해시)이라 서로 다른 경로의 같은 파일명이
+    `sys.modules` 에서 충돌하지 않는다.
+    """
+    tag = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+    name = f"strictler_library_{tag}"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise StrictlerError(
+            f"라이브러리를 모듈로 읽을 수 없습니다: {path}\n"
+            "라이브러리는 `.py` 파일 하나여야 합니다."
+        )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException as exc:  # noqa: BLE001 - 사용자 코드는 무엇이든 던질 수 있다
+        sys.modules.pop(name, None)
+        raise StrictlerError(
+            f"라이브러리를 로드하다 예외가 났습니다: {path}\n"
+            f"{type(exc).__name__}: {exc}\n"
+            "라이브러리는 import 만으로 부작용이 없어야 합니다 — 함수 정의만 두세요."
+        ) from exc
     return module
 
 
@@ -142,7 +220,24 @@ def _missing_module_guide(path: Path, exc: BaseException) -> str:
     **소스를 못 읽는 것은 여기서 문제 삼지 않는다.** 이미 실패한 예외에 문장을
     덧붙이는 자리라서, 여기서 새 예외를 내면 원인이 뭉개진다.
     """
-    if not isinstance(exc, ModuleNotFoundError) or not exc.name:
+    if not isinstance(exc, ImportError) or not exc.name:
+        return ""
+
+    if exc.name == LIBRARY_NAMESPACE or exc.name.startswith(f"{LIBRARY_NAMESPACE}."):
+        # **안 배선된 슬롯**을 가져오려 한 것이다. `from X import Y` 실패는
+        # `ModuleNotFoundError` 가 아니라 그냥 `ImportError` 로 온다 — 네임스페이스
+        # 자체는 (비어 있을지언정) 언제나 심겨 있기 때문이다.
+        # 원인이 확정된 자리이므로 형제 파일 이야기는 얹지 않는다.
+        return (
+            f"`{LIBRARY_NAMESPACE}` 에는 **노드가 배선한 슬롯만** 들어옵니다 — "
+            "지금 이 스크립트에는 그 배선이 없습니다.\n"
+            '노드 JSON 에 `"libraries": { "<슬롯>": "${ref.lb_...}" }` 를 넣으세요 '
+            "(절대경로도 됩니다). 등록 시점이라면 `STR-LIB-001` 이 같은 것을 짚습니다."
+        )
+
+    if not isinstance(exc, ModuleNotFoundError):
+        # 여기부터는 *모듈을 못 찾은 것* 에 대한 안내다. 다른 종류의 `ImportError`
+        # (이름을 못 가져온 것)에 설치 명령을 붙이면 엉뚱한 곳을 고치게 된다.
         return ""
 
     submodule = deps.missing_submodule_hint(exc.name)
@@ -163,9 +258,12 @@ def _missing_module_guide(path: Path, exc: BaseException) -> str:
         f"못 찾은 모듈: `{exc.name}`. **형제 파일 import 는 되지 않습니다** — "
         "스크립트가 있는 디렉터리는 `sys.path` 에 없고, 등록하면 스크립트 파일 "
         "하나만 등록소로 복사되므로 옆 파일은 따라오지 않습니다.\n"
-        "공용 로직은 둘 중 하나로 풉니다: (1) 판정 함수를 공유하는 대신 "
-        "**그 판정을 하는 노드를 재사용**한다 (노드 재사용은 근본 동작입니다). "
-        "(2) 작은 패키지로 만들어 strictler 환경에 설치한다 — "
+        "공용 로직은 셋 중 하나로 풉니다: (1) **라이브러리로 등록해 노드가 배선**한다 "
+        "— `strictler library add <파일>` 후 노드 JSON 에 "
+        '`"libraries": { "<슬롯>": "${ref.lb_...}" }`, 스크립트에서 '
+        "`from strictler_lib import <슬롯>` (프로젝트 고유 판정 로직은 이쪽입니다). "
+        "(2) 판정 함수를 공유하는 대신 **그 판정을 하는 노드를 재사용**한다. "
+        "(3) 범용 서드파티라면 작은 패키지로 만들어 strictler 환경에 설치한다 — "
         "`uv tool install strictler --with <패키지>` 후 PEP 723 헤더에 선언하면 "
         "등록 시점에 확인됩니다."
     )

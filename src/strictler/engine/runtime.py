@@ -301,12 +301,20 @@ def _run_compare(
 
 
 class _NodeRun:
-    """구동에 필요한 노드 한 벌 — 노드 정의 + 스크립트 경로 + 계약."""
+    """구동에 필요한 노드 한 벌 — 노드 정의 + 스크립트 경로 + 계약 + 배선된 라이브러리."""
 
-    def __init__(self, node: Node, script_path: Path, contract: ScriptContract) -> None:
+    def __init__(
+        self,
+        node: Node,
+        script_path: Path,
+        contract: ScriptContract,
+        libraries: dict[str, Path] | None = None,
+    ) -> None:
         self.node = node
         self.script_path = script_path
         self.contract = contract
+        self.libraries = libraries or {}
+        """`{슬롯: 파일}`. `load_script` 가 로드 직전에 심는다 (`schema.md` 6.5절)."""
 
 
 def run_pipeline(
@@ -432,7 +440,7 @@ def _run_node(
     contract = item.contract
     node_id = pn.id
     try:
-        module = node_exec.load_script(item.script_path)
+        module = node_exec.load_script(item.script_path, item.libraries)
 
         # 같은 노드를 두 이름으로 받아도 값은 하나다 — 중복은 걷어낸다.
         producers = list(dict.fromkeys(pn.inputs.values()))
@@ -635,7 +643,15 @@ def _load_nodes(
             finding.model_copy(update={"path": path, "node": pn.id})
             for finding in extracted
         )
-        loaded[pn.id] = _NodeRun(node, script_path, contract)
+
+        # 배선된 라이브러리도 **실행 직전에 해시를 대조한다** — 노드 스크립트와
+        # 같은 규칙이다 (`schema.md` 2·6.5절). 무단 수정된 라이브러리를 그냥
+        # 돌리면 검증된 적 없는 판정 로직으로 리포트가 나간다.
+        libraries, library_findings = drive_loop.resolve_libraries(
+            node, store=store, env=env, path=path, node_id=pn.id
+        )
+        findings.extend(library_findings)
+        loaded[pn.id] = _NodeRun(node, script_path, contract, libraries)
 
     return loaded, findings
 

@@ -31,6 +31,7 @@ EXAMPLE_ROOT = Path(__file__).resolve().parent.parent / "examples" / "home-check
 SPECS = EXAMPLE_ROOT / "specs"
 NODES = EXAMPLE_ROOT / "nodes"
 SCRIPTS = EXAMPLE_ROOT / "scripts"
+LIBRARIES = EXAMPLE_ROOT / "libraries"
 INVALID = EXAMPLE_ROOT / "invalid"
 
 
@@ -265,6 +266,21 @@ def test_노드_단위테스트가_경로로_돈다(
             id="판정-필드-없는-Reckon",
         ),
         pytest.param(
+            ("library", "add", str(INVALID / "lib_banned.py")),
+            {"STR-BAN-001"},
+            id="라이브러리에서-시간을-읽음",
+        ),
+        pytest.param(
+            ("library", "add", str(INVALID / "lib_dataclass.py")),
+            {"STR-LIB-004"},
+            id="라이브러리가-dataclass-선언",
+        ),
+        pytest.param(
+            ("node", "add", str(INVALID / "bad_unwired.json")),
+            {"STR-LIB-001"},
+            id="슬롯을-요구하는데-배선이-없음",
+        ),
+        pytest.param(
             ("pipeline", "add", str(INVALID / "pipeline_ambiguous.json")),
             {"STR-GRAPH-003"},
             id="모호한-inputs",
@@ -332,6 +348,8 @@ def test_fresh_등록소에_전부_등록하고_id_로_돈다(
         assert code == 0, out
         return out.split()[0]
 
+    for library in sorted(LIBRARIES.glob("*.py")):
+        add("library", library)
     for script in sorted(SCRIPTS.glob("*.py")):
         add("script", script)
     for node in sorted(NODES.glob("*.json")):
@@ -344,7 +362,7 @@ def test_fresh_등록소에_전부_등록하고_id_로_돈다(
         ids[spec.stem] = add("spec", spec)
 
     # 깨진 구성이 하나도 없다.
-    for kind in ("script", "node", "pipeline", "spec"):
+    for kind in ("script", "library", "node", "pipeline", "spec"):
         code, out = run(capsys, kind, "list")
         assert code == 0, out
         assert "✕" not in out

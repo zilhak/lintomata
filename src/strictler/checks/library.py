@@ -28,19 +28,24 @@
 from __future__ import annotations
 
 import ast
+from pathlib import Path
+from typing import Mapping
 
-from strictler import deps, rules
+from strictler import deps, refs, rules
 from strictler.checks import script as script_checks
-from strictler.errors import Finding
+from strictler.checks.script import ScriptContract
+from strictler.errors import Finding, StrictlerError
+from strictler.model import LIBRARY_NAMESPACE, Node
+from strictler.store.entries import Store
 
-__all__ = ["NAMESPACE", "check_library"]
+__all__ = ["NAMESPACE", "check_library", "check_wiring", "resolve_libraries"]
 
 
-NAMESPACE = "strictler_lib"
-"""배선된 라이브러리가 들어오는 네임스페이스 (`schema.md` 6.5절).
+NAMESPACE = LIBRARY_NAMESPACE
+"""배선된 라이브러리가 들어오는 네임스페이스 (`schema.md` 6.5절). **정본은 `model`.**
 
-**네임스페이스를 쓰는 이유**는 같은 이름의 실제 패키지를 가리는 사고를 막기
-위해서다. 라이브러리 안에서 이 이름이 보이면 그건 **라이브러리 중첩**이다."""
+라이브러리 **안에서** 이 이름이 보이면 그건 라이브러리 중첩이다 (`STR-LIB-003`).
+스크립트 안에서 보이는 것은 정상이고, 형태만 `STR-LIB-005` 가 본다."""
 
 
 def check_library(
@@ -101,6 +106,128 @@ def check_no_dataclass(tree: ast.Module, path: str) -> list[Finding]:
         for stmt in ast.walk(tree)
         if isinstance(stmt, ast.ClassDef) and script_checks._is_dataclass(stmt)
     ]
+
+
+def check_wiring(
+    node: Node, contract: ScriptContract, *, path: str
+) -> list[Finding]:
+    """스크립트가 요구한 슬롯과 노드가 배선한 슬롯이 맞는지 (`STR-LIB-001` / `-002`).
+
+    선언/사용 분리 그대로다 — 스크립트가 *"이 슬롯이 필요합니다"*, 노드가
+    *"그 슬롯엔 이걸 씁니다"*. **양쪽이 안 맞으면 고칠 곳이 서로 다르므로**
+    규칙도 둘로 나뉜다: 빠진 것은 노드에 **넣고**, 남는 것은 노드에서 **뺀다**.
+
+    ⚠ 배선 **값**(참조가 실재하는지, 라이브러리가 맞는지)은 여기서 보지 않는다 —
+    `resolve_libraries` 의 일이다. 여기는 이름만 대조한다.
+    """
+    required = list(contract.library_slots)
+    wired = list(node.libraries)
+
+    findings: list[Finding] = []
+    missing = [name for name in required if name not in wired]
+    if missing:
+        findings.append(
+            rules.finding(
+                "STR-LIB-001",
+                path=path,
+                node=node.info.name,
+                fields={"names": ", ".join(missing)},
+            )
+        )
+    extra = [name for name in wired if name not in required]
+    if extra:
+        findings.append(
+            rules.finding(
+                "STR-LIB-002",
+                path=path,
+                node=node.info.name,
+                fields={"names": ", ".join(extra)},
+            )
+        )
+    return findings
+
+
+def resolve_libraries(
+    node: Node, *, store: Store, env: Mapping[str, str]
+) -> tuple[dict[str, Path], list[Finding]]:
+    """노드가 배선한 라이브러리들을 실제 파일 경로로 푼다.
+
+    `${ref.lb_...}` 면 등록소에서, 경로면 경로 규칙(`~` → env → 절대경로)으로.
+    **2절의 "ref 는 로컬 최적화, 경로는 이식 가능" 이 그대로 적용된다** — 커밋할
+    노드는 경로로 쓰고, 손에 든 등록소에서는 id 로 쓴다.
+
+    | 잘못된 것 | 규칙 |
+    |---|---|
+    | `${ref.sc_...}` 처럼 **라이브러리가 아닌 것**을 배선했다 | `STR-REG-003` |
+    | 그 id 가 등록소에 없다 | `STR-REG-002` |
+    | 가리키는 파일이 없다 | `STR-REF-001` |
+    | 경로 규칙 위반 | `STR-PATH-001`~`003` |
+
+    **`STR-REG-003` 을 새로 파지 않았다** — *"이 자리에는 X 가 와야 하는데 Y 를 줬다"*
+    는 이미 그 규칙의 자리이고 고치는 법도 같다(접두를 맞춘다).
+
+    **못 푼 슬롯은 결과에서 빠진다.** 그 자리에서 진행하지 않는 것이고, 억지로 빈
+    모듈을 넣으면 스크립트가 `AttributeError` 로 터져 원인이 뭉개진다.
+    """
+    resolved: dict[str, Path] = {}
+    findings: list[Finding] = []
+
+    for slot, value in node.libraries.items():
+        found, gathered = _resolve_one(value, slot=slot, node=node, store=store, env=env)
+        findings.extend(item.model_copy(update={"path": item.path or ""}) for item in gathered)
+        if found is not None:
+            resolved[slot] = found
+    return resolved, findings
+
+
+def _resolve_one(
+    value: str, *, slot: str, node: Node, store: Store, env: Mapping[str, str]
+) -> tuple[Path | None, list[Finding]]:
+    """배선 값 하나를 파일로. 자리 표시(`path`)는 부르는 쪽이 채운다."""
+    who = node.info.name
+    if not isinstance(value, str):  # pragma: no cover - pydantic 이 이미 막는다
+        return None, [
+            Finding(
+                status="error",
+                node=who,
+                message=f"`libraries.{slot}` 가 문자열이 아닙니다: {value!r}",
+            )
+        ]
+
+    if refs.is_ref(value):
+        try:
+            _, entry_id = refs.parse_ref(value, "library")
+        except StrictlerError as exc:
+            return None, _findings_of(exc, node=who)
+        try:
+            store.show(entry_id)
+        except StrictlerError:
+            return None, [
+                rules.finding("STR-REG-002", node=who, fields={"id": entry_id})
+            ]
+        path = store.path_of(entry_id)
+    else:
+        try:
+            path = refs.expand_path(value, env)
+        except StrictlerError as exc:
+            return None, _findings_of(exc, node=who)
+
+    if not path.is_file():
+        return None, [
+            rules.finding("STR-REF-001", node=who, fields={"script": str(path)})
+        ]
+    return path, []
+
+
+def _findings_of(exc: StrictlerError, *, node: str) -> list[Finding]:
+    """`refs` 가 던진 규칙 실린 예외를 `Finding` 목록으로.
+
+    지역 import — `checks.node` 가 이 모듈을 쓰므로 top-level 이면 순환이다
+    (`store.graph` 가 `checks` 를 부르는 것과 같은 자리).
+    """
+    from strictler.checks.node import findings_of
+
+    return findings_of(exc, path="", node=node)
 
 
 def _namespace_uses(tree: ast.Module) -> list[str]:

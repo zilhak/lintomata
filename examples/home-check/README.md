@@ -11,6 +11,7 @@
 
 ```
 targets/     검사 대상 HTML — 정상판·어긋난판·비교용 3벌(+어긋난 판)
+libraries/   여러 스크립트가 나눠 쓰는 함수 (.py) — 버튼 판정의 본체
 scripts/     노드 스크립트 (.py) — 다섯 타입 전부
 nodes/       노드 정의 (.json) + 단위테스트 (<노드파일>.test.json)
 pipelines/   page_check(값 검증) · buttons_same(비교, 대상 3개)
@@ -40,10 +41,15 @@ invalid/     ★ 일부러 틀린 것들 — 등록·단위테스트가 잡는 �
   **완전히 다르다**(`<button>` / `class="btn"` / `role="button"`). 대상마다 인식
   스크립트가 다르고(`scripts/cmp_buttons_*.py`), 개념 층(버튼 개수·라벨)이 같으므로
   **통과한다.** Reckon 은 없다 — 동등 비교는 엔진이 한다.
-- **도메인 지식은 스크립트 쪽에만 있다** — `targets/home.html` 의
+- **도메인 지식은 사용자 쪽에만 있다** — `targets/home.html` 의
   `<div class="hero" data-decoy="true" role="button">배경 이미지</div>` 는
-  *누를 수 있게 생긴 배경 장식*이라 버튼이 아니다. 이 판단은 `scripts/perceive_buttons.py`
-  안에만 있고 엔진은 모른다.
+  *누를 수 있게 생긴 배경 장식*이라 버튼이 아니다. 이 판단은
+  `libraries/buttons.py` 의 `is_button` 안에만 있고 엔진은 모른다.
+- **★ 라이브러리** — 버튼을 지각하는 스크립트가 넷이다(값 검증용 하나, 비교용 셋).
+  넷이 각자 HTML 을 훑으면 **라벨 정규화 규칙이 갈리는 순간 개념 층 비교가 조용히
+  거짓이 된다.** 그래서 훑는 방법과 정규화는 `libraries/buttons.py` **하나**에 두고
+  넷이 `from strictler_lib import buttons` 로 쓴다. 슬롯에 무엇을 쓸지는
+  노드가 정한다 — `nodes/detect_buttons.json` · `compare_buttons.json` 의 `libraries`.
 
 ## 돌리는 법
 
@@ -70,10 +76,11 @@ uv run strictler node test $STRICTLER_EXAMPLE_ROOT/nodes/detect_buttons.test.jso
 
 ### (b) 등록 후 id 로
 
-`scripts → nodes → pipelines → specs` 순서로 넣는다. **id 를 손으로 고칠 일이 없다** —
+`libraries → scripts → nodes → pipelines → specs` 순서로 넣는다. **id 를 손으로 고칠 일이 없다** —
 배선이 경로 참조라서 발급된 id 와 무관하다.
 
 ```bash
+for f in $STRICTLER_EXAMPLE_ROOT/libraries/*.py;                   do uv run strictler library  add $f; done
 for f in $STRICTLER_EXAMPLE_ROOT/scripts/*.py;                     do uv run strictler script   add $f; done
 for f in $STRICTLER_EXAMPLE_ROOT/nodes/*.json;                     do case $f in *.test.json) continue;; esac
                                                                       uv run strictler node     add $f; done

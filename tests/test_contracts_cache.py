@@ -152,6 +152,7 @@ SERIALIZED_ATTRS = {
     "state_names",
     "output_type",
     "tool_calls",
+    "library_slots",
     "_has_args",
     "_args_fields",
     "_has_entrypoint",

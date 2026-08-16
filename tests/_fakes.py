@@ -40,6 +40,7 @@ class FakeContract:
         state_names: tuple[str, ...] = (),
         output_type: str = "",
         tool_calls: list[tuple[str, str]] | None = None,
+        library_slots: tuple[str, ...] = (),
     ) -> None:
         self.path = path
         self.dataclasses = dataclasses or {}
@@ -49,6 +50,7 @@ class FakeContract:
         self.state_names = state_names
         self.output_type = output_type
         self.tool_calls = tool_calls or []
+        self.library_slots = library_slots
 
 
 def contract(

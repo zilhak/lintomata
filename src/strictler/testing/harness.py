@@ -238,11 +238,21 @@ def run_node_test(
             item.model_copy(update={"path": item.path or label}) for item in script_findings
         ]
 
+    # **`check` 와 같은 함수로 푼다** — 해시 대조까지 포함해서다 (`schema.md` 6.5절).
+    # 여기가 갈리면 `node test` 만 무단 수정된 라이브러리를 돌리고 통과를 보고한다.
+    libraries, library_findings = drive_loop.resolve_libraries(
+        node, store=store, env=env, path=label, node_id=node.info.name
+    )
+    if library_findings:
+        return library_findings
+
     results: list[Finding] = []
     outputs: list[Any] = []
     for index, case in enumerate(node_test.cases):
         where = f"{label} > cases[{index}] {case.name}"
-        value, case_findings = run_case(node, contract, script_path, case, env=env)
+        value, case_findings = run_case(
+            node, contract, script_path, case, env=env, libraries=libraries
+        )
         outputs.append(value)
         if case_findings:
             results.extend(
@@ -374,8 +384,13 @@ def run_case(
     case: TestCase,
     *,
     env: Mapping[str, str],
+    libraries: Mapping[str, Path] | None = None,
 ) -> tuple[Any, list[Finding]]:
     """케이스 하나를 돌린다. 반환값과 결과들을 함께 준다.
+
+    `libraries` 는 노드가 배선한 것이다 — **`check` 와 똑같이 주입된다.**
+    부수 효과로 **스텁 라이브러리를 배선해 스크립트를 단위테스트**할 수 있다
+    (`schema.md` 6.5절).
 
     반환값은 Reckon 대조쌍 검사가 이어서 쓴다. **믿을 수 없는 값은 `None` 으로 준다** —
     타입이 안 맞는 출력으로 반응성을 논하면 결론이 거짓이 된다.
@@ -402,7 +417,7 @@ def run_case(
         return None, [_fixture_finding(who, exc.message)]
 
     try:
-        module = node_exec.load_script(script_path)
+        module = node_exec.load_script(script_path, libraries or {})
     except StrictlerError as exc:
         return None, [Finding(status="error", node=who, message=exc.message)]
 

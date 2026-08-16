@@ -12,6 +12,8 @@
 | Action 이면 input 타입 == output 타입인지 | `STR-CONTRACT-006` |
 | 금지 패턴이 없는지 | `STR-BAN-001`~`004` |
 | `Args.state` 필드 이름에 `__` 접두를 쓰지 않았는지 | `STR-STATE-001` |
+| 스크립트가 요구한 라이브러리 슬롯이 전부 배선됐는지 | `STR-LIB-001` / `-002` |
+| 배선한 것이 실재하는 라이브러리이고 그 자체로 성립하는지 | `STR-REG-002`/`-003`, `STR-LIB-003`/`-004` |
 
 즉 **노드 검사 = 노드 JSON 자체 검사 + 그 스크립트를 노드 타입과 함께 검사**다.
 아래쪽 절반(`STR-CONTRACT-*` / `STR-TYPE-001`~`003` / `STR-BAN-*`)은 전부
@@ -41,7 +43,7 @@ from strictler.errors import Finding, StrictlerError
 from strictler.model import Node
 from strictler.store.entries import Store
 
-__all__ = ["load_node", "resolve_script", "check_node"]
+__all__ = ["load_node", "resolve_script", "check_node", "check_libraries"]
 
 
 _CONFIG_MARK = "${config."
@@ -268,7 +270,52 @@ def check_node(
 
     contract, extracted = script_checks.extract_contract(source, str(script_path))
     findings.extend(extracted)
+    findings.extend(check_libraries(node, contract, source_path, store=store, env=env))
     return contract, dedupe(findings)
+
+
+def check_libraries(
+    node: Node,
+    contract: ScriptContract,
+    source_path: str,
+    *,
+    store: Store,
+    env: Mapping[str, str],
+) -> list[Finding]:
+    """노드의 라이브러리 배선 검사 (`schema.md` 6.5절).
+
+    셋을 한 자리에서 본다 — **셋 다 노드 등록이 막아야 할 것들**이기 때문이다:
+
+    1. 슬롯이 맞는가 (`STR-LIB-001` / `-002`)
+    2. 배선한 것이 실재하는 라이브러리인가 (`STR-REG-002`/`-003`, `STR-REF-001`, 경로 규칙)
+    3. **그 라이브러리 자체가 정적 검사를 통과하는가** (`STR-BAN-*`, `STR-LIB-003`/`-004`)
+
+    3번을 여기서도 도는 이유는 **경로로 배선한 라이브러리는 등록을 안 지났기 때문**이다.
+    등록된 것도 다시 보지만 그건 스크립트도 마찬가지다(`check_script`) — 노드 등록은
+    *"이 노드가 지금 성립하는가"* 를 묻는 자리이고, 그 답은 참조하는 파일들의 현재
+    내용에 달려 있다.
+    """
+    # 지역 import — `checks.library` 가 이 모듈의 `findings_of` 를 쓴다.
+    from strictler.checks import library as library_checks
+
+    findings = library_checks.check_wiring(node, contract, path=source_path)
+    resolved, resolve_findings = library_checks.resolve_libraries(
+        node, store=store, env=env
+    )
+    findings.extend(
+        item.model_copy(update={"path": item.path or source_path})
+        for item in resolve_findings
+    )
+
+    known = store.declared_dependencies()
+    for path in resolved.values():
+        findings.extend(
+            item.model_copy(update={"node": item.node or node.info.name})
+            for item in library_checks.check_library(
+                _read_script(path), str(path), known_dependencies=known
+            )
+        )
+    return findings
 
 
 def _read_script(path: Path) -> str:

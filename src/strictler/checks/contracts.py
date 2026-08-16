@@ -32,6 +32,7 @@
 | 배선 타입 대조·registry 병합·도달가능성 | 파이프라인 + 참조하는 전 노드/스크립트의 **조합**에 의존한다 |
 | 경로 전개·`check_config_values`·`check_tool_calls` | `${env.X}` 와 Spec `config` 는 **실행할 때마다 달라진다** (R5-1 이 정확히 이 계열이었다) |
 | 미등록(경로 참조) 파일 | 저장된 해시가 없다 = 재사용할 검증 결과가 없다 |
+| **배선된 라이브러리의 검사 결과** | 라이브러리는 **다른 파일**이다. 키(`this` 파일 해시)에 안 들어가므로 캐시했다면 라이브러리를 고쳐도 옛 결과가 산다 |
 | 노드 JSON 형식 검사 | 파일 바이트만으로 정해지긴 하지만 **재사용해도 남는 게 없다** — pydantic 재검증이 곧 그 검사라 캐시를 읽어 되살리는 값이 같은 일을 한다 |
 
 **틀린 캐시는 없는 캐시보다 훨씬 나쁘다** — lint 도구가 검사하지 않은 것을
@@ -44,6 +45,16 @@
 그 사실 자체는 `STR-REG-001` 이 따로 잡는다. **캐시가 그걸 가리지 않는다.**
 
 포맷에는 버전을 박는다. strictler 를 올려 추출 방식이 바뀌면 옛 캐시는 무효다.
+
+### ★ 라이브러리가 붙어도 키는 그대로다 — **그래도 되는 이유가 있다**
+
+계약에 `library_slots` 가 생겼지만 그것은 **이 스크립트 자신의 바이트에서** 뽑은
+이름 목록이다(`from strictler_lib import X`). **라이브러리의 *내용*은 계약에 한 톨도
+들어오지 않는다** — 배선 값은 노드 JSON 에 있고, 그 검사는 캐시하지 않는다.
+
+→ 라이브러리를 고쳐도 스크립트 계약은 정말로 그대로다. 반대로 **라이브러리를 고쳤을 때
+무효화돼야 하는 것**(그것을 쓰는 노드·파이프라인·Spec 의 *검증*)은 캐시가 아니라
+등록소의 전이적 재검증(`store.graph.RefGraph.revalidate`)이 맡는다. 자리가 다르다.
 """
 
 from __future__ import annotations
@@ -64,9 +75,12 @@ from strictler.typesys.registry import DataclassSpec, FieldSpec
 __all__ = ["CACHE_VERSION", "ScriptCache", "ContractPayload"]
 
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 """캐시 포맷 버전. **추출 방식이나 `ScriptContract` 의 모양이 바뀌면 올린다** —
-버전이 다르면 캐시는 없는 것으로 친다. 옛 결과를 새 검사에 쓰면 조용히 틀린다."""
+버전이 다르면 캐시는 없는 것으로 친다. 옛 결과를 새 검사에 쓰면 조용히 틀린다.
+
+`2` — `library_slots` 가 계약에 붙었다 (`schema.md` 6.5절). 버전을 안 올렸다면 옛
+캐시가 **슬롯이 하나도 없는 계약**으로 되살아나 `STR-LIB-001` 이 영영 안 걸린다."""
 
 
 # ── 직렬화 ───────────────────────────────────────────────────────────────────
@@ -119,6 +133,7 @@ class ContractPayload(BaseModel):
     state_names: list[str]
     output_type: str
     tool_calls: list[tuple[str, str]]
+    library_slots: list[str]
     has_args: bool
     args_fields: list[str]
     has_entrypoint: bool
@@ -148,6 +163,7 @@ class ContractPayload(BaseModel):
             state_names=list(contract.state_names),
             output_type=contract.output_type,
             tool_calls=[(name, arg) for name, arg in contract.tool_calls],
+            library_slots=list(contract.library_slots),
             has_args=contract._has_args,
             args_fields=list(contract._args_fields),
             has_entrypoint=contract._has_entrypoint,
@@ -175,6 +191,7 @@ class ContractPayload(BaseModel):
         contract.state_names = tuple(self.state_names)
         contract.output_type = self.output_type
         contract.tool_calls = [(name, arg) for name, arg in self.tool_calls]
+        contract.library_slots = tuple(self.library_slots)
         contract._has_args = self.has_args
         contract._args_fields = tuple(self.args_fields)
         contract._has_entrypoint = self.has_entrypoint

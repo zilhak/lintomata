@@ -762,3 +762,64 @@ def test_findings_carry_location_and_guide() -> None:
         assert finding.status == "error"
         assert finding.path == PATH
         assert rules.get_rule(finding.rule_id).guide.split("{")[0][:12] in finding.message
+
+
+# ── 라이브러리 슬롯 — 능력 선언 (`schema.md` 6.5절) ──────────────────────────
+
+
+LIBRARY_USER = """
+from dataclasses import dataclass
+
+from strictler_lib import buttons, menus
+
+@dataclass
+class Percept:
+    count: int
+
+@dataclass
+class Args:
+    input: Percept
+
+def runNode(args: Args) -> Percept:
+    return returnResult(Percept(count=buttons.count(menus.of(args.input))))
+"""
+
+
+def test_슬롯은_from_import_한_이름이다() -> None:
+    contract, _ = sc.extract_contract(LIBRARY_USER, PATH)
+    assert contract.library_slots == ("buttons", "menus")
+
+
+def test_라이브러리를_안_쓰면_슬롯이_비어_있다() -> None:
+    contract, _ = sc.extract_contract(GOOD, PATH)
+    assert contract.library_slots == ()
+
+
+def test_별칭은_가져오는_이름이_슬롯이다() -> None:
+    """슬롯은 배선의 이름이고 지역 별칭은 그것과 무관하다."""
+    source = "from strictler_lib import buttons as b\n"
+    contract, _ = sc.extract_contract(source, PATH)
+    assert contract.library_slots == ("buttons",)
+    assert sc.check_library_imports(source, PATH) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import strictler_lib\n",
+        "from strictler_lib.buttons import find\n",
+        "from strictler_lib import *\n",
+        "def runNode(args):\n    from strictler_lib import buttons\n",
+    ],
+    ids=["모듈-import", "서브모듈", "별표", "함수-안"],
+)
+def test_슬롯을_못_뽑는_형태는_STR_LIB_005(source: str) -> None:
+    """정적으로 슬롯을 못 뽑으면 배선 검사가 무의미해진다."""
+    findings = sc.check_library_imports(source, PATH)
+    assert [item.rule_id for item in findings] == ["STR-LIB-005"]
+    contract, _ = sc.extract_contract(source, PATH)
+    assert contract.library_slots == ()
+
+
+def test_올바른_형태는_아무_결과도_내지_않는다() -> None:
+    assert sc.check_library_imports(LIBRARY_USER, PATH) == []

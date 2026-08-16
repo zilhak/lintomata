@@ -220,6 +220,9 @@ class _Prepared:
     def __init__(self) -> None:
         self.nodes: dict[str, PipelineNode] = {}
         self.scripts: dict[str, dict[str, tuple[Path, ScriptContract]]] = {}
+        self.libraries: dict[str, dict[str, Path]] = {}
+        """`{노드 id: {슬롯: 파일}}` — **target 별로 갈리지 않는다.** 배선은 노드에
+        있고 노드는 한 벌이다 (`schema.md` 6.5절)."""
         self.registry: TypeRegistry | None = None
 
 
@@ -255,6 +258,13 @@ def _prepare(
         )
         if node is None:
             continue
+        # 라이브러리 배선은 **노드에** 있다 — target 마다 다시 풀면 같은 오류가
+        # target 수만큼 쌓인다 (R4-6). 여기서 한 번만 푼다.
+        libraries, library_findings = drive_loop.resolve_libraries(
+            node, store=store, env=env, path=path, node_id=pn.id
+        )
+        findings.extend(library_findings)
+        prepared.libraries[pn.id] = libraries
         for target in targets:
             resolved, gathered = _resolve_one(
                 node,
@@ -405,6 +415,7 @@ def _walk(
             targets,
             target_configs,
             scripts=prepared.scripts[pn.id],
+            libraries=prepared.libraries.get(pn.id, {}),
             registry=prepared.registry,
             result=result,
             machine=machine,
@@ -518,6 +529,7 @@ def _run_targets(
     target_configs: Mapping[str, dict[str, Any]],
     *,
     scripts: Mapping[str, tuple[Path, ScriptContract]],
+    libraries: Mapping[str, Path],
     registry: TypeRegistry,
     result: RunResult,
     machine: StateMachine,
@@ -558,7 +570,7 @@ def _run_targets(
             continue
 
         try:
-            module = node_exec.load_script(script_path)
+            module = node_exec.load_script(script_path, libraries)
             args = node_exec.build_args(
                 module, contract, input_value=input_value, params=params, state=state
             )

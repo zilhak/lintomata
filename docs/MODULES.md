@@ -45,6 +45,46 @@
 > 않는다. 라이브러리처럼 **공유되는 것**에서 특히 아프다.
 > → `list --json` 은 배열이 아니라 `{home, kind, entries}` 다 (**형태 변경**).
 > → 라이브러리는 **아무도 안 쓰면** 목록에 표시된다 (`schema.md` 6.5절: 강제하지 않고 보이게 한다).
+>
+> ### R7-4. 배선은 선언/사용 분리 그대로 — 새 개념이 늘지 않는다
+> | | 어디 | 무엇 |
+> |---|---|---|
+> | `from strictler_lib import buttons` | **스크립트** | 능력 선언 — `ScriptContract.library_slots` 로 뽑는다 |
+> | `"libraries": { "buttons": … }` | **노드 JSON** | 사용 선언 — `Node.libraries` |
+>
+> **허용 형태는 모듈 최상단의 `from strictler_lib import <이름>` 하나뿐이다**(`STR-LIB-005`).
+> 정적으로 슬롯을 못 뽑으면 배선 검사가 무의미해지고, **함수 안의 import 는 주입 창을 놓친다**
+> (아래 R7-5). `LIBRARY_NAMESPACE` 의 **정본은 `model`** — 이름이 갈리면 *선언한 슬롯*과
+> *주입되는 이름*이 어긋나 조용히 `ImportError` 가 난다.
+>
+> ```python
+> # checks/library.py
+> def check_wiring(node: Node, contract: ScriptContract, *, path: str) -> list[Finding]   # LIB-001/002
+> def resolve_libraries(node: Node, *, store: Store,
+>                       env: Mapping[str,str]) -> tuple[dict[str, Path], list[Finding]]
+> # checks/node.py
+> def check_libraries(node, contract, source_path: str, *, store, env) -> list[Finding]
+> # engine/drive.py — 실행 시점(해시 대조 포함). **값 검증·비교·단위테스트 셋이 이걸 쓴다**
+> def resolve_libraries(node: Node, *, store, env, path: str,
+>                       node_id: str) -> tuple[dict[str, Path], list[Finding]]
+> # engine/exec.py · testing/harness.py
+> def load_script(path: Path, libraries: Mapping[str, Path] | None = None) -> ModuleType
+> def run_case(node, contract, script_path, case, *, env, libraries=None)
+> ```
+>
+> ### R7-5. 주입은 **로드하는 동안만** — 끝나면 걷는다 ★
+> `sys.modules` 는 프로세스 전역이다. `strictler_lib` 를 남겨두면 **다음 노드가 앞 노드의
+> 배선을 본다** — 조용히 틀린 판정 로직으로 리포트가 나가는 종류의 사고다.
+> → `engine/exec._installed_libraries` 가 로드 직전에 심고 `finally` 에서 되돌린다.
+> **`sys.path` 는 건드리지 않는다** — 형제 파일 import 를 되게 만드는 것이 아니라,
+> 배선된 것만 그 네임스페이스로 들어오게 하는 것이다.
+>
+> ### R7-6. 계약 캐시는 키를 그대로 두되 **버전을 올린다** (`CACHE_VERSION` 1 → 2)
+> `library_slots` 는 **스크립트 자신의 바이트에서** 뽑은 것이라 키(경로 + 그 파일 해시)는
+> 여전히 옳다 — 라이브러리의 *내용*은 계약에 들어오지 않는다. 그러나 **payload 모양이
+> 바뀌었으므로** 버전을 안 올리면 옛 캐시가 *슬롯이 하나도 없는 계약*으로 되살아나
+> `STR-LIB-001` 이 영영 안 걸린다. 라이브러리를 고쳤을 때 무효화돼야 하는 것(상위의 검증)은
+> 캐시가 아니라 **등록소의 전이적 재검증**이 맡는다. 자리가 다르다.
 
 > ## ⚠️ 계약 개정 R6 (2026-08-16, conductor) — **R5~R1 보다 우선한다. 최종 라운드**
 >

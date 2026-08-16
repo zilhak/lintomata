@@ -281,3 +281,67 @@ def test_선언이_없으면_볼_것이_없다(tmp_path: Path) -> None:
     registry = registry_for(contract)
 
     assert node_exec.validate_input(contract, None, registry, path="p", node="v") == []
+
+
+# ── 라이브러리 주입 (`schema.md` 6.5절) ──────────────────────────────────────
+
+
+LIBRARY = """
+    def measure(text):
+        return len(text)
+"""
+
+USES_LIBRARY = """
+    from strictler_lib import shared
+
+    LENGTH = shared.measure("abcd")
+
+    def runNode(args):
+        return returnResult(shared.measure("xy"))
+"""
+
+
+def test_배선된_라이브러리는_로드_시점에_이미_있다(tmp_path: Path) -> None:
+    """`from strictler_lib import shared` 는 **모듈 최상단**에서 풀린다 —
+    주입이 `exec_module` 보다 늦으면 그 자리에서 `ImportError` 다."""
+    library = script(tmp_path, "shared", LIBRARY)
+    module = node_exec.load_script(
+        script(tmp_path, "user", USES_LIBRARY), {"shared": library}
+    )
+    assert module.LENGTH == 4
+    assert node_exec.invoke(module, None) == 2
+
+
+def test_배선이_없으면_그냥_ImportError_다(tmp_path: Path) -> None:
+    """**틀린 값보다 오류가 낫다.** 안내는 배선을 넣으라고 말한다."""
+    with pytest.raises(StrictlerError) as caught:
+        node_exec.load_script(script(tmp_path, "user", USES_LIBRARY))
+    assert "libraries" in caught.value.message
+
+
+def test_로드가_끝나면_네임스페이스를_걷는다(tmp_path: Path) -> None:
+    """`sys.modules` 는 프로세스 전역이다 — 남겨두면 **다음 노드가 남의 배선을 본다.**"""
+    import sys
+
+    library = script(tmp_path, "shared", LIBRARY)
+    node_exec.load_script(script(tmp_path, "user", USES_LIBRARY), {"shared": library})
+
+    assert "strictler_lib" not in sys.modules
+    assert "strictler_lib.shared" not in sys.modules
+
+
+def test_라이브러리_모듈은_경로로_구분된다(tmp_path: Path) -> None:
+    """같은 파일명이라도 다른 경로면 다른 모듈이다 — 스크립트와 같은 규칙."""
+    one = script(tmp_path / "a", "shared", LIBRARY)
+    two = script(tmp_path / "b", "shared", "def measure(text):\n    return 0\n")
+
+    first = node_exec.load_script(script(tmp_path, "u1", USES_LIBRARY), {"shared": one})
+    second = node_exec.load_script(script(tmp_path, "u2", USES_LIBRARY), {"shared": two})
+    assert (first.LENGTH, second.LENGTH) == (4, 0)
+
+
+def test_라이브러리_로드_중_예외는_오류다(tmp_path: Path) -> None:
+    boom = script(tmp_path, "boom", "raise RuntimeError('여기서 터진다')\n")
+    with pytest.raises(StrictlerError) as caught:
+        node_exec.load_script(script(tmp_path, "user", USES_LIBRARY), {"shared": boom})
+    assert "라이브러리" in caught.value.message

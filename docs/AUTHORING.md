@@ -338,7 +338,51 @@ from button_lib import is_button      # ✕ ModuleNotFoundError — 파일이 �
 
 **② 노드 재사용으로 안 풀리는 경우가 있다.** 예를 들어 **값 검증용 Perceive** 와
 **동일성 비교용 Perceive** 는 출력이 달라 별개 노드여야 하는데(`schema.md` 12절),
-*"무엇이 버튼인가"* 를 판정하는 로직은 같다. 그때는 **작은 패키지로 만들어 설치한다.**
+*"무엇이 버튼인가"* 를 판정하는 로직은 같다. **그때가 라이브러리다.**
+
+```bash
+strictler library add /abs/libraries/buttons.py       # ① 본체를 등록한다 → lb_9f8e7d6c
+```
+
+```jsonc
+// ② 노드가 슬롯에 무엇을 쓸지 정한다 — **사용 선언**
+{ "type": "perceive", "script": "${ref.sc_a1b2c3d4}",
+  "libraries": { "buttons": "${ref.lb_9f8e7d6c}" } }
+```
+
+```python
+# ③ 스크립트는 필요하다고 선언만 한다 — **능력 선언**
+from strictler_lib import buttons
+
+found = buttons.collect(args.input.html, buttons.is_button)
+```
+
+**허용되는 import 형태는 이것 하나뿐이다.** `import strictler_lib` 도,
+`from strictler_lib.x import y` 도, 함수 안에서의 import 도 `STR-LIB-005` 다 —
+슬롯을 정적으로 못 뽑으면 배선 검사가 무의미해지기 때문이다.
+
+| 이런 실수 | 규칙 |
+|---|---|
+| 스크립트는 요구하는데 노드가 배선 안 함 | `STR-LIB-001` — 노드에 넣는다 |
+| 노드는 배선했는데 스크립트가 안 씀 | `STR-LIB-002` — 배선을 뺀다 |
+| 라이브러리가 다른 라이브러리를 import | `STR-LIB-003` — **한 층만** |
+| 라이브러리가 `dataclass` 를 선언 | `STR-LIB-004` — 스크립트로 옮긴다 (v1 제한) |
+| `${ref.sc_...}` 를 `libraries` 에 배선 | `STR-REG-003` — 접두를 맞춘다 |
+
+**배선은 `${ref.lb_...}` 말고 절대경로로도 된다** (`${env.X}` 포함). id 는 등록소마다
+다르게 발급되므로 **커밋할 것은 경로로 쓴다** (`schema.md` 2절).
+
+**라이브러리에도 금지 패턴이 그대로 걸린다** — 시간·랜덤·subprocess. 안 그러면
+거기서 `import time` 을 해 금지가 통째로 우회된다. 라이브러리는 **함수만** 제공하고,
+`dataclass` 는 v1 에서 막혀 있다(타입 레지스트리는 스크립트 파일 하나만 파싱한다).
+
+**본체를 고치면 그것을 쓰는 노드·파이프라인·Spec 의 검증이 전이적으로 다시 돈다.**
+*"본체가 한 곳에 있다"* 가 실제로 의미를 갖는 이유가 이것이다. `library show <id>` 가
+그것을 쓰는 노드 전부를 보여주고, `library list` 는 **아무도 안 쓰는 것**을 표시한다.
+
+**③ 범용 서드파티라면 작은 패키지로 만들어 설치한다.** 프로젝트 고유의 판정 로직은
+라이브러리로, 범용은 패키지로 — 패키지는 **검증 경계 바깥**이라 해시도 금지 패턴 검사도
+받지 않는다는 것이 차이다.
 
 ```
 uv tool install strictler --with /path/to/myproject-perceive-lib --with 'selectolax>=0.3'
@@ -643,9 +687,12 @@ EXIT=1
 | Reckon 인데 판정 필드가 없다 (`ok` 로 지음) | `node add invalid/bad_reckon_no_verdict.json` | `STR-CONTRACT-007` | 출력 dataclass 에 `passed: bool` 을 둔다 |
 | 한 노드에 서로 다른 앞단 둘을 배선 | `pipeline add invalid/pipeline_ambiguous.json` | `STR-GRAPH-003` | `Args.input` 은 필드 하나다. 앞단을 하나로 줄이거나 둘을 합치는 노드를 사이에 둔다 |
 | `when` 이 기다리는 상태로 가는 전이가 없다 | `pipeline add invalid/pipeline_dead_state.json` | `STR-STATE-006` | `transitions` 를 추가하거나 `when` 을 지운다. 전이를 적는 자리는 **파이프라인 어휘** 쪽이다 |
+| 라이브러리에서 시간을 읽는다 | `library add invalid/lib_banned.py` | `STR-BAN-001` | 금지는 스크립트와 **똑같이** 걸린다 — 여기가 뚫리면 금지가 통째로 우회된다 |
+| 라이브러리가 `dataclass` 를 선언한다 | `library add invalid/lib_dataclass.py` | `STR-LIB-004` | 계약 타입은 스크립트에 둔다 (v1 제한) |
+| 스크립트가 요구한 슬롯을 노드가 배선 안 함 | `node add invalid/bad_unwired.json` | `STR-LIB-001` | 노드 JSON 에 `libraries` 배선을 넣는다 |
 | Reckon 이 기댓값을 안 쓰고 하드코딩 | `node test invalid/bad_reckon_hardcoded.test.json` | `STR-TEST-007` | `args.params` 의 기댓값을 실제로 읽는다. **정적으로는 못 잡혀 단위테스트에서 잡힌다** |
 
-앞의 여섯은 **등록이 실패한다** — 등록소에 들어가지 않으므로 잘못된 것이 재사용될 일이 없다:
+마지막 하나를 뺀 나머지는 **등록이 실패한다** — 등록소에 들어가지 않으므로 잘못된 것이 재사용될 일이 없다:
 
 ```
 $ uv run strictler pipeline add $STRICTLER_EXAMPLE_ROOT/invalid/pipeline_ambiguous.json

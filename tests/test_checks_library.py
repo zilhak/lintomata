@@ -8,12 +8,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from textwrap import dedent
 
 import pytest
 
 from strictler.checks import library as lib
 from strictler.errors import StrictlerError
+from strictler.model import Node
+from strictler.store.entries import Store
 
 PATH = "/abs/libraries/buttons.py"
 
@@ -144,3 +147,97 @@ def test_PEP723_헤더도_스크립트와_같이_본다() -> None:
             return 1
     """
     assert check(body) == ["STR-DEP-001"]
+
+
+# ── 배선 — 선언(스크립트) / 사용(노드) 대조 ─────────────────────────────────
+
+
+
+def node_of(script: str, libraries: dict[str, str]) -> Node:
+    return Node.model_validate(
+        {
+            "info": {"name": "detect", "description": "설명"},
+            "type": "perceive",
+            "script": script,
+            "libraries": libraries,
+        }
+    )
+
+
+class FakeContract:
+    def __init__(self, slots: tuple[str, ...]) -> None:
+        self.library_slots = slots
+
+
+def wiring(slots: tuple[str, ...], libraries: dict[str, str]) -> list[str]:
+    findings = lib.check_wiring(
+        node_of("/abs/s.py", libraries), FakeContract(slots), path="n.json"  # type: ignore[arg-type]
+    )
+    return [item.rule_id for item in findings]
+
+
+def test_슬롯과_배선이_맞으면_통과다() -> None:
+    assert wiring(("buttons",), {"buttons": "/abs/b.py"}) == []
+
+
+def test_배선이_빠지면_STR_LIB_001() -> None:
+    assert wiring(("buttons", "menus"), {"buttons": "/abs/b.py"}) == ["STR-LIB-001"]
+
+
+def test_안_쓰는_배선은_STR_LIB_002() -> None:
+    assert wiring((), {"buttons": "/abs/b.py"}) == ["STR-LIB-002"]
+
+
+def test_빠진_것과_남는_것은_따로_보고된다() -> None:
+    """고치는 법이 다르다 — 하나는 넣고 하나는 뺀다."""
+    assert wiring(("menus",), {"buttons": "/abs/b.py"}) == ["STR-LIB-001", "STR-LIB-002"]
+
+
+def test_resolve_는_절대경로를_그대로_푼다(tmp_path: Path) -> None:
+    library = tmp_path / "buttons.py"
+    library.write_text("def go():\n    return 1\n", encoding="utf-8")
+
+    resolved, findings = lib.resolve_libraries(
+        node_of("/abs/s.py", {"buttons": str(library)}),
+        store=Store(tmp_path / "home"),
+        env={},
+    )
+    assert findings == []
+    assert resolved == {"buttons": library}
+
+
+def test_resolve_는_없는_파일을_STR_REF_001_로_짚는다(tmp_path: Path) -> None:
+    _, findings = lib.resolve_libraries(
+        node_of("/abs/s.py", {"buttons": str(tmp_path / "없다.py")}),
+        store=Store(tmp_path / "home"),
+        env={},
+    )
+    assert [item.rule_id for item in findings] == ["STR-REF-001"]
+
+
+def test_resolve_는_라이브러리가_아닌_참조를_STR_REG_003_으로_짚는다(tmp_path: Path) -> None:
+    """**새 규칙을 파지 않았다** — 자리와 접두가 안 맞는 것은 이미 그 규칙의 자리다."""
+    _, findings = lib.resolve_libraries(
+        node_of("/abs/s.py", {"buttons": "${ref.sc_12345678}"}),
+        store=Store(tmp_path / "home"),
+        env={},
+    )
+    assert [item.rule_id for item in findings] == ["STR-REG-003"]
+
+
+def test_resolve_는_없는_id_를_STR_REG_002_로_짚는다(tmp_path: Path) -> None:
+    _, findings = lib.resolve_libraries(
+        node_of("/abs/s.py", {"buttons": "${ref.lb_12345678}"}),
+        store=Store(tmp_path / "home"),
+        env={},
+    )
+    assert [item.rule_id for item in findings] == ["STR-REG-002"]
+
+
+def test_resolve_는_상대경로를_STR_PATH_001_로_짚는다(tmp_path: Path) -> None:
+    _, findings = lib.resolve_libraries(
+        node_of("/abs/s.py", {"buttons": "./buttons.py"}),
+        store=Store(tmp_path / "home"),
+        env={},
+    )
+    assert [item.rule_id for item in findings] == ["STR-PATH-001"]

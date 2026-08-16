@@ -45,10 +45,10 @@ from strictler.checks.node import findings_of
 from strictler.engine.result import NodeOutcome, RunResult
 from strictler.engine.state import StateMachine
 from strictler.errors import Finding, NotRunCause, StrictlerError
-from strictler.model import Pipeline, PipelineNode
+from strictler.model import Node, Pipeline, PipelineNode
 from strictler.store.entries import Store
 
-__all__ = ["resolve_entry", "verify_hash", "drive", "finalize"]
+__all__ = ["resolve_entry", "verify_hash", "resolve_libraries", "drive", "finalize"]
 
 
 # ── 등록소 무결성 — 실행 시점 규칙 ───────────────────────────────────────────
@@ -128,6 +128,32 @@ def verify_hash(
     if store.verify_hash(entry_id):
         return []
     return [rules.finding("STR-REG-001", path=path, node=node_id, fields={"id": entry_id})]
+
+
+def resolve_libraries(
+    node: Node, *, store: Store, env: Mapping[str, str], path: str, node_id: str
+) -> tuple[dict[str, Path], list[Finding]]:
+    """노드가 배선한 라이브러리를 **실행 시점 규칙까지 얹어** 푼다 (`schema.md` 6.5절).
+
+    푸는 규칙 자체는 등록 검사와 **같은 함수**(`checks.library.resolve_libraries`)를
+    쓰고, 여기서 더하는 것은 **해시 대조**(`STR-REG-001`) 하나다 — 등록소 파일을
+    정적 검사 루트를 피해 고친 것을 실행 직전에 잡는 자리다.
+
+    ★ **값 검증·비교·단위테스트 셋이 전부 이 함수를 쓴다.** 셋이 각자 풀면 갈리고,
+    갈린 쪽만 무단 수정된 라이브러리를 그냥 돌린다 (R4-1 이 겪은 사고가 그것이다).
+    """
+    from strictler.checks import library as library_checks
+
+    resolved, raw = library_checks.resolve_libraries(node, store=store, env=env)
+    findings = [
+        item.model_copy(
+            update={"path": item.path or path, "node": item.node or node_id}
+        )
+        for item in raw
+    ]
+    for value in node.libraries.values():
+        findings.extend(verify_hash(value, store=store, path=path, node_id=node_id))
+    return resolved, findings
 
 
 def _entry_id(value: str) -> str:
