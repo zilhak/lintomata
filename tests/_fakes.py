@@ -118,6 +118,8 @@ class ScriptStub:
             path: str,
             node_type: Any = None,
             known_dependencies: Any = (),
+            *,
+            cache: Any = None,
         ) -> list[Any]:
             self.seen_types.append((path, node_type))
             self.seen_known.append((path, list(known_dependencies)))

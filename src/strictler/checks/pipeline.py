@@ -53,6 +53,7 @@ from pydantic import ValidationError
 from strictler import refs, rules
 from strictler.checks import node as node_checks
 from strictler.checks import reachability, script as script_checks
+from strictler.checks.contracts import ScriptCache
 from strictler.checks.node import dedupe, findings_of, shape_findings
 from strictler.checks.script import ScriptContract
 from strictler.errors import Finding, StrictlerError
@@ -943,6 +944,7 @@ def recheck_resolved(
     store: Store,
     env: Mapping[str, str],
     source_path: str,
+    cache: ScriptCache | None = None,
 ) -> list[Finding]:
     """**config 가 풀린 뒤** 다시 도는 검사 — `schema.md` 13절의 세 번째 시점.
 
@@ -961,7 +963,13 @@ def recheck_resolved(
     `config` 는 **`check_config_values` 가 default 를 이미 주입한 것**이어야 한다.
     비교 파이프라인이면 `targets.<이름>` 오버레이도 그대로 들어 있어야 한다 —
     그게 target 별로 스크립트를 가르는 자리다.
+
+    `cache` 는 **같은 실행 안에서 같은 스크립트를 두 번 파싱하지 않기 위한 것**이다
+    (`checks.contracts`). 안 주면 이 호출 동안만 사는 것을 하나 만든다 — 이 함수
+    안에서만도 `check_script` 와 계약 추출이 같은 파일을 두 번 읽기 때문이다.
+    **검사는 어느 쪽이든 전부 돈다.**
     """
+    cache = cache if cache is not None else ScriptCache()
     findings: list[Finding] = []
     loaded: dict[str, Node] = {}
     node_types: dict[str, NodeType] = {}
@@ -989,6 +997,7 @@ def recheck_resolved(
                 store=store,
                 env=env,
                 source_path=source_path,
+                cache=cache,
             )
             findings.extend(gathered)
             if contract is not None:
@@ -1019,6 +1028,7 @@ def _resolved_contract(
     store: Store,
     env: Mapping[str, str],
     source_path: str,
+    cache: ScriptCache,
 ) -> tuple[ScriptContract | None, list[Finding]]:
     """이 target 에서 실제로 도는 스크립트를 풀어 검사하고 계약을 뽑는다."""
     path, raw_findings = node_checks.resolve_script(
@@ -1067,10 +1077,14 @@ def _resolved_contract(
     findings.extend(
         item.model_copy(update={"node": item.node or node_id})
         for item in script_checks.check_script(
-            source, str(path), node.type, known_dependencies=store.declared_dependencies()
+            source,
+            str(path),
+            node.type,
+            known_dependencies=store.declared_dependencies(),
+            cache=cache,
         )
     )
-    contract, extracted = script_checks.extract_contract(source, str(path))
+    contract, extracted = cache.contract(source, str(path))
     findings.extend(
         item.model_copy(update={"node": item.node or node_id}) for item in extracted
     )

@@ -43,6 +43,7 @@ from strictler import refs, rules
 from strictler.checks import node as node_checks
 from strictler.checks import pipeline as pipeline_checks
 from strictler.checks import script as script_checks
+from strictler.checks.contracts import ScriptCache
 from strictler.checks.node import dedupe, findings_of
 from strictler.checks.script import ScriptContract
 from strictler.engine import drive as drive_loop
@@ -105,6 +106,10 @@ def run_spec(
 
     `spec_name` 은 리포트 `path` 의 첫 조각(`"login.json"`)이다. 등록소 항목 이름이든
     파일 이름이든 **부르는 쪽이 정한다** — Spec 문서 자체에는 자기 이름이 없다.
+
+    계약 캐시(`checks.contracts.ScriptCache`)는 **Spec 하나가 도는 동안** 산다.
+    `plan` 항목들이 같은 파이프라인·노드를 쓰는 것이 흔하기 때문이다. 키가
+    내용 해시라 도중에 파일이 바뀌면 그냥 빗나간다.
     """
     tool_findings = _check_tool_paths(spec, env, spec_name)
     if tool_findings:
@@ -112,6 +117,7 @@ def run_spec(
         # 통째로 무의미해지므로 그 지점에서 진행하지 않는다.
         return build_report(tool_findings)
 
+    cache = ScriptCache()
     findings: list[Finding] = []
     for index in range(len(spec.plan)):
         try:
@@ -123,6 +129,7 @@ def run_spec(
                     env=env,
                     started_at_ms=started_at_ms,
                     spec_name=spec_name,
+                    cache=cache,
                 )
             )
         except StrictlerError as exc:
@@ -168,6 +175,7 @@ def run_plan_item(
     env: Mapping[str, str],
     started_at_ms: int,
     spec_name: str = "",
+    cache: ScriptCache | None = None,
 ) -> list[Finding]:
     """`plan` 항목 하나를 실행한다. `kind` 를 보고 값 검증/비교로 갈린다.
 
@@ -175,7 +183,11 @@ def run_plan_item(
 
     **`kind: compare` 분기는 여기서 지역 import 로 한다** — top-level 로 올리면
     `runtime` ↔ `compare` 순환이 된다.
+
+    `cache` 를 안 주면 이 항목 동안만 사는 것을 만든다 — **두 파이프라인 종류가
+    같은 것을 쓴다** (R4-1: 한쪽만 다르게 두면 실제로 갈린다).
     """
+    cache = cache if cache is not None else ScriptCache()
     item = spec.plan[index]
     where = _plan_path(spec_name, index, "")
 
@@ -214,6 +226,7 @@ def run_plan_item(
                 env=env,
                 started_at_ms=started_at_ms,
                 path=path,
+                cache=cache,
             )
         )
         return findings
@@ -226,6 +239,7 @@ def run_plan_item(
         started_at_ms=started_at_ms,
         path=path,
         tool=spec.tool,
+        cache=cache,
     )
     findings.extend(result.findings)
     return findings
@@ -240,6 +254,7 @@ def _run_compare(
     env: Mapping[str, str],
     started_at_ms: int,
     path: str,
+    cache: ScriptCache | None = None,
 ) -> list[Finding]:
     """비교 파이프라인 디스패치 (`schema.md` 12절).
 
@@ -258,8 +273,9 @@ def _run_compare(
     except StrictlerError as exc:
         return findings_of(exc, path=path)
 
+    cache = cache if cache is not None else ScriptCache()
     findings = pipeline_checks.recheck_resolved(
-        pipeline, config, store=store, env=env, source_path=path
+        pipeline, config, store=store, env=env, source_path=path, cache=cache
     )
     if any(finding.status == "error" for finding in findings):
         return findings
@@ -268,7 +284,13 @@ def _run_compare(
     from strictler.engine.compare import run_compare_pipeline
 
     result, compare_report = run_compare_pipeline(
-        pipeline, config, store=store, env=env, started_at_ms=started_at_ms, path=path
+        pipeline,
+        config,
+        store=store,
+        env=env,
+        started_at_ms=started_at_ms,
+        path=path,
+        cache=cache,
     )
     write_compare_report(compare_report, out)
     findings.extend(result.findings)
@@ -296,6 +318,7 @@ def run_pipeline(
     started_at_ms: int,
     path: str,
     tool: Mapping[str, Any] | None = None,
+    cache: ScriptCache | None = None,
 ) -> RunResult:
     """값 검증 파이프라인 한 벌을 구동한다.
 
@@ -307,19 +330,24 @@ def run_pipeline(
 
     `tool` 은 Spec 의 `tool` 선언이다 — `STR-TOOL-001`/`-002` 는 **실행 시점** 규칙이라
     파이프라인만으로는 판정할 수 없다.
+
+    `cache` 는 재검(①)과 로드(②)가 **같은 파일을 두 번 파싱하지 않게** 한다.
     """
+    cache = cache if cache is not None else ScriptCache()
     result = RunResult()
 
     # ① config 가 풀린 뒤의 재검 (MODULES.md R3-4). 비교 파이프라인의 target 별
     #    스크립트는 등록 시점에 검사 자체가 불가능하므로 여기가 유일한 자리다.
     result.findings.extend(
         pipeline_checks.recheck_resolved(
-            pipeline, config, store=store, env=env, source_path=path
+            pipeline, config, store=store, env=env, source_path=path, cache=cache
         )
     )
 
     # ② 노드·스크립트 로드 + 등록소 무결성(해시 대조).
-    loaded, load_findings = _load_nodes(pipeline, config, store=store, env=env, path=path)
+    loaded, load_findings = _load_nodes(
+        pipeline, config, store=store, env=env, path=path, cache=cache
+    )
     result.findings.extend(load_findings)
 
     # ③ `tool` 대조 — 실행 시점 규칙.
@@ -547,6 +575,7 @@ def _load_nodes(
     store: Store,
     env: Mapping[str, str],
     path: str,
+    cache: ScriptCache | None = None,
 ) -> tuple[dict[str, _NodeRun], list[Finding]]:
     """파이프라인의 노드들을 실제 파일까지 풀어 구동 재료를 만든다.
 
@@ -554,6 +583,7 @@ def _load_nodes(
     정적 검사 루트를 피해 등록소 파일을 직접 고친 경우가 그것이다.
     계약·금지 검사는 `recheck_resolved` 가 이미 했으므로 여기서 다시 하지 않는다.
     """
+    cache = cache if cache is not None else ScriptCache()
     loaded: dict[str, _NodeRun] = {}
     findings: list[Finding] = []
 
@@ -597,7 +627,7 @@ def _load_nodes(
             continue
 
         try:
-            contract, extracted = script_checks.extract_contract(source, str(script_path))
+            contract, extracted = cache.contract(source, str(script_path))
         except StrictlerError as exc:
             findings.extend(findings_of(exc, path=path, node=pn.id))
             continue

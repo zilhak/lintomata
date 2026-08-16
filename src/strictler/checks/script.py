@@ -40,13 +40,16 @@ CLAUDE.md 의 3구분(위반 / not run / 오류) 중 세 번째다.
 from __future__ import annotations
 
 import ast
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 from strictler import deps, rules
 from strictler.errors import Finding, StrictlerError
 from strictler.model import ENGINE_STATE_FIELDS, NodeType
 from strictler.typesys.primitives import TypeRef, check_allowed, parse_type
 from strictler.typesys.registry import DataclassSpec, FieldSpec
+
+if TYPE_CHECKING:  # `checks.contracts` 가 이 모듈을 import 한다 — 순환을 만들지 않는다.
+    from strictler.checks.contracts import ScriptCache
 
 __all__ = [
     "ScriptContract",
@@ -203,6 +206,8 @@ def check_script(
     path: str,
     node_type: NodeType | None = None,
     known_dependencies: Iterable[str] = (),
+    *,
+    cache: ScriptCache | None = None,
 ) -> list[Finding]:
     """스크립트 하나의 전체 정적 검사. 아래 검사들을 전부 돌려 합친다.
 
@@ -219,9 +224,15 @@ def check_script(
     AI 가 **다른 스크립트의 의존성을 지운다.** 판정에는 관여하지 않으므로 비어 있어도
     결과는 같다.
 
+    `cache` 를 주면 계약 추출(`extract_contract`)만 그쪽에서 가져온다 —
+    **검사는 그대로 전부 돈다.** 같은 실행 안에서 같은 파일을 두 번 파싱하지
+    않으려는 것뿐이고, 판정에는 아무 영향이 없다 (`checks.contracts`).
+
     **실패를 최대한 수집한다** — 하나 걸렸다고 나머지를 멈추지 않는다.
     """
-    contract, findings = extract_contract(source, path)
+    contract, findings = (
+        cache.contract(source, path) if cache is not None else extract_contract(source, path)
+    )
     findings.extend(check_entrypoint(contract))
     findings.extend(check_args_shape(contract))
     findings.extend(check_types(contract))

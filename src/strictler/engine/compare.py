@@ -55,6 +55,7 @@ from strictler import refs, rules
 from strictler.checks import node as node_checks
 from strictler.checks import pipeline as pipeline_checks
 from strictler.checks import script as script_checks
+from strictler.checks.contracts import ScriptCache
 from strictler.checks.node import dedupe
 from strictler.checks.script import ScriptContract
 from strictler.engine import drive as drive_loop
@@ -103,6 +104,7 @@ def run_compare_pipeline(
     env: Mapping[str, str],
     started_at_ms: int,
     path: str,
+    cache: ScriptCache | None = None,
 ) -> tuple[RunResult, CompareReport]:
     """비교 파이프라인 한 벌을 구동한다.
 
@@ -111,7 +113,11 @@ def run_compare_pipeline(
 
     **실행과 동시에 결과 리포트를 쌓는다** — 무엇이 어디서 어떻게 달랐는지.
     출력 위치는 Spec `plan` 항목의 `report` 이고, 파일로 쓰는 것은 부르는 쪽이다.
+
+    `cache` 는 값 검증과 **같은 것**이다 (`checks.contracts`). 한쪽에만 붙이면
+    두 파이프라인 종류의 동작이 갈린다 — R4-1 이 실제로 겪은 자리다.
     """
+    cache = cache if cache is not None else ScriptCache()
     result = RunResult()
 
     if pipeline.info.kind != "compare":
@@ -138,7 +144,7 @@ def run_compare_pipeline(
     target_configs = {name: resolve_target_config(config, name) for name in targets}
 
     prepared, prep_findings = _prepare(
-        pipeline, targets, target_configs, store=store, env=env, path=path
+        pipeline, targets, target_configs, store=store, env=env, path=path, cache=cache
     )
     result.findings.extend(prep_findings)
     if prepared is None:
@@ -225,8 +231,10 @@ def _prepare(
     store: Store,
     env: Mapping[str, str],
     path: str,
+    cache: ScriptCache | None = None,
 ) -> tuple[_Prepared | None, list[Finding]]:
     """노드를 한 벌 로드하고 target 별로 실제 도는 스크립트를 푼다."""
+    cache = cache if cache is not None else ScriptCache()
     findings: list[Finding] = []
     prepared = _Prepared()
     contracts: list[ScriptContract] = []
@@ -256,6 +264,7 @@ def _prepare(
                 store=store,
                 env=env,
                 path=path,
+                cache=cache,
             )
             findings.extend(gathered)
             if resolved is None:
@@ -282,6 +291,7 @@ def _resolve_one(
     store: Store,
     env: Mapping[str, str],
     path: str,
+    cache: ScriptCache,
 ) -> tuple[tuple[Path, ScriptContract] | None, list[Finding]]:
     """이 target 에서 실제로 도는 스크립트 경로와 그 계약.
 
@@ -339,7 +349,7 @@ def _resolve_one(
         return None, findings
 
     try:
-        contract, extracted = script_checks.extract_contract(source, str(script_path))
+        contract, extracted = cache.contract(source, str(script_path))
     except StrictlerError as exc:
         # 파싱이 안 되는 것은 위반이 아니라 검사기가 못 돈 것이다.
         findings.extend(node_checks.findings_of(exc, path=path, node=node_id))
