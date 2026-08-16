@@ -201,8 +201,26 @@ def test_a_dataclass_from_another_script_is_not_visible() -> None:
     reg = TypeRegistry()
     reg.register(dc("Button", origin="a.py", label="str"))
     reg.register(dc("Args", origin="b.py", input="Button"))
-    with pytest.raises(StrictlerError, match="같은 스크립트"):
+    with pytest.raises(StrictlerError, match="같은 스크립트") as excinfo:
         reg.normalize()
+    # 2선 방어에도 규칙 id 는 있어야 한다 — 맨 예외로 나가면 리포트가 무엇이 걸렸는지 모른다
+    found = excinfo.value.findings[0]
+    assert found.rule_id == "STR-TYPE-003"
+    assert (found.path, found.node) == ("b.py", "Args")
+
+
+def test_an_unknown_field_type_carries_str_type_003() -> None:
+    reg = TypeRegistry()
+    reg.register(dc("A", origin="a.py", x="Nope"))
+    with pytest.raises(StrictlerError) as excinfo:
+        reg.normalize()
+    assert ids(excinfo.value.findings) == ["STR-TYPE-003"]
+
+
+def test_dataclass_spec_requires_an_origin() -> None:
+    """기본값을 두면 등록 주체가 빠뜨렸을 때 전부 `""` 스코프로 몰려 `Args` 충돌이 되살아난다."""
+    with pytest.raises(TypeError):
+        DataclassSpec("Args", (FieldSpec("input", parse_type("int")),))  # type: ignore[call-arg]
 
 
 def test_lookup_with_an_unregistered_key_is_a_tool_error() -> None:
@@ -384,6 +402,18 @@ def test_merge_field_conflict_also_blocks_model_building() -> None:
     assert excinfo.value.findings[0].rule_id == "STR-TYPE-006"
 
 
+def test_merge_field_conflict_reports_a_deterministic_location() -> None:
+    """병합은 전역 연산이라 단일 위치가 없다 — **정렬한 첫 멤버**의 origin 을 쓴다."""
+    reg = normalized(
+        dc("A", origin="z.py", y="int"),
+        dc("B", origin="a.py", x="int", y="int"),
+        dc("C", origin="b.py", x="str", y="int"),
+    )
+    with pytest.raises(StrictlerError) as excinfo:
+        reg.merge_components()
+    assert excinfo.value.findings[0].path == "a.py"  # 등록 순서(z.py 가 먼저)와 무관해야 한다
+
+
 def test_same_field_name_same_type_across_a_component_is_fine() -> None:
     reg = normalized(
         dc("A", y="int"),
@@ -391,6 +421,62 @@ def test_same_field_name_same_type_across_a_component_is_fine() -> None:
         dc("C", x="int", y="int", z="str"),
     )
     assert set(reg.build_model(k("A")).model_fields) == {"x", "y", "z"}
+
+
+# --- registry: 병합된 필드의 이름 해석 (R2-1) ------------------------------
+#
+# 병합 클래스의 필드들은 **서로 다른 origin** 에서 온다. 필드 타입을 이름으로만 들고 다니다
+# 조회한 키의 origin 에서 다시 찾으면 도구가 못 도는 세 가지가 생긴다.
+
+
+def test_merged_field_type_resolves_in_the_contributing_origin() -> None:
+    """(a) 가장 흔한 노드 조합 — Sense 의 `Args` 가 Reckon 의 `Args` 와 병합된다."""
+    reg = normalized(
+        dc("Args", origin="sense.py", input="str"),
+        dc("P", origin="reckon.py", expected="int"),
+        dc("Args", origin="reckon.py", input="str", params="P"),
+    )
+    model = reg.build_model(k("Args", "sense.py"))
+    # `params` 는 reckon.py 가 기여한 필드다 — sense.py 에는 `P` 가 없다
+    assert set(model.model_fields) == {"input", "params"}
+    assert model.model_validate({"input": "x"}).params is None
+    assert model.model_validate({"input": "x", "params": {"expected": 3}}).params.expected == 3
+
+
+def test_structurally_equal_nested_types_with_different_names_still_build() -> None:
+    """(b) `same_definition` 이 True 인데 `build_model` 만 터지면 7절을 못 쓴다."""
+    reg = normalized(
+        dc("Btn", origin="a.py", label="str"),
+        dc("Args", origin="a.py", input="Btn"),
+        dc("Widget", origin="b.py", label="str"),
+        dc("Args", origin="b.py", input="Widget"),
+    )
+    assert reg.same_definition(k("Args", "a.py"), k("Args", "b.py"))
+    for origin in ("a.py", "b.py"):
+        value = reg.to_value(k("Args", origin), {"input": {"label": "확인"}})
+        assert value.input.label == "확인"
+
+
+def test_a_merged_extra_field_binds_to_the_right_same_named_type() -> None:
+    """(c) ★ 조용한 오답 — 예외조차 안 난다.
+
+    `a.py` 와 `b.py` 가 **둘 다** `Button` 을 선언하고 정의가 다르다. `a.Small` 의 병합
+    클래스에 `b.Big` 의 `b: Button` 이 들어오는데, 이걸 `a.py` 스코프에서 다시 찾으면
+    `a.Button` 이 잡히고 **아무 예외 없이 틀린 모델**이 나온다.
+    """
+    reg = normalized(
+        dc("Button", origin="a.py", icon="str"),
+        dc("Small", origin="a.py", x="int"),
+        dc("Button", origin="b.py", label="str"),
+        dc("Big", origin="b.py", x="int", b="Button"),
+    )
+    model = reg.build_model(k("Small", "a.py"))
+    assert set(model.model_fields) == {"x", "b"}
+
+    # `b` 는 b.py 가 기여했으므로 **b.py 의** Button(label:str) 이어야 한다
+    assert model.model_validate({"x": 1, "b": {"label": "확인"}}).b.label == "확인"
+    with pytest.raises(ValidationError):
+        model.model_validate({"x": 1, "b": {"icon": "a.py 의 Button 이 잡히면 통과해버린다"}})
 
 
 # --- registry: pydantic 경계 ----------------------------------------------

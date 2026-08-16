@@ -14,6 +14,11 @@
 
 즉 **이름은 스코프 안에서만 의미가 있고, 동일성은 구조로 전역 판정**한다.
 
+⚠ **해석은 "선언한 쪽"의 스코프에서 한다 — "조회한 쪽"이 아니다.** 병합(표현 층)을 거치면
+한 병합 클래스의 필드들이 서로 다른 origin 에서 온다. 필드 타입을 이름으로만 들고 다니다가
+조회한 키의 origin 에서 다시 찾으면, 그 이름이 없으면 도구 오류로 터지고 **우연히 있으면
+조용한 오답**이 된다. 그래서 병합 시점에 `_ResolvedType` 으로 `TypeKey` 를 못 박는다.
+
 **엔진은 구성 시점에 모든 dataclass 를 등록하고 집합 검사를 전체에 건다.**
 각 dataclass 를 **`(필드명, 타입)` 쌍의 집합**으로 다루면 별도 규칙이 필요 없어진다:
 
@@ -42,7 +47,7 @@ from pydantic import BaseModel, ConfigDict, create_model
 
 from strictler import rules
 from strictler.errors import Finding, StrictlerError
-from strictler.typesys.primitives import PRIMITIVES, TypeRef, element_type, is_list, is_primitive
+from strictler.typesys.primitives import TypeRef, element_type, is_list, is_primitive
 
 __all__ = ["TypeKey", "FieldSpec", "DataclassSpec", "TypeRegistry"]
 
@@ -95,11 +100,15 @@ class DataclassSpec:
     """스크립트가 선언한 dataclass 하나.
 
     필드: `name`, `fields`(`tuple[FieldSpec, ...]`), `origin`(어느 스크립트에서 왔는지).
+
+    **`origin` 은 필수 인자다.** 기본값을 두면 등록 주체가 빠뜨렸을 때 모든 dataclass 가
+    `""` 스코프로 몰려 `Args` 이름 충돌이 되살아난다 — 키를 `(origin, name)` 으로 둔 이유
+    자체가 무너진다. 빠뜨리면 `TypeError` 로 즉시 드러나야 한다.
     """
 
     __slots__ = ("name", "fields", "origin")
 
-    def __init__(self, name: str, fields: tuple[FieldSpec, ...], origin: str = "") -> None:
+    def __init__(self, name: str, fields: tuple[FieldSpec, ...], origin: str) -> None:
         self.name = name
         self.fields = tuple(fields)
         self.origin = origin
@@ -115,6 +124,30 @@ class DataclassSpec:
     def raw_set(self) -> frozenset[tuple[str, str]]:
         """정규화 전의 `(필드명, 선언 표기)` 집합. 중복 등록 판정에만 쓴다."""
         return frozenset((f.name, str(f.type)) for f in self.fields)
+
+
+class _ResolvedType(NamedTuple):
+    """**이름 해석이 끝난** 타입 하나.
+
+    맨 `TypeRef` 는 `Button` 이라는 *이름*만 들고 있어서, 그걸 어느 스크립트의 `Button`
+    으로 읽을지는 **그 필드를 선언한 dataclass 의 `origin`** 에 달려 있다. 병합(표현 층)을
+    거치면 필드가 다른 origin 에서 온 것과 섞이므로, 이름만 들고 다니면 **조회한 키의
+    origin 에서 엉뚱한 타입을 다시 찾게 된다** — 예외가 나면 그나마 다행이고, 우연히
+    같은 이름이 있으면 **조용한 오답**이 된다.
+
+    그래서 병합 시점에 이름을 `TypeKey` 로 못 박아 들고 다닌다. 그 뒤로는 어떤 origin 도
+    다시 보지 않는다.
+
+    | 필드 | 무엇 |
+    |---|---|
+    | `ref` | 원래 표기 (`list[Button]`) — 에러 메시지용 |
+    | `key` | dataclass 참조일 때 **해석 완료된** `(origin, name)` |
+    | `element` | `list[T]` 의 `T` (역시 해석 완료) |
+    """
+
+    ref: TypeRef
+    key: TypeKey | None = None
+    element: _ResolvedType | None = None
 
 
 class TypeRegistry:
@@ -134,7 +167,7 @@ class TypeRegistry:
         self._canon_fields: dict[TypeKey, frozenset[tuple[str, str]]] = {}
         # 병합 산출물 (지연 계산)
         self._merge_map: dict[TypeKey, TypeKey] | None = None
-        self._merged_fields: dict[TypeKey, dict[str, TypeRef]] = {}
+        self._merged_fields: dict[TypeKey, dict[str, _ResolvedType]] = {}
         self._models: dict[TypeKey, type[BaseModel]] = {}
 
     # --- 등록 ------------------------------------------------------------
@@ -223,29 +256,48 @@ class TypeRegistry:
     def _deps(self, spec: DataclassSpec) -> list[TypeKey]:
         found: list[TypeKey] = []
         for field in spec.fields:
-            self._collect_refs(field.type, spec, found)
+            self._collect_refs(self._resolve(field.type, spec.key), found)
         return found
 
-    def _collect_refs(self, t: TypeRef, spec: DataclassSpec, out: list[TypeKey]) -> None:
-        if is_primitive(t):
-            return
-        if is_list(t):
-            self._collect_refs(element_type(t), spec, out)
-            return
-        ref = TypeKey(spec.origin, t.name)
-        if ref in self._specs and not t.args:
-            # 이름 해석은 같은 origin 스코프 안에서만 한다.
-            out.append(ref)
-            return
-        raise StrictlerError(self._unknown_type_message(t, spec))
+    def _collect_refs(self, resolved: _ResolvedType, out: list[TypeKey]) -> None:
+        if resolved.key is not None:
+            out.append(resolved.key)
+        elif resolved.element is not None:
+            self._collect_refs(resolved.element, out)
 
-    def _unknown_type_message(self, t: TypeRef, spec: DataclassSpec) -> str:
-        where = f"`{spec.name}`" + (f" ({spec.origin})" if spec.origin else "")
-        return (
-            f"{where} 의 필드 타입 `{t}` 를 해석할 수 없습니다. "
-            "쓸 수 있는 타입은 `int` `float` `str` `bool` `bytes` `list[T]` 와 "
-            "**같은 스크립트가** 선언한 dataclass 뿐입니다 — 다른 스크립트의 dataclass 는 "
-            "이름으로 참조할 수 없습니다."
+    def _resolve(self, t: TypeRef, owner: TypeKey) -> _ResolvedType:
+        """타입 표기 하나의 **이름을 `owner` 스코프에서 해석해** 못 박는다.
+
+        `owner` 는 그 필드를 선언한 dataclass 의 키다 — 이름 해석은 언제나
+        **선언한 스크립트의 origin** 안에서 한다 (조회한 쪽의 origin 이 아니다).
+        """
+        if is_primitive(t):
+            return _ResolvedType(t)
+        if is_list(t):
+            return _ResolvedType(t, element=self._resolve(element_type(t), owner))
+        ref = TypeKey(owner.origin, t.name)
+        if ref in self._specs and not t.args:
+            return _ResolvedType(t, key=ref)
+        raise self._unknown_type_error(t, owner)
+
+    def _unknown_type_error(self, t: TypeRef, owner: TypeKey) -> StrictlerError:
+        """미지 타입 — `STR-TYPE-003`(unsupported-type).
+
+        `checks/script.py` 가 등록 전에 1차로 잡지만, **2선 방어에도 규칙 id 는 있어야 한다.**
+        id 없는 맨 예외로 나가면 리포트에서 무엇이 걸렸는지 기계적으로 알 수 없다.
+        """
+        where = f"`{owner.name}`" + (f" ({owner.origin})" if owner.origin else "")
+        return _rule_error(
+            "STR-TYPE-003",
+            path=owner.origin,
+            node=owner.name,
+            fields={},
+            message=(
+                f"{where} 의 필드 타입 `{t}` 를 해석할 수 없습니다. "
+                "쓸 수 있는 타입은 `int` `float` `str` `bool` `bytes` `list[T]` 와 "
+                "**같은 스크립트가** 선언한 dataclass 뿐입니다 — 다른 스크립트의 dataclass 는 "
+                "이름으로 참조할 수 없습니다."
+            ),
         )
 
     def _canon(self, t: TypeRef, spec: DataclassSpec) -> str:
@@ -262,7 +314,7 @@ class TypeRegistry:
         ref = TypeKey(spec.origin, t.name)
         if ref in self._struct:
             return self._struct[ref]
-        raise StrictlerError(self._unknown_type_message(t, spec))
+        raise self._unknown_type_error(t, spec.key)
 
     def _require_normalized(self) -> None:
         if not self._normalized:
@@ -351,11 +403,17 @@ class TypeRegistry:
         self._merged_fields = merged_fields
         return dict(merge_map)
 
-    def _union_fields(self, members: list[TypeKey]) -> dict[str, TypeRef]:
-        """연결 성분 하나의 필드 합집합. 같은 필드명의 타입이 갈리면 `STR-TYPE-006`."""
-        fields: dict[str, TypeRef] = {}
+    def _union_fields(self, members: list[TypeKey]) -> dict[str, _ResolvedType]:
+        """연결 성분 하나의 필드 합집합. 같은 필드명의 타입이 갈리면 `STR-TYPE-006`.
+
+        **필드마다 "해석 완료된" 타입을 들고 나간다.** 맨 `TypeRef` 만 저장하면 그 필드를
+        기여한 멤버의 `origin` 이 소실되고, 나중에 `build_model()` 이 **조회한 키의 origin**
+        에서 이름을 다시 찾아 엉뚱한 타입에 바인딩한다 (조용한 오답).
+        """
+        ordered = sorted(members)
+        fields: dict[str, _ResolvedType] = {}
         seen: dict[str, tuple[TypeKey, str]] = {}
-        for member in sorted(members):
+        for member in ordered:
             canon_of = dict(self._canon_fields[member])
             for fname, ftype in self._fields[member].items():
                 canon = canon_of[fname]
@@ -364,14 +422,20 @@ class TypeRegistry:
                     owner, owner_canon = previous
                     raise _rule_error(
                         "STR-TYPE-006",
+                        # 병합은 등록기 전역 연산이라 단일 위치가 없다. 리포트에 위치가
+                        # 아예 없으면 원인을 못 찾으므로 **정렬한 첫 멤버**의 origin 을 쓴다
+                        # (정렬해야 결정적이다).
+                        path=ordered[0].origin,
                         fields={
-                            "names": ", ".join(str(m) for m in sorted(members)),
+                            "names": ", ".join(str(m) for m in ordered),
                             "field": fname,
                             "types": f"{owner} 는 {owner_canon} / {member} 는 {canon}",
                         },
                     )
                 seen[fname] = (member, canon)
-                fields.setdefault(fname, ftype)
+                if fname not in fields:
+                    # 이름 해석은 **기여한 멤버의 스코프**에서 지금 끝낸다.
+                    fields[fname] = self._resolve(ftype, member)
         return fields
 
     # --- pydantic 경계 ----------------------------------------------------
@@ -400,7 +464,8 @@ class TypeRegistry:
 
         definitions: dict[str, Any] = {}
         for fname in sorted(merged):
-            annotation = self._py_type(merged[fname], key.origin)
+            # ★ `key.origin` 으로 다시 해석하지 않는다 — 병합 시점에 이미 해석이 끝났다.
+            annotation = self._py_type(merged[fname])
             if fname in own:
                 definitions[fname] = (annotation, ...)
             else:
@@ -414,19 +479,16 @@ class TypeRegistry:
         self._models[key] = model
         return model
 
-    def _py_type(self, t: TypeRef, origin: str) -> Any:
-        if is_primitive(t):
-            return _PY_PRIMITIVES[t.name]
-        if is_list(t):
-            return list[self._py_type(element_type(t), origin)]  # type: ignore[misc]
-        ref = TypeKey(origin, t.name)
-        if ref in self._specs:
-            return self.build_model(ref)
-        raise StrictlerError(
-            f"타입 `{t}` 를 값 검증 모델로 만들 수 없습니다. "
-            f"쓸 수 있는 타입은 {sorted(PRIMITIVES)} 와 `list[T]`, "
-            "같은 스크립트가 선언한 dataclass 뿐입니다."
-        )
+    def _py_type(self, resolved: _ResolvedType) -> Any:
+        """**해석 완료된** 타입을 pydantic 어노테이션으로 바꾼다.
+
+        여기서 이름을 다시 찾지 않는다 — `origin` 을 받지 않는 것이 그 보장이다.
+        """
+        if resolved.key is not None:
+            return self.build_model(resolved.key)
+        if resolved.element is not None:
+            return list[self._py_type(resolved.element)]  # type: ignore[misc]
+        return _PY_PRIMITIVES[resolved.ref.name]
 
     def to_value(self, key: TypeKey, raw: Any) -> Any:
         """JSON 원값을 그 타입의 인스턴스로 만든다. 단위테스트 fixture 와 리포트가 쓴다."""
@@ -437,13 +499,22 @@ class TypeRegistry:
 
 
 def _rule_error(
-    rule_id: str, *, path: str = "", node: str = "", fields: dict[str, object]
+    rule_id: str,
+    *,
+    path: str = "",
+    node: str = "",
+    fields: dict[str, object],
+    message: str = "",
 ) -> StrictlerError:
     """규칙 id 가 붙은 `StrictlerError` 를 만든다.
 
     타입 등록기가 내는 것은 전부 **오류**다 — 위반이 아니다. 하지만 규칙 id 없이
     맨 예외로 나가면 리포트에서 무엇이 걸렸는지 기계적으로 알 수 없으므로,
     `Finding` 을 함께 실어 보낸다 (`errors.StrictlerError.findings`).
+
+    `message` 를 주면 예외 문구로 그걸 쓴다 — 슬롯 없는 규칙(`STR-TYPE-003`)은
+    규칙 문구만으로는 **어느 dataclass 의 어느 필드**인지 알 수 없기 때문이다.
+    `Finding` 쪽 문구는 규칙 테이블 그대로 둔다.
     """
     found: Finding = rules.finding(rule_id, path=path, node=node, fields=fields)
-    return StrictlerError(found.message or rule_id, [found])
+    return StrictlerError(message or found.message or rule_id, [found])
