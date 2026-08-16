@@ -7,7 +7,7 @@ strictler 가 제공하는 것: 스키마, DAG·상태머신 실행 엔진, 타�
 노드 단위테스트 하네스, 리포터. **내장 동작은 하나도 없다** — 모든 노드의 스크립트는
 사용자(실제로는 AI)가 공급한다.
 
-설계 정본은 `.claude-workspace/schema.md`, 규칙 테이블은 `.claude-workspace/rules.md`.
+설계 정본은 `docs/schema.md`, 규칙 테이블은 `docs/rules.md`.
 """
 
 from __future__ import annotations
