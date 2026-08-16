@@ -51,7 +51,7 @@ def _fallback_finding(
 @pytest.fixture(autouse=True)
 def _rules_available(monkeypatch: pytest.MonkeyPatch) -> None:
     try:
-        rules.finding("STR-REG-004", path="x", fields={"id": "y", "ref": "y"})
+        rules.finding("STR-REG-004", path="x", fields={"id": "y"})
     except NotImplementedError:
         monkeypatch.setattr(rules, "finding", _fallback_finding)
 
@@ -178,6 +178,22 @@ def test_update_rejects_non_utf8_source(store: Store, tmp_path: Path) -> None:
     with pytest.raises(StrictlerError):
         store.update(entry.id, bad)
     assert store.read(entry.id) == SCRIPT_SRC
+
+
+def test_read_rejects_a_tampered_non_utf8_copy(store: Store, tmp_path: Path) -> None:
+    """등록소 복사본이 UTF-8 이 아니게 되면 `StrictlerError` 다.
+
+    등록소에 들어갈 때는 UTF-8 이었으나 **정적 검사 루트를 피해 직접 고치는 것**이
+    `STR-REG-001` 이 상정하는 시나리오다. `verify_hash` 를 먼저 부른다는 보장이
+    없으므로 `read()` 가 raw `UnicodeDecodeError` 를 내면 안 된다.
+    """
+    entry = store.add("script", write(tmp_path / "detect.py", SCRIPT_SRC))
+    store.path_of(entry.id).write_bytes("# 버튼\n".encode("cp949"))
+
+    with pytest.raises(StrictlerError) as excinfo:
+        store.read(entry.id)
+    assert "UTF-8" in excinfo.value.message
+    assert str(store.path_of(entry.id)) in excinfo.value.message
 
 
 def test_show_unknown_id_is_an_error(store: Store) -> None:
@@ -400,7 +416,9 @@ def test_graph_calls_finding_with_the_fields_dict(
     monkeypatch.setattr(rules, "finding", spy)
 
     RefGraph.build(store).broken_refs()
-    assert calls == [("STR-REG-004", {"id": sc_id, "ref": sc_id})]
+    # `STR-REG-004` 의 슬롯은 `{id}` 하나뿐이다 (계약 개정 R2-8). 선언되지 않은
+    # 슬롯을 얹으면 R1-3 의 슬롯 검증에 걸려 런타임에 터진다.
+    assert calls == [("STR-REG-004", {"id": sc_id})]
 
 
 def test_broken_refs_is_empty_for_a_healthy_registry(
@@ -540,3 +558,15 @@ def test_load_index_rejects_broken_json(store: Store, home: Path) -> None:
     (home / "registry.json").write_text("{ not json", encoding="utf-8")
     with pytest.raises(StrictlerError):
         store.load_index()
+
+
+def test_load_index_rejects_non_utf8_index(store: Store, home: Path) -> None:
+    """인덱스 손상은 반반이다 — 깨진 JSON 이거나 깨진 인코딩이거나.
+
+    `JSONDecodeError` 만 감싸면 나머지 절반이 raw `UnicodeDecodeError` 로 샌다.
+    """
+    (home / "registry.json").write_bytes('{"version": 1, "name": "버튼"}'.encode("cp949"))
+    with pytest.raises(StrictlerError) as excinfo:
+        store.load_index()
+    assert "UTF-8" in excinfo.value.message
+    assert "registry.json" in excinfo.value.message

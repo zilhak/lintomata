@@ -89,7 +89,7 @@ class RefGraph:
                     rules.finding(
                         "STR-REG-004",
                         path=entry_id,
-                        fields={"id": ref_id, "ref": ref_id},
+                        fields={"id": ref_id},
                     )
                 )
         return findings

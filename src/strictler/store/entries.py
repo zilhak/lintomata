@@ -204,7 +204,17 @@ class Store:
         if not path.is_file():
             return RegistryIndex()
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            # 손상은 반반이다 — 깨진 JSON 이거나 깨진 인코딩이거나.
+            # 한쪽만 감싸면 나머지 절반이 raw 예외로 샌다.
+            raise StrictlerError(
+                f"등록소 인덱스가 UTF-8 이 아닙니다: {path} "
+                f"({exc.reason}, byte {exc.start})\n"
+                "`registry.json` 이 손상됐습니다. 손으로 고치지 말고 등록소를 다시 만드세요."
+            ) from exc
+        try:
+            raw = json.loads(text)
         except json.JSONDecodeError as exc:
             raise StrictlerError(
                 f"등록소 인덱스를 읽을 수 없습니다: {path} ({exc})\n"
@@ -323,14 +333,27 @@ class Store:
         return self._file_path(entry.kind, entry_id)
 
     def read(self, entry_id: str) -> str:
-        """등록소 파일 내용을 읽는다."""
+        """등록소 파일 내용을 읽는다.
+
+        정상 경로로는 UTF-8 만 들어가지만, **정적 검사 루트를 피해 등록소 파일을
+        직접 고치는 것이 바로 `STR-REG-001` 이 상정하는 시나리오다.**
+        `verify_hash` 를 먼저 부른다는 보장이 없으므로 여기서도 감싼다.
+        """
         path = self.path_of(entry_id)
         if not path.is_file():
             raise StrictlerError(
                 f"등록소 파일이 없습니다: {path}\n"
                 "인덱스에는 있는데 실제 파일이 사라졌습니다. 삭제 후 재등록하세요."
             )
-        return path.read_text(encoding="utf-8")
+        try:
+            return path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise StrictlerError(
+                f"등록소 파일이 UTF-8 이 아닙니다: {path} "
+                f"({exc.reason}, byte {exc.start})\n"
+                "등록소 파일이 등록 이후에 직접 수정된 것으로 보입니다. "
+                "원본을 UTF-8 로 고쳐 `update` 로 다시 등록하세요."
+            ) from exc
 
     def verify_hash(self, entry_id: str) -> bool:
         """복사본의 해시가 등록 당시와 같은지. 실행 시점 검사 (`STR-REG-001`).
