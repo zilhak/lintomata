@@ -1,7 +1,7 @@
 """검사 규칙 테이블 — `STR-<CATEGORY>-<NNN>`.
 
-`rules.md` 전체가 근거다. 규칙 59개 (PATH 4 / REF 7 / GRAPH 2 / TYPE 7 /
-CONTRACT 7 / STATE 7 / BAN 4 / TOOL 2 / CONFIG 3 / CMP 4 / TEST 7 / REG 5).
+`rules.md` 전체가 근거다. 규칙 61개 (PATH 4 / REF 7 / GRAPH 3 / TYPE 7 /
+CONTRACT 7 / STATE 7 / BAN 4 / TOOL 2 / CONFIG 3 / CMP 4 / TEST 8 / REG 5).
 **늘어나는 것이 전제다** — 카테고리별 독립 번호 공간, 번호 재사용 금지,
 폐기해도 `status: deprecated` 로 남긴다.
 
@@ -173,8 +173,9 @@ _TABLE: tuple[Rule, ...] = (
         "node-not-found",
         (_P,),
         "`source` 가 가리키는 노드를 찾을 수 없습니다: {source}",
-        "파이프라인의 `source` 는 등록된 노드(`${ref.nd_...}`) 또는 "
-        "실재하는 노드 파일이어야 합니다",
+        "`source` 는 등록된 노드(`${ref.nd_...}`) 또는 실재하는 노드 파일이어야 "
+        "합니다 (파이프라인의 `source`, 노드 단위테스트의 `node` 등 노드를 "
+        "가리키는 모든 자리)",
     ),
     _rule(
         "STR-REF-003",
@@ -573,6 +574,16 @@ _TABLE: tuple[Rule, ...] = (
         "대조쌍의 판정이 같습니다.",
         "기댓값을 바꿨는데 판정이 안 바뀝니다 — 기댓값을 쓰지 않고 하드코딩하고 있습니다",
     ),
+    _rule(
+        "STR-TEST-008",
+        "test-node-mismatch",
+        (_R,),
+        "단위테스트의 `node` 가 **요청한 노드와 다른 노드**를 가리킵니다.",
+        "`strictler node test <id>` 로 부르면 **그 id 의 노드가 정본**입니다. "
+        "테스트 정의의 `node` 가 다른 것을 가리키면 요청하지 않은 노드를 돌려 "
+        "**거짓 리포트**가 됩니다. 요청: {requested} / "
+        "테스트가 가리키는 것: {declared}",
+    ),
     # ── REG — 등록소 ───────────────────────────────────────────────────
     _rule(
         "STR-REG-001",
@@ -616,7 +627,7 @@ _TABLE: tuple[Rule, ...] = (
 
 
 RULES: dict[str, Rule] = {rule.id: rule for rule in _TABLE}
-"""규칙 id → 규칙. `rules.md` 2절의 58개."""
+"""규칙 id → 규칙. `rules.md` 2절의 61개."""
 
 if len(RULES) != len(_TABLE):  # pragma: no cover - 테이블 오타 방지용 자기 검증
     raise StrictlerError("규칙 테이블에 중복 id 가 있습니다")

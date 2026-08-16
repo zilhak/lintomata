@@ -91,6 +91,14 @@ class RegistryEntry(BaseModel):
     hash: str
     """등록 당시 파일 내용의 해시. 실행 시 재계산해 대조 (`STR-REG-001`)."""
 
+    test_hash: str = ""
+    """함께 등록된 `<노드파일>.test.json` 의 해시. 없으면 `""` (R6-7).
+
+    **노드 해시와 섞지 않는다.** 한 해시로 합치면 테스트 유무가 노드 해시를
+    바꿔 **기존 등록 id 의 해시가 전부 달라진다**. 테스트는 노드 정의 묶음의
+    일부지만 노드 파일 자체는 아니므로 자리를 따로 둔다.
+    """
+
     registered_at: str
     """ISO8601. 등록/수정 시각."""
 
@@ -262,7 +270,7 @@ class Store:
             refs=_collect_refs(text),
         )
         shutil.copyfile(path, self._file_path(kind, entry_id))
-        self._sync_test(kind, entry_id, path)
+        entry.test_hash = self._sync_test(kind, entry_id, path)
         index.entries[entry_id] = entry
         self.save_index(index)
         return entry
@@ -307,7 +315,7 @@ class Store:
             )
 
         shutil.copyfile(path, self._file_path(entry.kind, entry_id))
-        self._sync_test(entry.kind, entry_id, path)
+        entry.test_hash = self._sync_test(entry.kind, entry_id, path)
         entry.hash = hash_file(path)
         entry.registered_at = _now_iso()
         entry.refs = _collect_refs(text)
@@ -354,8 +362,12 @@ class Store:
         path = self.test_path(entry.kind, entry_id)
         return path is not None and path.is_file()
 
-    def _sync_test(self, kind: EntryKind, entry_id: str, source: Path) -> None:
+    def _sync_test(self, kind: EntryKind, entry_id: str, source: Path) -> str:
         """원본 옆의 `<노드파일>.test.json` 을 노드와 **함께** 복사한다 (R5-2).
+
+        복사한 테스트의 해시를 돌려준다 — 없으면 `""`. 등록소 파일을 정적 검사
+        루트 밖에서 고치는 것을 막는 자리가 해시이고(`schema.md` 2절), 테스트도
+        등록소가 관리하는 파일이므로 같은 규칙을 받는다 (R6-7).
 
         `schema.md` 14절이 테스트를 *노드 파일 옆*으로 규정했으므로 이것은 노드
         정의 묶음의 일부다 — 다섯 번째 등록 종류가 아니다. 함께 복사하지 않으면
@@ -369,12 +381,13 @@ class Store:
         """
         target = self.test_path(kind, entry_id)
         if target is None:
-            return
+            return ""
         candidate = source.with_suffix(TEST_SUFFIX)
         if candidate.is_file():
             shutil.copyfile(candidate, target)
-        else:
-            target.unlink(missing_ok=True)
+            return hash_file(target)
+        target.unlink(missing_ok=True)
+        return ""
 
     def path_of(self, entry_id: str) -> Path:
         """등록소 안의 실제 파일 경로."""
@@ -415,3 +428,15 @@ class Store:
         if not path.is_file():
             return False
         return hash_file(path) == entry.hash
+
+    def verify_test_hash(self, entry_id: str) -> bool:
+        """함께 등록된 `<노드파일>.test.json` 의 해시가 등록 당시와 같은지 (R6-7).
+
+        **테스트가 없으면 `True`** — 없는 것은 깨진 것이 아니다. 테스트를 돌려야
+        하는데 없다는 판정은 부르는 쪽(`cli`)이 따로 한다.
+        """
+        entry = self.show(entry_id)
+        path = self.test_path(entry.kind, entry_id)
+        if path is None or not path.is_file():
+            return not entry.test_hash
+        return hash_file(path) == entry.test_hash

@@ -1,9 +1,13 @@
 """Step 4-b — CLI 배선 (`cli.py`).
 
-**대역을 쓰지 않는다.** 진짜 등록소·진짜 검사기·진짜 엔진으로 돈다 — Step 1 통합에서
-남의 모듈을 stub 으로 끼고 돌린 탓에 규칙 슬롯 누락 11건이 merge 시점까지 안 잡혔다.
-여기서 진짜 구현을 그대로 쓰면 슬롯 누락이 곧바로 `StrictlerError` 로 터진다.
-(예외는 `testing.harness` 하나 — Step 4-a 가 아직 stub 이라 `node test` 배선만 대역으로 본다)
+**대역을 쓰지 않는다.** 진짜 등록소·진짜 검사기·진짜 엔진·진짜 하네스로 돈다 —
+Step 1 통합에서 남의 모듈을 stub 으로 끼고 돌린 탓에 규칙 슬롯 누락 11건이 merge
+시점까지 안 잡혔다. 여기서 진짜 구현을 그대로 쓰면 슬롯 누락이 곧바로
+`StrictlerError` 로 터진다.
+
+⚠ `testing.harness` 를 대역으로 끼고 있던 탓에 **`node test <id>` 가 요청한 노드가
+아닌 다른 노드를 돌리고 `[pass]` 를 내는 결함**(R6-1)이 merge 까지 살아남았다.
+진짜 하네스로 한 번만 돌렸으면 드러났다 — 그래서 대역을 벗겼다 (R6-2).
 
 짚는 것:
   - **CRUD 넷이 종류 4개 모두에 대해 도는가**
@@ -135,6 +139,88 @@ RAISES = """
     def runNode(args: Args) -> Percept:
         raise RuntimeError("여기서 터진다")
 """
+
+PERCEIVE_WHEN = """
+    from dataclasses import dataclass
+
+    @dataclass
+    class Scene:
+        url: str
+
+    @dataclass
+    class Percept:
+        count: int
+
+    @dataclass
+    class State:
+        ready: bool
+
+    @dataclass
+    class Args:
+        input: Scene
+        state: State
+
+    def runNode(args: Args) -> Percept:
+        return returnResult(Percept(count=len(args.input.url)))
+"""
+
+RECKON_WHEN = """
+    from dataclasses import dataclass
+
+    @dataclass
+    class Percept:
+        count: int
+
+    @dataclass
+    class Expect:
+        expected: int
+
+    @dataclass
+    class State:
+        fresh: bool
+
+    @dataclass
+    class Verdict:
+        passed: bool
+        rule: str
+        message: str
+
+    @dataclass
+    class Args:
+        input: Percept
+        params: Expect
+        state: State
+
+    def runNode(args: Args) -> Verdict:
+        ok = args.input.count == args.params.expected
+        return returnResult(Verdict(
+            passed=ok,
+            rule="expectedCount",
+            message=f"{args.params.expected}개 기대, {args.input.count}개 관측",
+        ))
+"""
+
+RAISES_AT_RUN = """
+    from dataclasses import dataclass
+
+    @dataclass
+    class Scene:
+        url: str
+
+    @dataclass
+    class Percept:
+        count: int
+
+    @dataclass
+    class Args:
+        input: Scene
+
+    def runNode(args: Args) -> Percept:
+        if args.input.url:
+            raise RuntimeError("여기서 터진다")
+        return returnResult(Percept(count=0))
+"""
+"""등록 검사는 통과하고 **돌려야 터지는** 스크립트 — 단위테스트가 잡는 자리다."""
 
 BROKEN = """
     from dataclasses import dataclass
@@ -789,24 +875,158 @@ def test_없는_Spec_경로는_오류다(
 def test_check_는_시각을_스스로_주입한다(
     project: Project, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """**엔진은 시각을 읽지 않는다 — 호출자가 준다.** CLI 가 그 호출자다."""
+    """**엔진은 시각을 읽지 않는다 — 호출자가 준다.** CLI 가 그 호출자다.
+
+    대역으로 갈아끼우지 않고 **진짜 엔진을 그대로 태운 채 인자만 엿본다** —
+    갈아끼우면 그 뒤가 한 번도 안 돌아 결함을 가린다 (R6-2).
+    """
     from strictler.engine import runtime
 
     seen: dict[str, Any] = {}
+    real_run_spec = runtime.run_spec
 
-    def fake_run_spec(spec: Any, **kw: Any) -> Any:
+    def spy(spec: Any, **kw: Any) -> Any:
         seen.update(kw)
-        from strictler.report import build_report
+        return real_run_spec(spec, **kw)
 
-        return build_report([])
-
-    monkeypatch.setattr(runtime, "run_spec", fake_run_spec)
+    monkeypatch.setattr(runtime, "run_spec", spy)
     spec = project.spec("login", str(basic_pipeline(project)), {"url": "https://x", "expected": 9})
 
     assert project.run("check", str(spec)) == 0
     assert isinstance(seen["started_at_ms"], int)
     assert seen["started_at_ms"] > 1_600_000_000_000
     assert seen["spec_name"] == "login.json"
+
+
+def test_경로_Spec_은_실행_전에_정적_검사를_탄다(
+    project: Project, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """등록 안 한 Spec 은 검증된 적이 없으므로 **실행 전에 검사한다.**
+
+    반대로 등록된 Spec 은 해시만 그대로면 다시 검사하지 않는다 — 등록은 편의가
+    아니라 **검증 결과를 재사용하는 기제**다 (`schema.md` 2절).
+    대역이 아니라 **진짜 검사기를 그대로 태운 채 호출만 기록한다.**
+    """
+    from strictler import checks
+
+    calls: list[str] = []
+    real = checks.check_registration
+
+    def spy(kind: str, source: Path, store: Any) -> Any:
+        calls.append(kind)
+        return real(kind, source, store)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(checks, "check_registration", spy)
+
+    spec = project.spec("login", str(basic_pipeline(project)), {"url": "https://x", "expected": 9})
+    assert project.run("check", str(spec)) == 0
+    assert calls == ["spec"]
+
+    calls.clear()
+    assert project.run("spec", "add", str(spec)) == 0
+    spec_id = project.only("spec")
+    calls.clear()
+    capsys.readouterr()
+
+    assert project.run("check", spec_id) == 0
+    assert calls == []  # 해시가 그대로면 재검사하지 않는다
+
+
+def test_not_run_만_나와도_종료_코드는_1_이다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """★ **오류 없이 not run 만 나는 실행이 있다** (R4-3) — 그때 `0` 을 내면 CI 가
+    통과로 읽는다.
+
+    `delay` 가 `${config.X}` 라 등록 시점에는 순서를 **모르므로** 도달성 판정을
+    하지 않고(등록 통과), config 가 풀린 실행 시점에 못 닿은 것으로 밝혀진다.
+    그건 등록 실패도 오류도 아니라 **`not_run(state_unreachable)`** 이다.
+    """
+    page = project.node("page", "vantage", project.script("page", VANTAGE))
+    seen = project.node("seen", "perceive", project.script("seen", PERCEIVE_WHEN))
+    late = project.node("late", "reckon", project.script("late", RECKON_WHEN))
+    pipeline = project.pipeline(
+        "settle",
+        [
+            {"id": "page", "source": str(page), "params": {"url": "${config.url}"}},
+            {
+                "id": "seen",
+                "source": str(seen),
+                "inputs": {"scene": "page"},
+                "states": {"ready": "done"},
+                "when": {"state": "ready"},
+            },
+            {
+                "id": "late",
+                "source": str(late),
+                "inputs": {"percept": "seen"},
+                "params": {"expected": "${config.expected}"},
+                "states": {"fresh": "loading"},
+                "when": {"state": "fresh"},
+            },
+        ],
+        states={"values": ["idle", "loading", "done"], "initial": "idle"},
+        transitions=[
+            {"after": "page", "to": "loading", "delay": "${config.settleMs}"},
+            {"after": "page", "to": "done", "delay": 0},
+        ],
+        config={
+            "url": {"type": "str", "required": True},
+            "expected": {"type": "int", "required": True},
+            "settleMs": {"type": "int", "required": True},
+        },
+    )
+    spec = project.spec(
+        "settle", str(pipeline), {"url": "https://x", "expected": 9, "settleMs": 0}
+    )
+
+    assert project.run("check", str(spec)) == 1
+
+    out = capsys.readouterr().out
+    assert "not_run 1" in out
+    assert "error 0" in out
+
+
+# ── tool 선언도 경로 규칙을 탄다 (R6-8) ──────────────────────────────────────
+
+
+def spec_with_tool(project: Project, tool_path: str) -> Path:
+    raw = json.loads(
+        project.spec(
+            "tooled", str(basic_pipeline(project)), {"url": "https://x", "expected": 9}
+        ).read_text(encoding="utf-8")
+    )
+    raw["tool"] = {"playwright": {"path": tool_path, "functions": ["launch"]}}
+    return write_json(project.root / "specs" / "tooled.json", raw)
+
+
+def test_tool_경로가_상대경로면_오류다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`schema.md` 13절 — Spec 실행 시 **모든 경로**가 전개 후 절대경로여야 한다."""
+    spec = spec_with_tool(project, "./bin/pw")
+
+    assert project.run("check", str(spec)) == 2
+    assert "STR-PATH-001" in rule_ids(capsys.readouterr().out)
+
+
+def test_tool_경로의_미정의_환경변수는_오류다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec = spec_with_tool(project, "${env.없는변수}/bin/pw")
+
+    assert project.run("check", str(spec)) == 2
+    assert "STR-PATH-002" in rule_ids(capsys.readouterr().out)
+
+
+def test_tool_경로가_규칙을_지키면_그냥_돈다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**존재 여부는 보지 않는다** — 외부 도구는 사용자가 설치하고 경로만 받는다."""
+    spec = spec_with_tool(project, "${env.HOME}/.playwright/playwright")
+
+    assert project.run("check", str(spec)) == 0
+    assert "pass" in capsys.readouterr().out
 
 
 # ── node add/update/remove 가 옆의 `.test.json` 을 함께 다룬다 (R5-2) ────────
@@ -946,61 +1166,138 @@ def test_node_remove_는_테스트도_함께_지운다(
 
 
 def test_node_test_는_등록된_노드_옆의_test_json_을_돌린다(
-    project: Project, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from strictler.errors import Finding
-    from strictler.testing import harness
-
-    assert project.run("node", "add", str(project.node("page", "vantage", project.script("page", VANTAGE)))) == 0
+    """**진짜 하네스로 돈다** — 대역으로 끼면 R6-1 같은 결함이 그대로 지나간다."""
+    node, _test = node_with_test(project)
+    assert project.run("node", "add", str(node)) == 0
     node_id = project.only("node")
-    test_path = project.store.path_of(node_id).with_suffix(".test.json")
-    write_json(test_path, {"node": str(project.store.path_of(node_id)), "cases": []})
     capsys.readouterr()
 
-    seen: dict[str, Any] = {}
-
-    def fake_load(path: Path, env: Any) -> tuple[object, list[Finding]]:
-        seen["path"] = path
-        return object(), []
-
-    def fake_run(node_test: object, **kw: Any) -> list[Finding]:
-        seen["ran"] = node_test
-        return [Finding(status="pass", node="page")]
-
-    monkeypatch.setattr(harness, "load_node_test", fake_load)
-    monkeypatch.setattr(harness, "run_node_test", fake_run)
-
     assert project.run("node", "test", node_id) == 0
-    assert seen["path"] == test_path
-    assert "pass 1" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "pass 1" in out
+    assert "url 을 그대로 담는다" in out
 
 
 def test_node_test_는_실패를_그대로_종료_코드로_낸다(
-    project: Project, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from strictler import rules
-    from strictler.errors import Finding
-    from strictler.testing import harness
-
-    test_file = write_json(project.root / "page.test.json", {"node": "x", "cases": []})
-
-    monkeypatch.setattr(
-        harness, "load_node_test", lambda path, env: (object(), [])
-    )
-    monkeypatch.setattr(
-        harness,
-        "run_node_test",
-        lambda node_test, **kw: [
-            rules.finding(
-                "STR-TEST-002",
-                node="page",
-                fields={"exc": "RuntimeError: 터졌다"},
-            )
-        ],
+    """스크립트가 터지면 `STR-TEST-002` 이고 **오류이므로 종료 코드 2** 다."""
+    node = project.node("boom", "perceive", project.script("boom", RAISES_AT_RUN))
+    test_file = write_json(
+        node.with_suffix(".test.json"),
+        {
+            "node": str(node),
+            "cases": [{"name": "터진다", "args": {"input": {"url": "https://x"}}}],
+        },
     )
 
     assert project.run("node", "test", str(test_file)) == 2
     assert "STR-TEST-002" in rule_ids(capsys.readouterr().out)
+
+
+# ── R6-1. `node test <id>` 는 **그 id 의 노드**를 돌린다 ──────────────────────
+
+
+def test_id_로_부르면_테스트가_다른_노드를_가리켜도_그_id_를_돈다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**거짓 리포트를 막는 자리다** (R6-1).
+
+    id 로 요청했는데 테스트의 `node` 필드로 노드를 *다시* 해석하면 **요청하지 않은
+    노드를 돌리고 `[pass]`** 를 낸다. lint 도구에서 가장 나쁜 종류다 —
+    통과했다고 보고하는데 검사한 것이 다른 것이다.
+    """
+    a = project.node("a", "vantage", project.script("a", VANTAGE))
+    b = project.node("b", "vantage", project.script("b", VANTAGE_TITLE))
+    # a 의 테스트가 **b 를 가리킨다.**
+    write_json(
+        a.with_suffix(".test.json"),
+        {
+            "node": str(b),
+            "cases": [
+                {
+                    "name": "c0",
+                    "args": {"params": {"url": "https://x"}},
+                    "expect": {"url": "https://x"},
+                }
+            ],
+        },
+    )
+    assert project.run("node", "add", str(a)) == 0
+    assert project.run("node", "add", str(b)) == 0
+    a_id = project.id_of("node", "a")
+    capsys.readouterr()
+
+    assert project.run("node", "test", a_id) == 2
+    out = capsys.readouterr().out
+    assert "STR-TEST-008" in rule_ids(out)
+    assert a_id in out
+    # b 는 돌지 않았다 — 통과가 하나도 나오지 않는다.
+    assert "pass 0" in out
+
+
+def test_경로로_부르면_지금처럼_node_필드를_따른다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`node test <경로>` 에는 요청한 id 가 없다 — `node` 필드가 실행 대상이다."""
+    b = project.node("b", "vantage", project.script("b", VANTAGE_TITLE))
+    test_file = write_json(
+        project.root / "nodes" / "a.test.json",
+        {
+            "node": str(b),
+            "cases": [
+                {
+                    "name": "c0",
+                    "args": {"params": {"url": "https://x"}},
+                    "expect": {"title": "https://x"},
+                }
+            ],
+        },
+    )
+
+    assert project.run("node", "test", str(test_file)) == 0
+    assert "pass 1" in capsys.readouterr().out
+
+
+def test_원본_노드를_지워도_id_로_부르면_돈다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """R5-2 의 목표가 경로 형태에서도 성립한다 (R6-1).
+
+    예전에는 `node` 필드를 **경로로 다시 해석**해서 원본을 지우면
+    `STR-REF-002` 로 죽었다 — *"등록 후 원본을 지워도 된다"* 와 정면으로 어긋난다.
+    """
+    node, test = node_with_test(project)  # `node` 는 원본 **경로**를 가리킨다
+    assert project.run("node", "add", str(node)) == 0
+    node_id = project.only("node")
+    capsys.readouterr()
+
+    node.unlink()
+    test.unlink()
+
+    assert project.run("node", "test", node_id) == 0
+    out = capsys.readouterr().out
+    assert "pass 1" in out
+    assert "STR-REF-002" not in rule_ids(out)
+
+
+def test_등록소의_test_json_을_직접_고치면_STR_REG_001(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """테스트도 등록소가 관리하는 파일이다 — 해시로 무단 수정을 막는다 (R6-7)."""
+    node, _test = node_with_test(project)
+    assert project.run("node", "add", str(node)) == 0
+    node_id = project.only("node")
+    capsys.readouterr()
+
+    stored = project.store.test_path("node", node_id)
+    assert stored is not None
+    write_json(stored, {"node": str(node), "cases": []})
+
+    assert project.run("node", "test", node_id) == 2
+    assert "STR-REG-001" in rule_ids(capsys.readouterr().out)
 
 
 def test_test_json_이_없으면_오류다(

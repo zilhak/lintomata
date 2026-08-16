@@ -73,6 +73,16 @@ class Project:
     def run(self, node_test: NodeTest) -> list[Finding]:
         return harness.run_node_test(node_test, store=self.store, env=self.env)
 
+    def register(self, node_path: Path) -> str:
+        """노드를 등록소에 넣고 id 를 준다 — `node test <id>` 형태를 재현한다."""
+        return self.store.add("node", node_path).id
+
+    def run_by_id(self, node_test: NodeTest, node_id: str) -> list[Finding]:
+        """**id 로 부른 경우** — 그 id 의 등록소 노드가 정본이다 (R6-1)."""
+        return harness.run_node_test(
+            node_test, store=self.store, env=self.env, node_id=node_id
+        )
+
 
 @pytest.fixture()
 def project(tmp_path: Path) -> Project:
@@ -573,6 +583,9 @@ def test_action_transparency_checked_without_expect(project: Project) -> None:
 
     assert ids(findings) == ["STR-TEST-005"]
     assert "값을 건드린다" in findings[0].message
+    # 다른 TEST 규칙은 전부 `node` 가 차 있다 — 여기만 비면 리포트의 노드 칸이
+    # Action 결과에서만 빈다 (R6-3).
+    assert findings[0].node == "click"
 
 
 def test_action_passthrough_passes(project: Project) -> None:
@@ -654,6 +667,21 @@ def test_reckon_hardcoded_expected_is_an_error(project: Project) -> None:
     assert len(caught) == 1
     assert caught[0].status == "error"
     assert "판정이 둘 다 통과" in caught[0].message
+
+
+def test_reckon_같은_params_케이스_둘은_대조쌍이_아니다(project: Project) -> None:
+    """`params` 가 같으면 흔들어본 것이 아니다 — **쌍으로 세면 `-007` 오탐**이다.
+
+    `input` 도 `params` 도 똑같은 중복 케이스 둘은 판정이 당연히 같으므로,
+    쌍으로 세는 순간 "기댓값을 안 쓴다" 는 거짓 결론이 나온다. 대조쌍이 없는
+    것이므로 나와야 할 것은 `-006`(경고)이다.
+    """
+    node_path = project.node("judge", "reckon", project.script("judge", RECKON))
+    node_test = project.test_file(node_path, reckon_cases((3, 3), (3, 3)))
+
+    findings = project.run(node_test)
+
+    assert [item.rule_id for item in findings if item.rule_id] == ["STR-TEST-006"]
 
 
 def test_reckon_contrast_ignores_unreadable_verdicts(project: Project) -> None:
@@ -934,6 +962,90 @@ def test_test_file_top_level_must_be_an_object(project: Project) -> None:
         harness.load_node_test(path, project.env)
 
 
+# ── R6-1. id 로 부르면 **그 id 의 등록소 노드가 정본**이다 ───────────────────
+
+
+def test_id_로_부르면_등록소_노드를_돌린다(project: Project) -> None:
+    """테스트의 `node` 필드로 노드를 *다시* 해석하지 않는다.
+
+    해석해 버리면 **요청하지 않은 노드를 돌리고 통과를 보고**한다 — lint 도구에서
+    가장 나쁜 종류의 거짓 리포트다.
+    """
+    node_path = project.node("open", "vantage", project.script("open", VANTAGE))
+    node_id = project.register(node_path)
+    node_test = project.test_file(
+        node_path,
+        [{"name": "c0", "args": {"params": {"url": "https://x"}}, "expect": {"url": "https://x"}}],
+    )
+
+    findings = project.run_by_id(node_test, node_id)
+
+    assert statuses(findings) == ["pass"]
+    assert findings[0].path.startswith(node_id)  # 요청한 것이 리포트에 남는다
+
+
+def test_테스트가_다른_노드를_가리키면_STR_TEST_008(project: Project) -> None:
+    """conductor 가 재현한 그 상황이다 — a 를 요청했는데 b 가 돌았다."""
+    a = project.node("a", "vantage", project.script("a", VANTAGE))
+    b = project.node("b", "perceive", project.script("b", PERCEIVE))
+    a_id = project.register(a)
+    project.register(b)
+
+    findings = project.run_by_id(project.test_file(b, []), a_id)
+
+    assert ids(findings) == ["STR-TEST-008"]
+    assert a_id in findings[0].message
+    assert str(b) in findings[0].message
+
+
+def test_ref_가_다른_노드_id_면_STR_TEST_008(project: Project) -> None:
+    a = project.node("a", "vantage", project.script("a", VANTAGE))
+    b = project.node("b", "perceive", project.script("b", PERCEIVE))
+    a_id = project.register(a)
+    b_id = project.register(b)
+
+    findings = project.run_by_id(project.test_file(f"${{ref.{b_id}}}", []), a_id)
+
+    assert ids(findings) == ["STR-TEST-008"]
+
+
+def test_자기_id_를_ref_로_가리키면_통과한다(project: Project) -> None:
+    node_path = project.node("open", "vantage", project.script("open", VANTAGE))
+    node_id = project.register(node_path)
+    node_test = project.test_file(
+        f"${{ref.{node_id}}}",
+        [{"name": "c0", "args": {"params": {"url": "https://x"}}}],
+    )
+
+    assert statuses(project.run_by_id(node_test, node_id)) == ["pass"]
+
+
+def test_원본이_지워져_있어도_id_로_돈다(project: Project) -> None:
+    """*"등록 후 원본을 지워도 된다"* — `node` 를 경로로 해석하지 않으므로 무관하다.
+
+    예전에는 여기서 `STR-REF-002`(파일 없음)로 죽었다. R5-2 가 없애려던 바로 그
+    상황이 `node` 재해석 때문에 남아 있었다.
+    """
+    node_path = project.node("open", "vantage", project.script("open", VANTAGE))
+    node_id = project.register(node_path)
+    node_test = project.test_file(
+        node_path, [{"name": "c0", "args": {"params": {"url": "https://x"}}}]
+    )
+    node_path.unlink()
+
+    assert statuses(project.run_by_id(node_test, node_id)) == ["pass"]
+
+
+def test_경로로_부르면_node_필드가_실행_대상이다(project: Project) -> None:
+    """`node test <경로>` 에는 요청한 id 가 없다 — 대조할 정본도 없다."""
+    node_path = perceive_node(project)
+    node_test = project.test_file(
+        node_path, [{"name": "c0", "args": {"input": {"html": "<button>"}}}]
+    )
+
+    assert statuses(project.run(node_test)) == ["pass"]
+
+
 # ── 규칙 슬롯 — 모든 오류 경로를 태운다 ──────────────────────────────────────
 
 
@@ -982,6 +1094,10 @@ def test_every_test_rule_renders(project: Project) -> None:
     for item in project.run(project.test_file("${ref.nd_deadbeef}", [])):
         fired[item.rule_id] = item
 
+    other = project.node("other", "vantage", project.script("other", VANTAGE))
+    for item in project.run_by_id(project.test_file(other, []), project.register(judge)):
+        fired[item.rule_id] = item
+
     assert set(fired) == {
         "STR-TEST-001",
         "STR-TEST-002",
@@ -990,6 +1106,7 @@ def test_every_test_rule_renders(project: Project) -> None:
         "STR-TEST-005",
         "STR-TEST-006",
         "STR-TEST-007",
+        "STR-TEST-008",
         "STR-REF-002",
         "STR-REG-002",
     }

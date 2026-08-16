@@ -106,6 +106,12 @@ def run_spec(
     `spec_name` 은 리포트 `path` 의 첫 조각(`"login.json"`)이다. 등록소 항목 이름이든
     파일 이름이든 **부르는 쪽이 정한다** — Spec 문서 자체에는 자기 이름이 없다.
     """
+    tool_findings = _check_tool_paths(spec, env, spec_name)
+    if tool_findings:
+        # `tool` 은 Spec 전체에 걸린 선언이다 — 경로가 안 서면 `STR-TOOL-002` 대조가
+        # 통째로 무의미해지므로 그 지점에서 진행하지 않는다.
+        return build_report(tool_findings)
+
     findings: list[Finding] = []
     for index in range(len(spec.plan)):
         try:
@@ -123,6 +129,29 @@ def run_spec(
             # 한 항목이 못 돌아도 다른 항목은 전부 돈다.
             findings.extend(findings_of(exc, path=_plan_path(spec_name, index, "")))
     return build_report(findings)
+
+
+def _check_tool_paths(
+    spec: Spec, env: Mapping[str, str], spec_name: str
+) -> list[Finding]:
+    """`tool.<name>.path` 도 경로 규칙을 탄다 (R6-8).
+
+    **실행 시점이다** — `schema.md` 13절이 *"모든 경로가 전개 후 절대경로인지,
+    참조 환경변수가 정의됐는지"* 를 Spec 실행 시 검증으로 두었다. 등록 시점에는
+    실행 환경의 환경변수를 알 수 없으므로 `${env.X}` 를 쓴 정상 Spec 이 등록조차
+    되지 못한다.
+
+    **존재 여부는 보지 않는다.** 외부 도구는 사용자가 설치하고 경로만 받는 것이
+    설계다 (`schema.md` 3절) — 여기서 보는 것은 경로 규칙뿐이다.
+    """
+    findings: list[Finding] = []
+    for name, decl in spec.tool.items():
+        where = " > ".join(part for part in (spec_name, f"tool.{name}") if part)
+        try:
+            refs.expand_path(decl.path, env)
+        except StrictlerError as exc:
+            findings.extend(findings_of(exc, path=where))
+    return findings
 
 
 def _plan_path(spec_name: str, index: int, pipeline_name: str) -> str:
@@ -317,7 +346,9 @@ def run_pipeline(
         return _close(pipeline, result, path)
 
     try:
-        machine = StateMachine(pipeline.states, pipeline.transitions, config, started_at_ms)
+        machine = StateMachine(
+            pipeline.states, pipeline.transitions, config, started_at_ms, env=env
+        )
     except StrictlerError as exc:
         result.findings.extend(findings_of(exc, path=path))
         return _close(pipeline, result, path)

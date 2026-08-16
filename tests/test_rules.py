@@ -1,4 +1,4 @@
-"""`rules.py` — 규칙 테이블 60개와 `Finding` 생성 헬퍼."""
+"""`rules.py` — 규칙 테이블 61개와 `Finding` 생성 헬퍼."""
 
 from __future__ import annotations
 
@@ -23,14 +23,14 @@ EXPECTED_COUNTS = {
     "TOOL": 2,
     "CONFIG": 3,
     "CMP": 4,
-    "TEST": 7,
+    "TEST": 8,
     "REG": 5,
 }
 
 
-def test_rule_count_is_60() -> None:
-    assert len(RULES) == 60
-    assert sum(EXPECTED_COUNTS.values()) == 60
+def test_rule_count_is_61() -> None:
+    assert len(RULES) == 61
+    assert sum(EXPECTED_COUNTS.values()) == 61
 
 
 def test_category_counts_match_rules_md() -> None:
@@ -100,8 +100,12 @@ def test_rules_for_when() -> None:
     list_ids = {rule.id for rule in rules_for("list")}
     assert list_ids == {"STR-REG-004", "STR-REG-005"}
 
+    # TEST 카테고리는 단위테스트 실행 중에 나는 것이지만 `STR-TEST-008` 만은
+    # **호출 자체를 판정**하는 규칙이라 `run` 이다 (`rules.md` 2절).
     test_ids = {rule.id for rule in rules_for("test")}
-    assert len(test_ids) == EXPECTED_COUNTS["TEST"]
+    assert len(test_ids) == EXPECTED_COUNTS["TEST"] - 1
+    assert "STR-TEST-008" not in test_ids
+    assert "STR-TEST-008" in {rule.id for rule in rules_for("run")}
 
 
 def test_rules_for_covers_every_rule() -> None:

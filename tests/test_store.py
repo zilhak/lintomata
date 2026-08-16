@@ -206,6 +206,55 @@ def test_verify_hash_false_when_copy_is_gone(store: Store, tmp_path: Path) -> No
     assert store.verify_hash(entry.id) is False
 
 
+def test_test_json_gets_its_own_hash(store: Store, tmp_path: Path) -> None:
+    """등록소의 `.test.json` 도 해시로 무단 수정을 막는다 (R6-7).
+
+    **노드 해시와 섞지 않는다** — 한 해시로 합치면 테스트 유무가 노드 해시를 바꿔
+    기존 등록 id 의 해시가 전부 달라진다.
+    """
+    node = write(tmp_path / "detect.json", '{"info": {}, "type": "perceive"}')
+    write(tmp_path / "detect.test.json", '{"node": "x", "cases": []}')
+
+    entry = store.add("node", node)
+
+    assert entry.hash == hash_file(node)  # 노드 해시는 노드 파일만 본다
+    assert entry.test_hash and entry.test_hash != entry.hash
+    assert store.verify_test_hash(entry.id) is True
+
+    stored = store.test_path("node", entry.id)
+    assert stored is not None
+    stored.write_text('{"node": "y", "cases": []}', encoding="utf-8")
+    assert store.verify_test_hash(entry.id) is False
+    assert store.verify_hash(entry.id) is True  # 노드 파일은 멀쩡하다
+
+
+def test_no_test_json_means_no_test_hash(store: Store, tmp_path: Path) -> None:
+    """**없는 것은 깨진 것이 아니다.**"""
+    node = write(tmp_path / "detect.json", '{"info": {}, "type": "perceive"}')
+    entry = store.add("node", node)
+
+    assert entry.test_hash == ""
+    assert store.verify_test_hash(entry.id) is True
+
+
+def test_update_refreshes_the_test_hash(store: Store, tmp_path: Path) -> None:
+    node = write(tmp_path / "detect.json", '{"info": {}, "type": "perceive"}')
+    test = write(tmp_path / "detect.test.json", '{"node": "x", "cases": []}')
+    entry = store.add("node", node)
+    before = entry.test_hash
+
+    write(test, '{"node": "x", "cases": [{"name": "c", "args": {}}]}')
+    updated = store.update(entry.id, node)
+
+    assert updated.test_hash not in ("", before)
+    assert store.verify_test_hash(entry.id) is True
+
+    # 원본에서 테스트가 사라지면 등록소의 것도, 해시도 함께 걷힌다.
+    test.unlink()
+    assert store.update(entry.id, node).test_hash == ""
+    assert store.verify_test_hash(entry.id) is True
+
+
 def test_hash_file_matches_content(tmp_path: Path) -> None:
     one = write(tmp_path / "one.py", SCRIPT_SRC)
     same = write(tmp_path / "same.py", SCRIPT_SRC)

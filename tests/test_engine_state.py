@@ -27,12 +27,14 @@ def machine(
     initial: str,
     transitions: list[dict[str, Any]] | None = None,
     config: dict[str, Any] | None = None,
+    env: dict[str, str] | None = None,
 ) -> StateMachine:
     return StateMachine(
         States(values=values, initial=initial),
         [Transition.model_validate(item) for item in (transitions or [])],
         config or {},
         STARTED_AT,
+        env=env or {},
     )
 
 
@@ -99,7 +101,7 @@ def test_전이_구간_규칙이_reachability_와_같다() -> None:
         "nodes": [{"id": "a", "source": "/x.json"}],
     }
     pipeline = Pipeline.model_validate(raw)
-    m = StateMachine(pipeline.states, pipeline.transitions, {}, STARTED_AT)
+    m = StateMachine(pipeline.states, pipeline.transitions, {}, STARTED_AT, env={})
 
     outgoing = reachability._outgoing(pipeline)
     assert [to for _, to in m.steps_after("a")] == outgoing["a"]
@@ -113,6 +115,44 @@ def test_delay_는_config_로_풀린다() -> None:
         {"settleMs": 2000},
     )
     assert m.steps_after("a") == [(2000, "settled")]
+
+
+def test_delay_는_env_로도_풀린다() -> None:
+    """**같은 문서 안에서 자리마다 `${env.X}` 동작이 갈리면 안 된다** (R6-4).
+
+    `params` 는 `config` → `state` → `env` 로 풀리는데 전이의 `delay` 만 env 를
+    안 풀어서, `${env.X}` 를 쓴 사람이 *"정수로 풀리지 않았습니다"* 를 받았다.
+    환경변수 값은 언제나 문자열이므로 정수 형태의 문자열을 정수로 읽는다.
+    """
+    m = machine(
+        ["idle", "settled"],
+        "idle",
+        [{"after": "a", "to": "settled", "delay": "${env.SETTLE_MS}"}],
+        env={"SETTLE_MS": "1500"},
+    )
+    assert m.steps_after("a") == [(1500, "settled")]
+
+
+def test_delay_의_config_값이_env_를_품어도_풀린다() -> None:
+    """합성 순서가 `config` → `state` → `env` 이므로 env 가 마지막이다."""
+    m = machine(
+        ["idle", "settled"],
+        "idle",
+        [{"after": "a", "to": "settled", "delay": "${config.settleMs}"}],
+        {"settleMs": "${env.SETTLE_MS}"},
+        env={"SETTLE_MS": "700"},
+    )
+    assert m.steps_after("a") == [(700, "settled")]
+
+
+def test_delay_의_미정의_env_는_STR_PATH_002() -> None:
+    with pytest.raises(StrictlerError) as caught:
+        machine(
+            ["idle", "settled"],
+            "idle",
+            [{"after": "a", "to": "settled", "delay": "${env.NOPE}"}],
+        )
+    assert [item.rule_id for item in caught.value.findings] == ["STR-PATH-002"]
 
 
 def test_delay_가_정수로_안_풀리면_오류다() -> None:

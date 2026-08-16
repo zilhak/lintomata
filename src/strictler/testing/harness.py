@@ -85,6 +85,7 @@ __all__ = [
     "FILE_KEY",
     "load_node_test",
     "run_node_test",
+    "check_requested_node",
     "run_case",
     "materialize_args",
     "check_action_transparency",
@@ -171,10 +172,19 @@ def run_node_test(
     *,
     store: Store,
     env: Mapping[str, str],
+    node_id: str = "",
 ) -> list[Finding]:
     """단위테스트 전체를 돌린다. `strictler node test <id>` 의 본체.
 
     케이스별 결과 + 노드 타입별 추가 검사(Action 값 동일성, Reckon 대조쌍)를 합친다.
+
+    **★ `node_id` 를 받으면 그 id 의 등록소 노드가 정본이다** (R6-1).
+    `node test <id>` 로 부른 경우가 그것이다 — 요청한 것이 그 노드이므로 테스트
+    정의의 `node` 필드로 **다시 해석하지 않는다.** 예전에는 해석해 버려서
+    **요청한 것과 다른 노드를 돌리고 `[pass]` 를 냈다.** 통과했다고 보고하는데
+    검사한 것이 다른 것이면 그건 lint 도구에서 가장 나쁜 종류의 거짓 리포트다.
+    `node` 필드는 **대조용으로만** 쓰고 어긋나면 `STR-TEST-008` 이다.
+    `node test <경로>` 로 부르면 `node_id` 가 비고, 그때는 `node` 필드를 따른다.
 
     **정적으로 막힌 것은 돌리지 않는다.** `check_node` 가 결과를 내면 그걸 그대로
     보고하고 끝낸다 — `Args` 가 없는 스크립트를 억지로 돌려봐야 원인만 뭉개진다.
@@ -183,8 +193,17 @@ def run_node_test(
     **실패는 최대한 모은다.** 한 케이스가 실패해도 나머지 케이스는 전부 돈다.
     """
     label = node_test.node
+    findings: list[Finding] = []
+    node_path: Path | None
 
-    node_path, findings = _resolve_node_file(node_test.node, store=store, env=env)
+    if node_id:
+        mismatch = check_requested_node(node_test.node, node_id, store=store, env=env)
+        if mismatch:
+            return mismatch
+        label = node_id
+        node_path = store.path_of(node_id)
+    else:
+        node_path, findings = _resolve_node_file(node_test.node, store=store, env=env)
     if node_path is None:
         return findings
 
@@ -225,6 +244,61 @@ def run_node_test(
             for item in check_reckon_contrast(list(node_test.cases), outputs)
         )
     return results
+
+
+def check_requested_node(
+    declared: str, node_id: str, *, store: Store, env: Mapping[str, str]
+) -> list[Finding]:
+    """테스트의 `node` 가 **요청한 노드**를 가리키는지 대조한다 (`STR-TEST-008`).
+
+    `node test <id>` 로 부르면 그 id 의 등록소 노드가 정본이므로 여기서 하는 일은
+    **대조뿐이다** — 실행 대상을 고르지 않는다. 그래서 `node` 를 실행 대상 경로로
+    해석하지 않고, 원본이 지워져 있어도 단위테스트는 그대로 돈다 (R5-2 의 목표).
+
+    | 테스트의 `node` | 대조 |
+    |---|---|
+    | `${ref.<id>}` | id 를 그대로 비교한다 |
+    | 등록소 사본 경로 | 같은 파일이므로 통과 |
+    | 그 밖의 경로 | 파일이 있으면 등록소 사본과 **내용**을 비교한다 |
+    | 그 밖의 경로인데 파일이 없다 | **대조하지 않는다** — 등록 후 원본을 지우는 것이 정상이다 |
+
+    내용으로 비교하는 이유는 등록소가 원본 경로를 기억하지 않기 때문이다. 이름이
+    아니라 정의가 같은지를 묻는 것이 이 자리의 질문이기도 하다.
+    """
+    canonical = store.path_of(node_id)
+
+    if refs.is_ref(declared):
+        try:
+            refs.parse_ref(declared, "node")
+        except StrictlerError as exc:  # pragma: no cover - 로드 단계가 이미 잡는다
+            return findings_of(exc, path=declared)
+        if declared[len("${ref.") : -1] == node_id:
+            return []
+        return _mismatch(node_id, declared)
+
+    try:
+        path = refs.expand_path(declared, env)
+    except StrictlerError as exc:  # pragma: no cover - 로드 단계가 이미 잡는다
+        return findings_of(exc, path=declared)
+    if path == canonical:
+        return []
+    try:
+        same = path.read_bytes() == canonical.read_bytes()
+    except OSError:
+        # 읽을 수 없으면 대조할 것이 없다. 정본은 어차피 등록소 노드다 —
+        # 등록 후 원본을 지우는 것이 정상 사용법이므로 여기서 실패로 보지 않는다.
+        return []
+    return [] if same else _mismatch(node_id, declared)
+
+
+def _mismatch(node_id: str, declared: str) -> list[Finding]:
+    return [
+        rules.finding(
+            "STR-TEST-008",
+            path=node_id,
+            fields={"requested": node_id, "declared": declared},
+        )
+    ]
 
 
 def _resolve_node_file(
@@ -367,8 +441,13 @@ def run_case(
 
     # ⑤ 노드 타입별 추가 — Action 은 `expect` 없이도 값 동일성을 본다.
     if node.type == "action":
+        # 노드 이름을 여기서 채운다 — 다른 TEST 규칙은 전부 `node` 가 차 있는데
+        # Action 결과만 비면 리포트의 노드 칸이 그 줄에서만 빈다 (R6-3).
         findings.extend(
-            check_action_transparency(case, getattr(args, "input", None), output)
+            item.model_copy(update={"node": item.node or who})
+            for item in check_action_transparency(
+                case, getattr(args, "input", None), output
+            )
         )
 
     return output, findings

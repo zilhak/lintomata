@@ -60,11 +60,21 @@ _sleep = time.sleep
 `delay` 만큼 기다릴 뿐이라 결과가 비결정적이 되지 않는다."""
 
 
-def _delay_ms(raw: int | str | None, config: Mapping[str, Any]) -> int:
+def _delay_ms(
+    raw: int | str | None,
+    config: Mapping[str, Any],
+    state: Mapping[str, Any],
+    env: Mapping[str, str],
+) -> int:
     """`delay` 를 밀리초 정수로 푼다.
 
     `${config.settleMs}` 같은 참조가 올 수 있어 `str` 도 받는다 (`model.Transition`).
-    **실행 시점에는 config 가 이미 풀려 있어야 한다** — 안 풀리거나 정수가 아니면
+    **전개는 `config` → `state` → `env` 다** — 스크립트에 넘기는 값과 같은 순서이고
+    같은 전개기(`refs.expand_all`)를 쓴다. 자리마다 `${env.X}` 동작이 갈리면
+    같은 문서 안에서 규칙이 둘이 되고, 여기만 `${env.X}` 를 안 풀던 것이 그것이었다
+    (R6-4, R5-1 과 같은 뿌리).
+
+    **실행 시점에는 참조가 이미 풀려 있어야 한다** — 안 풀리거나 정수가 아니면
     기다릴 시간을 모르는 것이므로 **오류**다 (위반이 아니다).
     """
     if raw is None:
@@ -72,17 +82,22 @@ def _delay_ms(raw: int | str | None, config: Mapping[str, Any]) -> int:
     if isinstance(raw, bool):  # bool 은 int 의 하위형이라 먼저 걸러낸다
         raise StrictlerError(
             f"전이의 `delay` 가 참/거짓입니다: {raw!r}\n"
-            "`delay` 는 밀리초 정수이거나 `${config.X}` 참조여야 합니다."
+            "`delay` 는 밀리초 정수이거나 `${config.X}`·`${env.X}` 참조여야 합니다."
         )
     if isinstance(raw, int):
         value: Any = raw
     else:
-        value = refs.expand_config(raw, config)
+        value = refs.expand_all(raw, config=config, state=state, env=env)
+        # **환경변수 값은 언제나 문자열이다.** `${env.SETTLE_MS}` 를 받아놓고
+        # "정수가 아니다" 로 거절하면 env 를 쓸 방법이 아예 없어진다.
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            value = int(value.strip())
     if isinstance(value, bool) or not isinstance(value, int):
         raise StrictlerError(
             f"전이의 `delay` 가 정수로 풀리지 않았습니다: {raw!r} → {value!r}\n"
             "`delay` 는 밀리초 정수입니다. `${config.X}` 로 받는다면 그 config 의 "
-            "`type` 을 `int` 로 선언하고 Spec 에서 정수를 채우세요."
+            "`type` 을 `int` 로 선언하고 Spec 에서 정수를 채우세요. "
+            "`${env.X}` 로 받는다면 그 환경변수 값이 정수 형태여야 합니다."
         )
     if value < 0:
         raise StrictlerError(
@@ -101,8 +116,14 @@ class StateMachine:
         transitions: list[Transition],
         config: Mapping[str, Any],
         started_at_ms: int,
+        *,
+        env: Mapping[str, str],
     ) -> None:
-        """`config` 는 `delay` 의 `${config.settleMs}` 를 풀기 위해 받는다.
+        """`config` 와 `env` 는 `delay` 의 참조를 풀기 위해 받는다.
+
+        전개 순서는 스크립트에 넘기는 값과 같은 `config` → `state` → `env` 다
+        (R6-4). **`env` 는 기본값 없이 받는다** — 기본값을 두면 부르는 쪽이
+        빠뜨렸을 때 `${env.X}` 가 조용히 다시 안 풀린다.
 
         `started_at_ms` 는 **호출자가 준다** — 엔진 안에서 시각을 읽지 않으면
         테스트가 결정적이 된다.
@@ -111,10 +132,20 @@ class StateMachine:
         self.started_at_ms = started_at_ms
         self._current = states.initial
 
+        # `delay` 를 푸는 시점의 상태는 초기 상태다 — 아직 아무 전이도 안 일어났다.
+        initial_state: dict[str, Any] = {
+            name: name == states.initial for name in states.values
+        }
+        initial_state["__startedAt"] = started_at_ms
+
         grouped: dict[str, list[tuple[int, int, str]]] = {}
         for index, transition in enumerate(transitions):
             grouped.setdefault(transition.after, []).append(
-                (_delay_ms(transition.delay, config), index, transition.to)
+                (
+                    _delay_ms(transition.delay, config, initial_state, env),
+                    index,
+                    transition.to,
+                )
             )
         # `delay` 오름차순 → 선언 순서. `checks.reachability._outgoing` 과 같은 규칙이다.
         self._steps: dict[str, list[tuple[int, str]]] = {

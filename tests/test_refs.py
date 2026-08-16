@@ -620,6 +620,35 @@ def test_expand_all_은_config_state_env_를_그_순서로_푼다() -> None:
     assert out == {"page": "/srv/demo/targets/home.html", "at": 17}
 
 
+def test_expand_all_에서_config_는_state_보다_먼저_풀린다() -> None:
+    """config 값이 `${state.X}` 를 품으면 **state 가 뒤**여야 풀린다.
+
+    순서를 뒤집으면 config 가 끌고 들어온 `${state.X}` 가 그대로 남아
+    `STR-REF-007` 이 된다.
+    """
+    out = expand_all(
+        {"t": "${config.stamp}"},
+        config={"stamp": "at-${state.__startedAt}"},
+        state={"__startedAt": 17},
+        env={},
+    )
+    assert out == {"t": "at-17"}
+
+
+def test_expand_all_에서_env_는_언제나_마지막이다() -> None:
+    """**state 값도 `${env.Y}` 를 품을 수 있다** — 그래서 env 가 맨 뒤다.
+
+    env 를 앞으로 옮기면 config·state 가 끌고 들어온 `${env.Y}` 가 남는다.
+    """
+    out = expand_all(
+        {"a": "${config.p}", "b": "${state.tmpl}"},
+        config={"p": "${env.ROOT}/a"},
+        state={"tmpl": "${env.ROOT}/b"},
+        env={"ROOT": "/srv"},
+    )
+    assert out == {"a": "/srv/a", "b": "/srv/b"}
+
+
 def test_expand_all_은_중첩_구조를_재귀한다() -> None:
     out = expand_all(
         {"paths": ["${env.ROOT}/a", {"deep": "${env.ROOT}/b"}]},

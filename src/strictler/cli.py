@@ -371,25 +371,42 @@ def cmd_node_test(args: argparse.Namespace) -> int:
     인자는 두 가지로 받는다: 노드 id 면 등록소의 노드 파일 옆
     (`nodes/<id>.test.json`)을 보고, 파일 경로면 그 파일을 그대로 쓴다.
     **등록하지 않고 돌리는 경로를 남겨두는 것**이 후자다.
+
+    **★ id 로 부르면 그 id 의 노드가 정본이다** (R6-1). 테스트 파일 경로만 찾고
+    실행 대상을 테스트의 `node` 필드로 다시 해석하면 **요청한 것과 다른 노드를
+    돌리고 통과를 보고**할 수 있다. 그래서 id 를 하네스까지 그대로 넘긴다 —
+    `node` 필드는 대조용이 되고, 어긋나면 `STR-TEST-008` 이다.
     """
     from strictler.testing import harness
 
     store = _store(args)
     env = os.environ
-    test_path = _node_test_path(store, args.id)
+    test_path, node_id, hash_findings = _node_test_path(store, args.id)
+    if hash_findings:
+        _emit(hash_findings, as_json=args.json)
+        return _exit_code(hash_findings)
 
     node_test, findings = harness.load_node_test(test_path, env)
     if node_test is not None:
         findings = list(findings) + harness.run_node_test(
-            node_test, store=store, env=env
+            node_test, store=store, env=env, node_id=node_id
         )
 
     _emit(findings, as_json=args.json)
     return _exit_code(findings)
 
 
-def _node_test_path(store: Store, value: str) -> Path:
-    """`node test` 의 인자를 테스트 파일 경로로 푼다."""
+def _node_test_path(store: Store, value: str) -> tuple[Path, str, list[Finding]]:
+    """`node test` 의 인자를 **(테스트 파일, 정본 노드 id, 해시 결과)** 로 푼다.
+
+    id 로 불렀으면 정본 노드 id 가 함께 나온다 — 하네스가 그걸 정본으로 삼는다
+    (R6-1). 경로로 불렀으면 정본이 없으므로 빈 문자열이고, 그때는 테스트의
+    `node` 필드가 실행 대상이다.
+
+    등록소의 테스트도 **해시를 대조한다** (R6-7) — 정적 검사 루트를 피해 등록소
+    파일을 직접 고치는 것을 막는 자리가 해시이고(`schema.md` 2절), 테스트는 노드
+    정의 묶음의 일부로 등록소가 관리하는 파일이다.
+    """
     if value.startswith(_ID_PREFIX["node"]):
         entry = _entry_of(store, value, "node")
         path = store.test_path(entry.kind, entry.id)
@@ -401,7 +418,11 @@ def _node_test_path(store: Store, value: str) -> Path:
                 "다시 하면 등록소에 함께 들어갑니다. 등록 없이 돌리려면 파일 경로를 "
                 "직접 주세요: `strictler node test /abs/path/detect_buttons.test.json`"
             )
-        return path
+        if not store.verify_test_hash(entry.id):
+            return path, entry.id, [
+                rules.finding("STR-REG-001", path=entry.id, fields={"id": entry.id})
+            ]
+        return path, entry.id, []
 
     path = _source(value)
     if not path.is_file():
@@ -409,7 +430,7 @@ def _node_test_path(store: Store, value: str) -> Path:
             f"노드 단위테스트 파일이 없습니다: {path}\n"
             "노드 id (`nd_...`) 또는 `<노드파일>.test.json` 경로를 주세요."
         )
-    return path
+    return path, "", []
 
 
 def cmd_check(args: argparse.Namespace) -> int:

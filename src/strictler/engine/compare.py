@@ -147,7 +147,9 @@ def run_compare_pipeline(
     # 전이 지연은 그래프의 성질이라 target 별로 갈리지 않는다 — 공통 config 다.
     common = resolve_target_config(config, "")
     try:
-        machine = StateMachine(pipeline.states, list(pipeline.transitions), common, started_at_ms)
+        machine = StateMachine(
+            pipeline.states, list(pipeline.transitions), common, started_at_ms, env=env
+        )
     except StrictlerError as exc:
         result.findings.extend(node_checks.findings_of(exc, path=path))
         return _close(pipeline, result, path), build_compare_report({})
