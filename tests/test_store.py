@@ -36,9 +36,9 @@ def _fallback_finding(
     path: str = "",
     node: str = "",
     cause: object = None,
-    **fields: object,
+    fields: dict[str, object] | None = None,
 ) -> Finding:
-    detail = " ".join(f"{k}={v}" for k, v in sorted(fields.items()))
+    detail = " ".join(f"{k}={v}" for k, v in sorted((fields or {}).items()))
     return Finding(
         status=status,  # type: ignore[arg-type]
         path=path,
@@ -51,7 +51,7 @@ def _fallback_finding(
 @pytest.fixture(autouse=True)
 def _rules_available(monkeypatch: pytest.MonkeyPatch) -> None:
     try:
-        rules.finding("STR-REG-004", path="x", id="y", ref="y")
+        rules.finding("STR-REG-004", path="x", fields={"id": "y", "ref": "y"})
     except NotImplementedError:
         monkeypatch.setattr(rules, "finding", _fallback_finding)
 
@@ -154,6 +154,30 @@ def test_add_defaults_name_to_file_stem(store: Store, tmp_path: Path) -> None:
 def test_add_rejects_missing_source(store: Store, tmp_path: Path) -> None:
     with pytest.raises(StrictlerError):
         store.add("script", tmp_path / "nope.py")
+
+
+def test_add_rejects_non_utf8_source(store: Store, tmp_path: Path) -> None:
+    """UTF-8 이 아닌 파일은 raw `UnicodeDecodeError` 가 아니라 `StrictlerError` 다.
+
+    위반도 not run 도 아닌 **오류**(도구가 못 돈 것)이므로 가이드가 붙어야 한다.
+    """
+    source = tmp_path / "cp949.py"
+    source.write_bytes("# 버튼\n".encode("cp949"))
+
+    with pytest.raises(StrictlerError) as excinfo:
+        store.add("script", source)
+    assert "UTF-8" in excinfo.value.message
+    assert store.list() == []
+
+
+def test_update_rejects_non_utf8_source(store: Store, tmp_path: Path) -> None:
+    entry = store.add("script", write(tmp_path / "detect.py", SCRIPT_SRC))
+    bad = tmp_path / "cp949.py"
+    bad.write_bytes("# 버튼\n".encode("cp949"))
+
+    with pytest.raises(StrictlerError):
+        store.update(entry.id, bad)
+    assert store.read(entry.id) == SCRIPT_SRC
 
 
 def test_show_unknown_id_is_an_error(store: Store) -> None:
@@ -350,6 +374,35 @@ def test_remove_leaves_dependents_ref_broken(store: Store, tmp_path: Path) -> No
     assert graph.entries[_pl_id].broken == ""
 
 
+def test_graph_calls_finding_with_the_fields_dict(
+    store: Store, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`rules.finding` 은 슬롯 값을 `fields` 딕셔너리로만 받는다 (계약 개정 R1-2).
+
+    `**fields` 로 넘기면 keyword-only `path`/`node` 와 동명 슬롯이 충돌한다.
+    여기서는 그래프가 **개정된 시그니처로만** 부르는지를 본다 — 다른 형태로
+    부르면 대역이 `TypeError` 로 터진다.
+    """
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def spy(
+        rule_id: str,
+        *,
+        path: str = "",
+        node: str = "",
+        fields: dict[str, object] | None = None,
+    ) -> Finding:
+        calls.append((rule_id, dict(fields or {})))
+        return Finding(status="error", path=path, node=node, rule_id=rule_id)
+
+    sc_id, nd_id, _pl_id, _sp_id = _chain(store, tmp_path)
+    store.remove(sc_id)
+    monkeypatch.setattr(rules, "finding", spy)
+
+    RefGraph.build(store).broken_refs()
+    assert calls == [("STR-REG-004", {"id": sc_id, "ref": sc_id})]
+
+
 def test_broken_refs_is_empty_for_a_healthy_registry(
     store: Store, tmp_path: Path
 ) -> None:
@@ -396,6 +449,8 @@ def test_update_marks_dependents_validation_broken(
     assert called == [nd_id, pl_id, sp_id]  # 전이적으로, 아래에서 위로
     assert [f.rule_id for f in findings] == ["STR-REG-005"]
     assert findings[0].path == pl_id
+    # 실패한 규칙 id 가 메시지에 실려 나간다. 대역이든 실제 구현이든 성립한다 —
+    # `STR-REG-005` 의 guide 자체가 `{rule}` 슬롯을 갖기 때문이다 (`rules.md`).
     assert "STR-TYPE-004" in findings[0].message
 
     # 인덱스에 남아 있어야 이후 `list` 에서 드러난다.
@@ -404,6 +459,30 @@ def test_update_marks_dependents_validation_broken(
     assert reloaded[pl_id].broken_detail == "STR-TYPE-004"
     assert reloaded[nd_id].broken == ""
     assert reloaded[sp_id].broken == ""
+
+
+def test_revalidate_calls_finding_with_the_fields_dict(
+    store: Store, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """재검증 쪽도 `fields` 딕셔너리로만 부른다 (계약 개정 R1-2)."""
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def spy(
+        rule_id: str,
+        *,
+        path: str = "",
+        node: str = "",
+        fields: dict[str, object] | None = None,
+    ) -> Finding:
+        calls.append((rule_id, dict(fields or {})))
+        return Finding(status="error", path=path, node=node, rule_id=rule_id)
+
+    sc_id, _nd_id, _pl_id, _sp_id = _chain(store, tmp_path)
+    _mock_checks(monkeypatch, {"pipeline": "STR-TYPE-004"})
+    monkeypatch.setattr(rules, "finding", spy)
+
+    RefGraph.build(store).revalidate(store, sc_id)
+    assert calls == [("STR-REG-005", {"rule": "STR-TYPE-004"})]
 
 
 def test_revalidate_clears_a_stale_validation_mark(

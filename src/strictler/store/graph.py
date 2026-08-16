@@ -86,7 +86,11 @@ class RefGraph:
             entry.broken_detail = missing[0]
             for ref_id in missing:
                 findings.append(
-                    rules.finding("STR-REG-004", path=entry_id, id=ref_id, ref=ref_id)
+                    rules.finding(
+                        "STR-REG-004",
+                        path=entry_id,
+                        fields={"id": ref_id, "ref": ref_id},
+                    )
                 )
         return findings
 
@@ -113,7 +117,7 @@ class RefGraph:
                 entry.broken = "validation"
                 entry.broken_detail = failed
                 findings.append(
-                    rules.finding("STR-REG-005", path=dep_id, rule=failed)
+                    rules.finding("STR-REG-005", path=dep_id, fields={"rule": failed})
                 )
             elif entry.broken == "validation":
                 # 다시 통과했으면 표시를 걷는다. 참조 깨짐은 여기서 손대지 않는다.

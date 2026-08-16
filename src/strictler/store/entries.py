@@ -164,7 +164,16 @@ def _read_source(source: Path) -> tuple[Path, str]:
             f"등록할 파일이 없습니다: {path}\n"
             "경로를 확인하세요. 등록소는 파일을 복사해 보관하므로 원본이 있어야 합니다."
         )
-    return path, path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        # raw 예외로 새면 "도구가 못 돈 것" 이 규칙 id 도 가이드도 없이 나간다.
+        raise StrictlerError(
+            f"등록할 파일이 UTF-8 이 아닙니다: {path} ({exc.reason}, byte {exc.start})\n"
+            "등록 대상은 `.py` 스크립트와 `.json` 문서뿐이고 둘 다 UTF-8 이어야 합니다. "
+            "파일 인코딩을 UTF-8 로 바꿔 다시 등록하세요."
+        ) from exc
+    return path, text
 
 
 def _now_iso() -> str:
