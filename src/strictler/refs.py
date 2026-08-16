@@ -9,11 +9,20 @@
 
 **경로는 무조건 절대경로다:**
 
-    `~` 전개  →  환경변수 전개  →  결과가 절대 경로 스타일이 아니면  →  무조건 에러
+    `~` 전개  →  환경변수 전개  →  `~` 재전개  →  결과가 절대 경로 스타일이 아니면  →  무조건 에러
 
 상대경로 금지로 cwd 의존성이 사라진다. 이식성은 환경변수가 담당한다 —
 머신·CI 마다 값만 다르게 두면 Spec 은 그대로 커밋된다.
 환경변수 값 자체가 상대경로여도 잡힌다 (`PROJECT_ROOT=./foo` → `STR-PATH-003`).
+
+**★ 환경변수 값 안의 `~` 도 전개한다.** `PROJECT_ROOT=~/proj` 는 흔한 설정이고,
+`~` 를 허용한 논리("cwd 와 무관하게 홈으로 결정되므로 전개하면 절대경로다")가
+env 값 안의 `~` 에도 그대로 적용된다. 그래서 전개가 **3단계**다 —
+빠뜨리면 앞자리(`${env.R}/x`)는 "상대경로입니다" 오진단이 되고,
+중간자리(`/srv/${env.S}/x`)는 리터럴 `~` 가 박힌 `/srv/~/proj/x` 가 **조용히 통과**한다.
+
+**전개 후 `${` 가 남아 있으면 오류다.** 경로 해석 시점엔 모든 참조가 풀려 있어야 한다.
+리터럴 경로 조각으로 통과시키면 나중에 "파일 없음"으로 원인이 뭉개진다.
 
 **여기서 나는 것은 전부 `error` 다.** 경로 규칙 위반도 미정의 환경변수도 위반이 아니라
 **도구가 못 돈 것**이므로 `StrictlerError` 로 던진다 (`schema.md` 9절).
@@ -139,19 +148,27 @@ def collect_placeholders(value: str) -> list[Placeholder]:
 
 
 def _fail_malformed(raw: str, body: str) -> NoReturn:
-    """`${...}` 인데 `${ns.name}` 형태가 아닌 것들을 종류별로 갈라 알려준다."""
+    """`${...}` 인데 `${ns.name}` 형태가 아닌 것들을 종류별로 갈라 알려준다.
+
+    셋 다 `STR-REF-006`(malformed-reference) 이다 — 네임스페이스 없음 / 모름 /
+    이름 비었음. 종류만 갈라 문구를 다르게 준다.
+    """
     ns, sep, name = body.partition(".")
     if not sep:
         _fail(
             f"참조에 네임스페이스가 없습니다: {raw}\n"
-            f"쓸 수 있는 것은 ${{env.X}} / ${{config.X}} / ${{state.X}} / ${{ref.<id>}} 넷뿐입니다. "
-            f"네임스페이스가 없으면 미정의 환경변수인지 config 오타인지 구분할 수 없습니다."
+            f"참조는 네임스페이스를 반드시 붙입니다 — "
+            f"${{env.X}} / ${{config.X}} / ${{state.X}} / ${{ref.<id>}} 넷뿐입니다. "
+            f'네임스페이스가 없으면 "미정의 환경변수인지 config 오타인지" 구분할 수 없어 '
+            f"에러가 뭉개집니다.",
+            rule_id="STR-REF-006",
         )
     if ns not in NAMESPACES:
         _fail_unknown_namespace(raw, ns)
     _fail(
         f"참조의 이름이 비어 있습니다: {raw}\n"
-        f"`${{{ns}.<이름>}}` 형태로 이름을 적으세요."
+        f"`${{{ns}.<이름>}}` 형태로 이름을 적으세요.",
+        rule_id="STR-REF-006",
     )
 
 
@@ -159,7 +176,8 @@ def _fail_unknown_namespace(raw: str, ns: str) -> NoReturn:
     allowed = ", ".join(sorted(NAMESPACES))
     _fail(
         f"모르는 네임스페이스입니다: {raw} (네임스페이스: {ns!r})\n"
-        f"쓸 수 있는 네임스페이스는 {allowed} 넷뿐입니다."
+        f"쓸 수 있는 네임스페이스는 {allowed} 넷뿐입니다.",
+        rule_id="STR-REF-006",
     )
 
 
@@ -177,8 +195,13 @@ def parse_ref(value: str, expected: EntryKind | None = None) -> tuple[EntryKind,
     **종류는 id 접두가 말해준다** — 그래서 `${ref.pl_...}` 를 노드 자리에 쓰면
     로드 시점에 잡힌다 (`STR-REG-003`). 접두를 모르면 오류.
 
-    `expected` 를 주면 그 자리가 요구하는 종류와 대조까지 한다. 계약 시그니처는
-    `parse_ref(value)` 이고 `expected` 는 선택 인자이므로 호출부는 그대로 써도 된다.
+    **`expected` 는 "이 자리가 요구하는 종류"다.** 파이프라인의 `source` 자리에는
+    노드만, Spec 의 `plan[].source` 자리에는 파이프라인만 올 수 있다 — 그 자리를
+    아는 호출부가 `expected` 로 알려주면 접두와 대조해 `STR-REG-003`(자리와 접두
+    불일치)을 낸다. `expected` 없이는 이 규칙을 낼 방법이 없다.
+
+    `expected=None` 이면 접두 해석만 하고 자리 대조는 하지 않는다 — 자리가
+    정해지지 않은 호출부(목록 조회 등)는 그대로 쓰면 된다 (MODULES.md R1-5).
     """
     if not is_ref(value):
         _fail(
@@ -224,11 +247,22 @@ def _env_lookup(name: str, env: Mapping[str, str]) -> str:
 def expand_path(value: str, env: Mapping[str, str]) -> Path:
     """경로 규칙 전체를 적용해 절대경로를 만든다.
 
-    `~` 전개(`os.path.expanduser` 가 `~`·`~user` 처리) → `${env.X}` 전개 →
-    절대경로 검증. 어기면 `STR-PATH-001` / `-002` / `-003`.
+    **3단계다** (`schema.md` 3절):
+
+        `~` 전개  →  `${env.X}` 전개  →  `~` 재전개  →  절대경로 검증
+
+    어기면 `STR-PATH-001`(전개 후에도 상대경로) / `-002`(env 미정의) /
+    `-003`(env 값이 상대경로), 잔여 참조는 `STR-REF-006`.
 
     `~` 를 허용하는 이유: 상대경로가 아니라 cwd 와 무관하게 홈으로 결정되는
     규약이므로 전개하면 절대경로다. `${env.HOME}` 의 설탕 문법.
+    **같은 논리가 env 값 안의 `~` 에도 적용되므로 재전개가 필요하다** —
+    `PROJECT_ROOT=~/proj` 는 흔한 설정이다.
+
+    **`STR-PATH-004`(`path: true` 인 config 값이 경로 규칙을 어긴다)는 여기서 내지
+    않는다.** 어떤 config 가 `path: true` 인지는 파이프라인 선언을 읽어야 알 수 있고,
+    그건 `checks/pipeline.py`(Step 2-b) 의 일이다 (MODULES.md R1-6).
+    `refs` 는 그 검사에 쓸 기제(`expand_path`)만 제공한다.
     """
     if not value:
         _fail(
@@ -241,11 +275,15 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
     tilde = os.path.expanduser(value)
 
     # ② 환경변수 전개 — 값 자체가 상대경로면 그 자리에서 잡는다.
+    #    ③ `~` 재전개를 여기서 값마다 한다. 값 안의 `~` 는 그 값이 놓이는 자리가
+    #    앞자리든 중간자리든 똑같이 홈으로 결정되므로, 치환 전에 풀어야 앞자리는
+    #    오진단(STR-PATH-003)이 안 나고 중간자리는 리터럴 `~` 가 안 박힌다.
     def lookup(name: str, *, at_start: bool) -> str:
-        resolved = _env_lookup(name, env)
+        raw = _env_lookup(name, env)
+        resolved = os.path.expanduser(raw)
         if _is_relative_marker(resolved) or (at_start and not os.path.isabs(resolved)):
             _fail(
-                f"환경변수 값 자체가 상대경로입니다: ${{env.{name}}} = {resolved!r}\n"
+                f"환경변수 값 자체가 상대경로입니다: ${{env.{name}}} = {raw!r}\n"
                 f"환경변수 값이 절대경로여야 합니다. `PROJECT_ROOT=./foo` 같은 값은 "
                 f"cwd 의존을 되살립니다.",
                 rule_id="STR-PATH-003",
@@ -257,7 +295,13 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
         pass_position=True,
     )
 
-    # ③ 절대경로 검증 — 아니면 무조건 에러.
+    # ③ `~` 재전개 (고정점) — 치환 결과 맨 앞에 `~` 가 새로 생겼을 수 있다.
+    expanded = os.path.expanduser(expanded)
+
+    # ④ 잔여 `${` 는 오류 — 경로 해석 시점엔 모든 참조가 풀려 있어야 한다.
+    _fail_if_unresolved(expanded, value)
+
+    # ⑤ 절대경로 검증 — 아니면 무조건 에러.
     if not os.path.isabs(expanded):
         _fail(
             f"전개 후에도 절대경로가 아닙니다: {expanded!r} (원본: {value!r})\n"
@@ -266,6 +310,37 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
             rule_id="STR-PATH-001",
         )
     return Path(expanded)
+
+
+def _fail_if_unresolved(expanded: str, original: str) -> None:
+    """전개가 끝난 경로에 `${` 가 남았으면 오류다.
+
+    남은 참조를 리터럴 경로 조각으로 통과시키면 나중에 "파일 없음" 으로 원인이
+    뭉개진다. 닫히지 않은 `${` (예: `/opt/${env.HOME/x`) 도 같은 이유로 오류다 —
+    이쪽은 `${...}` 로 인식조차 되지 않아 `collect_placeholders` 를 그냥 통과한다.
+
+    둘 다 `STR-REF-006`(malformed-reference) 로 낸다. 이 자리에서 쓸 수 없는
+    참조라는 점이 같다.
+    """
+    at = expanded.find("${")
+    if at < 0:
+        return
+    rest = expanded[at:]
+    close = rest.find("}")
+    if close < 0:
+        _fail(
+            f"닫히지 않은 참조입니다: {rest!r} (원본: {original!r})\n"
+            f"`${{env.X}}` 처럼 `}}` 로 닫으세요. 닫히지 않으면 참조로 인식되지 않아 "
+            f"리터럴 경로 조각으로 남습니다.",
+            rule_id="STR-REF-006",
+        )
+    _fail(
+        f"경로에 전개되지 않은 참조가 남았습니다: {rest[: close + 1]} (원본: {original!r})\n"
+        f"경로 해석 시점엔 모든 참조가 풀려 있어야 합니다. `${{config.X}}` / "
+        f"`${{state.X}}` 는 경로로 넘기기 전에 전개하세요 — 리터럴로 통과시키면 "
+        f"나중에 '파일 없음' 으로 원인이 뭉개집니다.",
+        rule_id="STR-REF-006",
+    )
 
 
 def _is_relative_marker(value: str) -> bool:
@@ -282,6 +357,16 @@ def expand_config(
 
     `target` 이 주어지면(비교 파이프라인) **`targets.<target>` 에서 먼저 찾고,
     없으면 공통에서** 찾는다 (`schema.md` 12절). 둘 다 없으면 `STR-CMP-004`.
+
+    **`default` 주입은 여기 책임이 아니다.** 파이프라인이 선언한 config 의
+    `default` 를 채우는 것은 `checks/pipeline.py`(Step 2-b) 이고, `expand_config`
+    가 받는 `config` 는 **이미 default 가 채워진 것**이다 (MODULES.md R1-6).
+    → 그래서 여기서 못 찾은 `${config.X}` 는 진짜 `required` 누락이고,
+    `STR-CONFIG-001`(required-missing) 재사용이 정당하다.
+
+    ⚠ **다른 네임스페이스는 그대로 남긴다.** `${env.X}` 는 뒤이어 `expand_path`
+    가, `${state.X}` 는 `expand_state` 가 푼다 — 합성 순서 때문에 여기서 잔여
+    참조를 오류로 잡으면 안 된다. 잔여 검사는 최종 관문인 `expand_path` 가 한다.
     """
     return _expand(value, "config", lambda name: _config_lookup(name, config, target))
 
@@ -314,6 +399,8 @@ def expand_state(value: Any, state: Mapping[str, Any]) -> Any:
 
     `__` 접두는 엔진 제공 필드 예약 (`${state.__startedAt}`, epoch 밀리초 정수).
     사용자 상태 이름에 `__` 접두를 쓰면 `STR-STATE-001`.
+
+    ⚠ `expand_config` 와 마찬가지로 **다른 네임스페이스는 그대로 남긴다** (합성 순서).
     """
     return _expand(value, "state", lambda name: _state_lookup(name, state))
 

@@ -89,6 +89,22 @@ def test_empty_reference_name_rejected() -> None:
     assert "이름" in exc.value.message
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "${BUTTONSCRIPT}",  # 네임스페이스 없음
+        "${vars.HOME}",  # 모르는 네임스페이스
+        "${Env.HOME}",  # 대문자 — 모르는 네임스페이스
+        "${env.}",  # 이름 비었음
+    ],
+)
+def test_malformed_reference_is_ref_006(value: str) -> None:
+    """네임스페이스 없음 / 모름 / 이름 비었음은 전부 `STR-REF-006` 이다."""
+    with pytest.raises(StrictlerError) as exc:
+        collect_placeholders(value)
+    assert _rule_ids(exc) == ["STR-REF-006"]
+
+
 # ── `${ref.<id>}` ────────────────────────────────────────────────────────────
 
 
@@ -244,6 +260,80 @@ def test_expand_path_result_relative_is_path_001() -> None:
     with pytest.raises(StrictlerError) as exc:
         expand_path("sub/${env.HOME}", {"HOME": "/home/u"})
     assert _rule_ids(exc) == ["STR-PATH-001"]
+
+
+# ── 환경변수 값 안의 `~` — 3단계 전개 (`~` → env → `~` 재전개) ───────────────
+
+
+def test_expand_path_env_value_tilde_at_start() -> None:
+    """`PROJECT_ROOT=~/proj` 는 흔한 설정이다 — 상대경로 오진단이 나면 안 된다."""
+    out = expand_path("${env.PROJECT_ROOT}/x.json", {"PROJECT_ROOT": "~/proj"})
+    assert out.is_absolute()
+    assert out == Path(os.path.expanduser("~/proj")) / "x.json"
+
+
+def test_expand_path_env_value_tilde_mid_path() -> None:
+    """중간자리의 `~` 도 전개된다 — 리터럴 `~` 가 박힌 채 조용히 통과하면 안 된다."""
+    out = expand_path("/srv/${env.SUB}/x.json", {"SUB": "~/proj"})
+    home = os.path.expanduser("~")
+    assert "~" not in str(out)
+    assert out == Path(f"/srv{home}/proj/x.json")
+
+
+def test_expand_path_env_value_bare_tilde() -> None:
+    """값이 `~` 하나여도 전개된다."""
+    out = expand_path("${env.ROOT}/x.json", {"ROOT": "~"})
+    assert out == Path(os.path.expanduser("~")) / "x.json"
+
+
+@pytest.mark.parametrize("template", ["${env.R}/x.json", "/srv/${env.R}/x.json"])
+def test_expand_path_env_value_tilde_user(template: str) -> None:
+    """`~user` 형태도 `os.path.expanduser` 가 처리한다 — 앞자리·중간자리 모두."""
+    user = getpass.getuser()
+    raw = f"~{user}/proj"
+    expanded = os.path.expanduser(raw)
+    if expanded == raw:  # 이 환경에서 `~user` 를 못 푸는 경우
+        pytest.skip(f"`~{user}` 전개 불가 환경")
+    out = expand_path(template, {"R": raw})
+    assert "~" not in str(out)
+    assert out == Path(template.replace("${env.R}", expanded))
+
+
+# ── 잔여 `${` — 경로 해석 시점엔 모든 참조가 풀려 있어야 한다 ────────────────
+
+
+def test_expand_path_leftover_config_ref_is_ref_006() -> None:
+    """전개 안 된 `${config.X}` 를 리터럴 조각으로 통과시키지 않는다."""
+    with pytest.raises(StrictlerError) as exc:
+        expand_path("/x/${config.y}/z", {})
+    assert _rule_ids(exc) == ["STR-REF-006"]
+
+
+def test_expand_path_leftover_state_ref_is_ref_006() -> None:
+    with pytest.raises(StrictlerError) as exc:
+        expand_path("/x/${state.phase}/z", {})
+    assert _rule_ids(exc) == ["STR-REF-006"]
+
+
+def test_expand_path_leftover_ref_at_start_is_ref_006_not_path_001() -> None:
+    """앞자리에 남은 참조는 '상대경로' 가 아니라 '잔여 참조' 로 진단해야 한다."""
+    with pytest.raises(StrictlerError) as exc:
+        expand_path("${config.root}/z", {})
+    assert _rule_ids(exc) == ["STR-REF-006"]
+
+
+def test_expand_path_unclosed_brace_is_ref_006() -> None:
+    """닫히지 않은 `${` 는 참조로 인식조차 되지 않는다 — 그래서 따로 잡는다."""
+    with pytest.raises(StrictlerError) as exc:
+        expand_path("/opt/${env.HOME/x", {"HOME": "/home/u"})
+    assert _rule_ids(exc) == ["STR-REF-006"]
+
+
+def test_expand_path_unclosed_brace_from_env_value_is_ref_006() -> None:
+    """환경변수 값이 `${` 를 끌고 들어와도 잡힌다."""
+    with pytest.raises(StrictlerError) as exc:
+        expand_path("${env.ROOT}/x", {"ROOT": "/srv/${config.a"})
+    assert _rule_ids(exc) == ["STR-REF-006"]
 
 
 # ── `${config.X}` 전개 ───────────────────────────────────────────────────────
