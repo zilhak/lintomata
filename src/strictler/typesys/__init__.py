@@ -16,4 +16,28 @@
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from strictler.typesys.primitives import (
+    FORBIDDEN,
+    PRIMITIVES,
+    TypeRef,
+    check_allowed,
+    element_type,
+    is_list,
+    is_primitive,
+    parse_type,
+)
+from strictler.typesys.registry import DataclassSpec, FieldSpec, TypeRegistry
+
+__all__ = [
+    "FORBIDDEN",
+    "PRIMITIVES",
+    "TypeRef",
+    "check_allowed",
+    "element_type",
+    "is_list",
+    "is_primitive",
+    "parse_type",
+    "DataclassSpec",
+    "FieldSpec",
+    "TypeRegistry",
+]
