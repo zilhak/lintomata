@@ -9,7 +9,7 @@ target 마다 **인식 스크립트가 다른 것이 설계**다. HTML 이 완�
 
 from dataclasses import dataclass
 
-from strictler_lib import buttons
+from lintomata_lib import buttons
 
 
 @dataclass

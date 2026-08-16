@@ -48,7 +48,7 @@ invalid/     ★ 일부러 틀린 것들 — 등록·단위테스트가 잡는 �
 - **★ 라이브러리** — 버튼을 지각하는 스크립트가 넷이다(값 검증용 하나, 비교용 셋).
   넷이 각자 HTML 을 훑으면 **라벨 정규화 규칙이 갈리는 순간 개념 층 비교가 조용히
   거짓이 된다.** 그래서 훑는 방법과 정규화는 `libraries/buttons.py` **하나**에 두고
-  넷이 `from strictler_lib import buttons` 로 쓴다. 슬롯에 무엇을 쓸지는
+  넷이 `from lintomata_lib import buttons` 로 쓴다. 슬롯에 무엇을 쓸지는
   노드가 정한다 — `nodes/detect_buttons.json` · `compare_buttons.json` 의 `libraries`.
 
 ## 돌리는 법
@@ -56,9 +56,9 @@ invalid/     ★ 일부러 틀린 것들 — 등록·단위테스트가 잡는 �
 경로 두 개를 환경변수로 준다 — **입력**(이 디렉터리)과 **출력**(Action 로그·비교 리포트).
 
 ```bash
-export STRICTLER_EXAMPLE_ROOT=/절대경로/strictler/examples/home-check
-export STRICTLER_EXAMPLE_OUT=/절대경로/쓰기가능한/출력디렉터리
-export STRICTLER_HOME=$(mktemp -d)          # 등록소를 더럽히지 않으려면
+export LINTOMATA_EXAMPLE_ROOT=/절대경로/lintomata/examples/home-check
+export LINTOMATA_EXAMPLE_OUT=/절대경로/쓰기가능한/출력디렉터리
+export LINTOMATA_HOME=$(mktemp -d)          # 등록소를 더럽히지 않으려면
 ```
 
 ### (a) 파일 경로로 바로
@@ -66,12 +66,12 @@ export STRICTLER_HOME=$(mktemp -d)          # 등록소를 더럽히지 않으�
 등록 없이 돈다. 예제는 전부 **경로 참조**로 배선돼 있다.
 
 ```bash
-uv run strictler check     $STRICTLER_EXAMPLE_ROOT/specs/home_ok.json          # → 0
-uv run strictler check     $STRICTLER_EXAMPLE_ROOT/specs/home_broken.json      # → 1 위반
-uv run strictler check     $STRICTLER_EXAMPLE_ROOT/specs/home_missing.json     # → 2 오류+not run
-uv run strictler check     $STRICTLER_EXAMPLE_ROOT/specs/compare_ok.json       # → 0
-uv run strictler check     $STRICTLER_EXAMPLE_ROOT/specs/compare_diff.json     # → 1 위반
-uv run strictler node test $STRICTLER_EXAMPLE_ROOT/nodes/detect_buttons.test.json
+uv run lintomata check     $LINTOMATA_EXAMPLE_ROOT/specs/home_ok.json          # → 0
+uv run lintomata check     $LINTOMATA_EXAMPLE_ROOT/specs/home_broken.json      # → 1 위반
+uv run lintomata check     $LINTOMATA_EXAMPLE_ROOT/specs/home_missing.json     # → 2 오류+not run
+uv run lintomata check     $LINTOMATA_EXAMPLE_ROOT/specs/compare_ok.json       # → 0
+uv run lintomata check     $LINTOMATA_EXAMPLE_ROOT/specs/compare_diff.json     # → 1 위반
+uv run lintomata node test $LINTOMATA_EXAMPLE_ROOT/nodes/detect_buttons.test.json
 ```
 
 ### (b) 등록 후 id 로
@@ -80,16 +80,16 @@ uv run strictler node test $STRICTLER_EXAMPLE_ROOT/nodes/detect_buttons.test.jso
 배선이 경로 참조라서 발급된 id 와 무관하다.
 
 ```bash
-for f in $STRICTLER_EXAMPLE_ROOT/libraries/*.py;                   do uv run strictler library  add $f; done
-for f in $STRICTLER_EXAMPLE_ROOT/scripts/*.py;                     do uv run strictler script   add $f; done
-for f in $STRICTLER_EXAMPLE_ROOT/nodes/*.json;                     do case $f in *.test.json) continue;; esac
-                                                                      uv run strictler node     add $f; done
-for f in $STRICTLER_EXAMPLE_ROOT/pipelines/*.json;                 do uv run strictler pipeline add $f; done
-for f in $STRICTLER_EXAMPLE_ROOT/specs/*.json;                     do uv run strictler spec     add $f; done
+for f in $LINTOMATA_EXAMPLE_ROOT/libraries/*.py;                   do uv run lintomata library  add $f; done
+for f in $LINTOMATA_EXAMPLE_ROOT/scripts/*.py;                     do uv run lintomata script   add $f; done
+for f in $LINTOMATA_EXAMPLE_ROOT/nodes/*.json;                     do case $f in *.test.json) continue;; esac
+                                                                      uv run lintomata node     add $f; done
+for f in $LINTOMATA_EXAMPLE_ROOT/pipelines/*.json;                 do uv run lintomata pipeline add $f; done
+for f in $LINTOMATA_EXAMPLE_ROOT/specs/*.json;                     do uv run lintomata spec     add $f; done
 
-uv run strictler spec list                  # 발급된 id 확인
-uv run strictler check     sp_xxxxxxxx
-uv run strictler node test nd_xxxxxxxx      # 단위테스트는 노드와 함께 등록소로 복사된다
+uv run lintomata spec list                  # 발급된 id 확인
+uv run lintomata check     sp_xxxxxxxx
+uv run lintomata node test nd_xxxxxxxx      # 단위테스트는 노드와 함께 등록소로 복사된다
 ```
 
 ## `invalid/` — 일부러 틀린 것들

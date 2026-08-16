@@ -8,11 +8,11 @@
 
   "plan": [
     {
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/pipelines/page_check.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/pipelines/page_check.json",
       "description": "기획은 버튼 3개·메뉴 4개인데 대상은 버튼 2개·메뉴 3개다",
       "config": {
-        "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/home_broken.html",
-        "auditLog": "${env.STRICTLER_EXAMPLE_OUT}/audit.log",
+        "pagePath": "${env.LINTOMATA_EXAMPLE_ROOT}/targets/home_broken.html",
+        "auditLog": "${env.LINTOMATA_EXAMPLE_OUT}/audit.log",
         "expectedButtonCount": 3,
         "expectedButtonLabels": ["시작하기", "문서 보기", "문의하기"],
         "expectedMenuCount": 4,

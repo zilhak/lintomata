@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from strictler.errors import Finding, NotRunCause
-from strictler.report import (
+from lintomata.errors import Finding, NotRunCause
+from lintomata.report import (
     CompareEntry,
     CompareReport,
     Report,
@@ -36,7 +36,7 @@ ERROR = Finding(
     path="login.json > plan[1] > menu-check",
     node="detectMenu",
     status="error",
-    rule_id="STR-CONTRACT-001",
+    rule_id="LNT-CONTRACT-001",
     message="`Args` dataclass 가 선언돼 있지 않습니다.",
 )
 

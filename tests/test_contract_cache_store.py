@@ -8,7 +8,7 @@
 
 - 두 번째 실행이 첫 실행과 **리포트 전문이 같다**
 - 두 번째 실행은 스크립트를 **한 번도 파싱하지 않는다**
-- 등록 후 등록소 파일을 직접 고치면 **여전히 `STR-REG-001`** — 캐시가 가리지 않는다
+- 등록 후 등록소 파일을 직접 고치면 **여전히 `LNT-REG-001`** — 캐시가 가리지 않는다
 - 캐시가 **정적 검사를 대신하지 않는다** — 등록은 여전히 금지 패턴에서 거부된다
 
 **대역을 쓰지 않는다.** 진짜 등록소·진짜 CLI 로 돈다.
@@ -23,15 +23,15 @@ from pathlib import Path
 
 import pytest
 
-from strictler import cli
-from strictler.checks import script as script_checks
-from strictler.checks.contracts import CACHE_VERSION
-from strictler.store.entries import CACHE_SUBDIR
+from lintomata import cli
+from lintomata.checks import script as script_checks
+from lintomata.checks.contracts import CACHE_VERSION
+from lintomata.store.entries import CACHE_SUBDIR
 
 EXAMPLE_ROOT = Path(__file__).resolve().parent.parent / "examples" / "home-check"
 
 _REF_RE = re.compile(
-    r"\$\{env\.STRICTLER_EXAMPLE_ROOT\}/(?:scripts|nodes|pipelines)/([\w.]+)"
+    r"\$\{env\.LINTOMATA_EXAMPLE_ROOT\}/(?:scripts|nodes|pipelines)/([\w.]+)"
 )
 """등록소 참조로 갈아끼울 자리 — 스크립트·노드·파이프라인만. `targets/` 는 그대로 둔다."""
 
@@ -58,9 +58,9 @@ def registered(
     home = tmp_path / "home"
     work = tmp_path / "work"
     shutil.copytree(EXAMPLE_ROOT, work)
-    monkeypatch.setenv("STRICTLER_HOME", str(home))
-    monkeypatch.setenv("STRICTLER_EXAMPLE_ROOT", str(work))
-    monkeypatch.setenv("STRICTLER_EXAMPLE_OUT", str(tmp_path / "out"))
+    monkeypatch.setenv("LINTOMATA_HOME", str(home))
+    monkeypatch.setenv("LINTOMATA_EXAMPLE_ROOT", str(work))
+    monkeypatch.setenv("LINTOMATA_EXAMPLE_OUT", str(tmp_path / "out"))
 
     ids: dict[str, str] = {}
 
@@ -144,7 +144,7 @@ def test_두_번째_실행은_스크립트를_다시_파싱하지_않는다(
 def test_캐시_파일이_등록소_안에_쌓인다(
     registered: dict[str, str], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """자리는 `$STRICTLER_HOME/cache/<id>.json` 이고 키(해시·버전)를 함께 적는다."""
+    """자리는 `$LINTOMATA_HOME/cache/<id>.json` 이고 키(해시·버전)를 함께 적는다."""
     check(capsys, registered["home_ok.json"])
 
     cache_dir = Path(registered["__home__"]) / CACHE_SUBDIR
@@ -164,7 +164,7 @@ def test_캐시_포맷_버전이_다르면_버린다(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """strictler 를 올려 추출 방식이 바뀌면 옛 캐시는 무효다.
+    """lintomata 를 올려 추출 방식이 바뀌면 옛 캐시는 무효다.
 
     ⚠ **리포트가 같은지로 물 수 없다.** 버전을 무시하고 옛 캐시를 그대로 써도
     같은 파일에서 나온 계약이라 리포트는 어차피 같다 — 버전 가드를 통째로 지워도
@@ -212,7 +212,7 @@ def test_등록소_파일을_직접_고치면_여전히_STR_REG_001(
 
     code, report = check(capsys, registered["home_ok.json"])
     assert code == 2
-    assert "STR-REG-001" in {item.get("rule") for item in report["results"]}
+    assert "LNT-REG-001" in {item.get("rule") for item in report["results"]}
 
 
 def test_고쳐진_등록소_파일은_캐시가_아니라_다시_파싱된다(
@@ -279,4 +279,4 @@ def test_캐시가_있어도_등록_시_정적_검사는_그대로_돈다(
 
     assert code == 2
     assert "등록하지 않았습니다" in out
-    assert "STR-BAN-001" in out
+    assert "LNT-BAN-001" in out

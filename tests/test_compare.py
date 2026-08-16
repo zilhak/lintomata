@@ -20,12 +20,12 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from strictler.checks import reachability
-from strictler.engine import compare
-from strictler.engine.result import RunResult
-from strictler.errors import NotRunCause
-from strictler.model import Pipeline
-from strictler.store.entries import Store
+from lintomata.checks import reachability
+from lintomata.engine import compare
+from lintomata.engine.result import RunResult
+from lintomata.errors import NotRunCause
+from lintomata.model import Pipeline
+from lintomata.store.entries import Store
 
 STARTED_AT = 1_700_000_000_000
 
@@ -451,7 +451,7 @@ def test_compare_에_적힌_노드만_리포트에_담긴다(tmp_path):
 
 def test_리포트는_실행과_동시에_쌓이고_그대로_기록된다(tmp_path):
     """출력 위치는 Spec `plan` 항목이고, 파이프라인이 그쪽에 쌓는다."""
-    from strictler.report import write_compare_report
+    from lintomata.report import write_compare_report
 
     pipeline, config = chain_fixture(
         tmp_path, {"legacy": 3, "v2": 3, "v3": 9}, ["legacy", "v2", "v3"]
@@ -748,7 +748,7 @@ def test_script_가_안_풀리면_오류(tmp_path):
     del config["targets"]["v2"]["detectScript"]
     result, report = run(pipeline, config, tmp_path)
 
-    finding = next(f for f in result.findings if f.rule_id == "STR-CMP-004")
+    finding = next(f for f in result.findings if f.rule_id == "LNT-CMP-004")
     assert finding.node == "detect"
     # target 한 벌이 빠지면 비교가 성립하지 않는다 — 뒷단은 not run 이다.
     assert assert_four_states(pipeline, result) == {
@@ -792,7 +792,7 @@ def test_등록소_파일이_수정되면_STR_REG_001(tmp_path):
     pipeline = build_pipeline(nodes, ["legacy", "v2"], ["detect"])
     result, _ = run(pipeline, {"targets": detects}, tmp_path, store=store)
 
-    assert "STR-REG-001" in {f.rule_id for f in result.findings}
+    assert "LNT-REG-001" in {f.rule_id for f in result.findings}
     assert assert_four_states(pipeline, result)["shape"] == "error"
 
 
@@ -830,7 +830,7 @@ def test_등록된_스크립트가_수정되면_STR_REG_001(tmp_path):
     pipeline = build_pipeline(nodes, ["legacy", "v2"], ["detect"])
     result, _ = run(pipeline, {"targets": detects}, tmp_path, store=store)
 
-    assert "STR-REG-001" in {f.rule_id for f in result.findings}
+    assert "LNT-REG-001" in {f.rule_id for f in result.findings}
 
 
 # ── 규칙 슬롯 — 내 모듈이 내는 규칙 id 가 살아남는가 ─────────────────────────
@@ -845,7 +845,7 @@ def test_targets_가_둘_미만이면_STR_CMP_003(tmp_path):
     )
     result, report = run(pipeline, {}, tmp_path)
 
-    assert [f.rule_id for f in result.findings if f.rule_id] == ["STR-CMP-003"]
+    assert [f.rule_id for f in result.findings if f.rule_id] == ["LNT-CMP-003"]
     assert "1" in result.findings[0].message
     assert report.root == {}
     # 돌 수 없었어도 **노드는 리포트에서 사라지지 않는다** (R4-2).
@@ -853,7 +853,7 @@ def test_targets_가_둘_미만이면_STR_CMP_003(tmp_path):
 
 
 def test_없는_config_는_STR_CMP_004_로_나온다(tmp_path):
-    """`targets.<이름>` 에도 공통에도 없다 — `STR-CONFIG-001` 이 아니다."""
+    """`targets.<이름>` 에도 공통에도 없다 — `LNT-CONFIG-001` 이 아니다."""
     shape = write(tmp_path, "shape.py", SHAPE)
     pipeline = build_pipeline(
         [
@@ -868,7 +868,7 @@ def test_없는_config_는_STR_CMP_004_로_나온다(tmp_path):
     )
     result, _ = run(pipeline, {"targets": {"legacy": {}, "v2": {}}}, tmp_path)
 
-    found = [f for f in result.findings if f.rule_id == "STR-CMP-004"]
+    found = [f for f in result.findings if f.rule_id == "LNT-CMP-004"]
     assert [f.node for f in found] == ["shape", "shape"]
     # target 별로 갈리는 것은 **target 별로 나오는 게 정상**이다 (R4-6) —
     # 어느 대상이 잘못됐는지가 메시지에 박혀 있어 dedupe 로 뭉개지지 않는다.
@@ -904,22 +904,22 @@ def test_배선_오류는_target_수만큼_중복되지_않는다(tmp_path):
 
 
 def test_내가_내는_규칙_전부가_렌더된다():
-    """슬롯을 빠뜨리면 `StrictlerError` 가 나면서 **규칙 id 가 사라진다.**
+    """슬롯을 빠뜨리면 `LintomataError` 가 나면서 **규칙 id 가 사라진다.**
 
     눈으로 읽지 말고 실제로 태워서 확인한다 (Step 1 에서 11건, Step 2 에서 3건).
     """
-    from strictler import rules
+    from lintomata import rules
 
-    expected = {"STR-CMP-003": {"count"}, "STR-CMP-004": {"name"}}
+    expected = {"LNT-CMP-003": {"count"}, "LNT-CMP-004": {"name"}}
     for rule_id, slots in expected.items():
         assert set(rules.get_rule(rule_id).slots) == slots
 
     assert rules.finding(
-        "STR-CMP-003", path="p", fields={"count": 1}
-    ).rule_id == "STR-CMP-003"
+        "LNT-CMP-003", path="p", fields={"count": 1}
+    ).rule_id == "LNT-CMP-003"
     assert rules.finding(
-        "STR-CMP-004", path="p", fields={"name": "x"}
-    ).rule_id == "STR-CMP-004"
+        "LNT-CMP-004", path="p", fields={"name": "x"}
+    ).rule_id == "LNT-CMP-004"
 
 
 # ── 잘못된 파이프라인 종류 ───────────────────────────────────────────────────
@@ -1007,7 +1007,7 @@ def test_비교의_params_에_남은_참조도_STR_REF_007_이다(tmp_path):
     result, _ = run(pipeline, {"pagePath": "${ref.sc_deadbeef}/x"}, tmp_path, env=env)
 
     errs = [f for f in result.findings if f.status == "error"]
-    assert {f.rule_id for f in errs} == {"STR-REF-007"}
+    assert {f.rule_id for f in errs} == {"LNT-REF-007"}
     assert_four_states(pipeline, result)
 
 
@@ -1052,6 +1052,6 @@ def test_라이브러리를_못_풀면_그_노드는_준비에서_빠진다(tmp_
     assert prepared is not None
     assert "detectButtons" not in prepared.scripts
     broken = [item for item in findings if item.status == "error"]
-    assert [item.rule_id for item in broken] == ["STR-REF-001"]
+    assert [item.rule_id for item in broken] == ["LNT-REF-001"]
     # 파이프라인 문맥의 이름은 노드 id 하나다 — `info.name` 은 `detect-buttons` 다.
     assert [item.node for item in broken] == ["detectButtons"]

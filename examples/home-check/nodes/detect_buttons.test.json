@@ -1,5 +1,5 @@
 {
-  "node": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/detect_buttons.json",
+  "node": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/detect_buttons.json",
   "cases": [
     {
       "name": "버튼 3개짜리 평범한 페이지 — 개수와 라벨까지 본다",

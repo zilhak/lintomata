@@ -1,5 +1,5 @@
 {
   "info": { "name": "bad-reckon-no-verdict", "description": "판정 필드가 없는 Reckon — 등록이 실패해야 한다" },
   "type": "reckon",
-  "script": "${env.STRICTLER_EXAMPLE_ROOT}/invalid/bad_reckon_no_verdict.py"
+  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/invalid/bad_reckon_no_verdict.py"
 }

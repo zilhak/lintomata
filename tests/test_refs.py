@@ -1,4 +1,4 @@
-"""`strictler.refs` — 참조 문법 4종과 경로 규칙.
+"""`lintomata.refs` — 참조 문법 4종과 경로 규칙.
 
 근거는 `schema.md` 2·3·12절, `rules.md` PATH·REG·CMP·STATE.
 """
@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from strictler import refs, rules
-from strictler.errors import StrictlerError
-from strictler.refs import (
+from lintomata import refs, rules
+from lintomata.errors import LintomataError
+from lintomata.refs import (
     NAMESPACES,
     Placeholder,
     collect_placeholders,
@@ -29,7 +29,7 @@ from strictler.refs import (
 )
 
 
-def _rule_ids(exc: pytest.ExceptionInfo[StrictlerError]) -> list[str]:
+def _rule_ids(exc: pytest.ExceptionInfo[LintomataError]) -> list[str]:
     return [f.rule_id for f in exc.value.findings]
 
 
@@ -69,26 +69,26 @@ def test_collect_placeholders_none_in_plain_string() -> None:
 
 def test_namespaceless_reference_rejected() -> None:
     """`${X}` 는 미정의 환경변수인지 config 오타인지 구분 못 하므로 에러다."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         collect_placeholders("${BUTTONSCRIPT}")
     assert "네임스페이스" in exc.value.message
     assert exc.value.findings[0].status == "error"
 
 
 def test_unknown_namespace_rejected() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         collect_placeholders("${vars.HOME}")
     assert "vars" in exc.value.message
 
 
 def test_uppercase_namespace_rejected() -> None:
     """네임스페이스는 소문자 넷뿐이다."""
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         collect_placeholders("${Env.HOME}")
 
 
 def test_empty_reference_name_rejected() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         collect_placeholders("${env.}")
     assert "이름" in exc.value.message
 
@@ -103,10 +103,10 @@ def test_empty_reference_name_rejected() -> None:
     ],
 )
 def test_malformed_reference_is_ref_006(value: str) -> None:
-    """네임스페이스 없음 / 모름 / 이름 비었음은 전부 `STR-REF-006` 이다."""
-    with pytest.raises(StrictlerError) as exc:
+    """네임스페이스 없음 / 모름 / 이름 비었음은 전부 `LNT-REF-006` 이다."""
+    with pytest.raises(LintomataError) as exc:
         collect_placeholders(value)
-    assert _rule_ids(exc) == ["STR-REF-006"]
+    assert _rule_ids(exc) == ["LNT-REF-006"]
 
 
 # ── `${ref.<id>}` ────────────────────────────────────────────────────────────
@@ -141,10 +141,10 @@ def test_parse_ref_kind_from_prefix(value: str, kind: str, entry_id: str) -> Non
 
 
 def test_parse_ref_pipeline_in_node_slot_rejected() -> None:
-    """`${ref.pl_...}` 를 노드 자리에 쓰면 잡힌다 — `STR-REG-003`."""
-    with pytest.raises(StrictlerError) as exc:
+    """`${ref.pl_...}` 를 노드 자리에 쓰면 잡힌다 — `LNT-REG-003`."""
+    with pytest.raises(LintomataError) as exc:
         parse_ref("${ref.pl_c9d0e1f2}", expected="node")
-    assert _rule_ids(exc) == ["STR-REG-003"]
+    assert _rule_ids(exc) == ["LNT-REG-003"]
 
 
 def test_parse_ref_matching_kind_passes() -> None:
@@ -152,13 +152,13 @@ def test_parse_ref_matching_kind_passes() -> None:
 
 
 def test_parse_ref_unknown_prefix_rejected() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         parse_ref("${ref.xx_deadbeef}")
-    assert _rule_ids(exc) == ["STR-REG-003"]
+    assert _rule_ids(exc) == ["LNT-REG-003"]
 
 
 def test_parse_ref_on_non_ref_rejected() -> None:
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         parse_ref("${env.HOME}")
 
 
@@ -171,16 +171,16 @@ def test_parse_ref_on_non_ref_rejected() -> None:
     ],
 )
 def test_parse_ref_malformed_is_ref_006(value: str) -> None:
-    """`parse_ref` 로 들어와도 `STR-REF-006` 이 붙는다.
+    """`parse_ref` 로 들어와도 `LNT-REF-006` 이 붙는다.
 
-    이 셋은 `rules.md` `STR-REF-006` 이 열거한 세 경우 **그 자체**다.
+    이 셋은 `rules.md` `LNT-REF-006` 이 열거한 세 경우 **그 자체**다.
     `is_ref()` 가 `False` 를 돌려준다는 이유로 형태 판별 이전 단계에서 id 없이
     튕기면, 같은 입력이 `collect_placeholders` 로 가면 `-006` 이 붙는데
     `parse_ref` 로 가면 id 가 사라지는 비대칭이 생긴다.
     """
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         parse_ref(value)
-    assert _rule_ids(exc) == ["STR-REF-006"]
+    assert _rule_ids(exc) == ["LNT-REF-006"]
 
 
 @pytest.mark.parametrize(
@@ -196,16 +196,16 @@ def test_parse_ref_non_reference_is_not_ref_006(value: str) -> None:
     문법이 깨진 게 아니라서 "네임스페이스를 반드시 붙입니다" 가이드를 주면
     AI 가 엉뚱한 곳을 고친다. 규칙 없이 나가는 것이 맞다.
     """
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         parse_ref(value)
     assert _rule_ids(exc) == [""]
 
 
 def test_parse_ref_malformed_message_comes_from_rules() -> None:
     """문구를 손으로 복제하지 않고 `rules` 에서 받는다 (R2-7)."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         parse_ref("${vars.x}")
-    expected = rules.finding("STR-REF-006", fields={"ref": "${vars.x}"}).message
+    expected = rules.finding("LNT-REF-006", fields={"ref": "${vars.x}"}).message
     assert exc.value.message.endswith(expected)
 
 
@@ -218,36 +218,36 @@ def test_expand_env_substitutes_only_env() -> None:
 
 
 def test_expand_env_undefined_is_path_002() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_env("${env.NOPE}/x", {})
-    assert _rule_ids(exc) == ["STR-PATH-002"]
+    assert _rule_ids(exc) == ["LNT-PATH-002"]
 
 
 # ── 경로 규칙 ────────────────────────────────────────────────────────────────
 
 
 def test_expand_path_plain_absolute() -> None:
-    assert expand_path("/opt/strictler/nodes/a.json", {}) == Path(
-        "/opt/strictler/nodes/a.json"
+    assert expand_path("/opt/lintomata/nodes/a.json", {}) == Path(
+        "/opt/lintomata/nodes/a.json"
     )
 
 
 def test_expand_path_relative_is_path_001() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("nodes/a.json", {})
-    assert _rule_ids(exc) == ["STR-PATH-001"]
+    assert _rule_ids(exc) == ["LNT-PATH-001"]
 
 
 def test_expand_path_dot_relative_is_path_001() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("./nodes/a.json", {})
-    assert _rule_ids(exc) == ["STR-PATH-001"]
+    assert _rule_ids(exc) == ["LNT-PATH-001"]
 
 
 def test_expand_path_empty_is_path_001() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("", {})
-    assert _rule_ids(exc) == ["STR-PATH-001"]
+    assert _rule_ids(exc) == ["LNT-PATH-001"]
 
 
 def test_expand_path_tilde_expands_to_absolute() -> None:
@@ -275,29 +275,29 @@ def test_expand_path_env_expands_to_absolute() -> None:
 
 
 def test_expand_path_env_undefined_is_path_002() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("${env.PROJECT_ROOT}/x.json", {})
-    assert _rule_ids(exc) == ["STR-PATH-002"]
+    assert _rule_ids(exc) == ["LNT-PATH-002"]
 
 
 def test_expand_path_env_value_dot_relative_is_path_003() -> None:
     """`PROJECT_ROOT=./foo` → cwd 의존을 되살리므로 에러."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("${env.PROJECT_ROOT}/x.json", {"PROJECT_ROOT": "./foo"})
-    assert _rule_ids(exc) == ["STR-PATH-003"]
+    assert _rule_ids(exc) == ["LNT-PATH-003"]
 
 
 def test_expand_path_env_value_bare_relative_is_path_003() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("${env.PROJECT_ROOT}/x.json", {"PROJECT_ROOT": "foo/bar"})
-    assert _rule_ids(exc) == ["STR-PATH-003"]
+    assert _rule_ids(exc) == ["LNT-PATH-003"]
 
 
 def test_expand_path_env_value_relative_marker_mid_path_is_path_003() -> None:
     """앞자리가 아니어도 `../` 로 시작하는 값은 상대경로임이 명백하다."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("/srv/${env.SUB}/x.json", {"SUB": "../up"})
-    assert _rule_ids(exc) == ["STR-PATH-003"]
+    assert _rule_ids(exc) == ["LNT-PATH-003"]
 
 
 def test_expand_path_env_segment_mid_path_is_fine() -> None:
@@ -308,9 +308,9 @@ def test_expand_path_env_segment_mid_path_is_fine() -> None:
 
 def test_expand_path_result_relative_is_path_001() -> None:
     """전개 결과가 상대경로면 에러 — 규칙의 마지막 관문."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("sub/${env.HOME}", {"HOME": "/home/u"})
-    assert _rule_ids(exc) == ["STR-PATH-001"]
+    assert _rule_ids(exc) == ["LNT-PATH-001"]
 
 
 # ── 환경변수 값 안의 `~` — 3단계 전개 (`~` → env → `~` 재전개) ───────────────
@@ -359,46 +359,46 @@ def test_expand_path_leftover_config_ref_is_ref_007() -> None:
     **`-006` 이 아니라 `-007` 이다** (R2-6): 문법은 완전히 정상이고 잘못된 건
     전개 순서다. 규칙을 나누는 기준은 "증상" 이 아니라 "고치는 방법" 이다.
     """
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("/x/${config.y}/z", {})
-    assert _rule_ids(exc) == ["STR-REF-007"]
+    assert _rule_ids(exc) == ["LNT-REF-007"]
 
 
 def test_expand_path_leftover_state_ref_is_ref_007() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("/x/${state.phase}/z", {})
-    assert _rule_ids(exc) == ["STR-REF-007"]
+    assert _rule_ids(exc) == ["LNT-REF-007"]
 
 
 def test_expand_path_leftover_ref_at_start_is_ref_007_not_path_001() -> None:
     """앞자리에 남은 참조는 '상대경로' 가 아니라 '잔여 참조' 로 진단해야 한다."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("${config.root}/z", {})
-    assert _rule_ids(exc) == ["STR-REF-007"]
+    assert _rule_ids(exc) == ["LNT-REF-007"]
 
 
 def test_unresolved_message_names_the_reference_and_not_the_malformed_guide() -> None:
     """`-007` 은 `-006` 의 가이드를 주면 안 된다 — 그게 규칙을 나눈 이유다."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("/x/${config.y}/z", {})
     assert "${config.y}" in exc.value.message
     assert "네임스페이스를 반드시 붙입니다" not in exc.value.message
-    expected = rules.finding("STR-REF-007", fields={"ref": "${config.y}"}).message
+    expected = rules.finding("LNT-REF-007", fields={"ref": "${config.y}"}).message
     assert exc.value.message.endswith(expected)
 
 
 def test_expand_path_unclosed_brace_is_ref_006() -> None:
     """닫히지 않은 `${` 는 **문법이 깨진 것**이므로 `-006` 이다 — `-007` 과 갈린다."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("/opt/${env.HOME/x", {"HOME": "/home/u"})
-    assert _rule_ids(exc) == ["STR-REF-006"]
+    assert _rule_ids(exc) == ["LNT-REF-006"]
 
 
 def test_expand_path_unclosed_brace_from_env_value_is_ref_006() -> None:
     """환경변수 값이 `${` 를 끌고 들어와도 잡힌다."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("${env.ROOT}/x", {"ROOT": "/srv/${config.a"})
-    assert _rule_ids(exc) == ["STR-REF-006"]
+    assert _rule_ids(exc) == ["LNT-REF-006"]
 
 
 @pytest.mark.parametrize("injected", ["${vars.a}", "${X}", "${env.}"])
@@ -407,9 +407,9 @@ def test_expand_path_malformed_from_env_value_is_ref_006(injected: str) -> None:
 
     이쪽은 원본에 없던 참조라 `collect_placeholders` 를 통과해 버린다.
     """
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_path("${env.ROOT}/x", {"ROOT": f"/srv/{injected}"})
-    assert _rule_ids(exc) == ["STR-REF-006"]
+    assert _rule_ids(exc) == ["LNT-REF-006"]
 
 
 # ── `${config.X}` 전개 ───────────────────────────────────────────────────────
@@ -442,9 +442,9 @@ def test_expand_config_non_string_passthrough() -> None:
 
 
 def test_expand_config_missing_without_target_is_config_001() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_config("${config.nope}", {})
-    assert _rule_ids(exc) == ["STR-CONFIG-001"]
+    assert _rule_ids(exc) == ["LNT-CONFIG-001"]
 
 
 def test_expand_config_target_scope_wins_over_common() -> None:
@@ -462,9 +462,9 @@ def test_expand_config_falls_back_to_common_when_target_lacks_it() -> None:
 
 def test_expand_config_missing_in_both_is_cmp_004() -> None:
     config = {"targets": {"v2": {"buttonScript": "/v2.py"}}}
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_config("${config.roleAttr}", config, target="v2")
-    assert _rule_ids(exc) == ["STR-CMP-004"]
+    assert _rule_ids(exc) == ["LNT-CMP-004"]
 
 
 # ── `${state.X}` 전개 ────────────────────────────────────────────────────────
@@ -480,15 +480,15 @@ def test_expand_state_engine_field_started_at() -> None:
 
 
 def test_expand_state_reserved_prefix_is_state_001() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_state("${state.__mine}", {"__mine": "x"})
-    assert _rule_ids(exc) == ["STR-STATE-001"]
+    assert _rule_ids(exc) == ["LNT-STATE-001"]
 
 
 def test_expand_state_unmapped_is_state_002() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_state("${state.phase}", {})
-    assert _rule_ids(exc) == ["STR-STATE-002"]
+    assert _rule_ids(exc) == ["LNT-STATE-002"]
 
 
 def test_expand_state_leaves_other_namespaces_alone() -> None:
@@ -499,7 +499,7 @@ def test_expand_state_leaves_other_namespaces_alone() -> None:
 #
 # `expand_config`/`expand_state` 가 **다른 네임스페이스를 남기는 것은 정상**이다
 # (합성 순서 때문에 그게 맞다). 잔여 검사는 최종 관문인 `expand_path` 만 한다 —
-# 여기까지 `STR-REF-007` 을 확대하면 합성 자체가 불가능해진다.
+# 여기까지 `LNT-REF-007` 을 확대하면 합성 자체가 불가능해진다.
 
 
 @pytest.mark.parametrize(
@@ -529,29 +529,29 @@ def test_expand_env_leaves_unresolved_others_without_error() -> None:
 # **원래 나와야 할 규칙 id 가 사라진다** (findings 가 비고 슬롯 누락 오류로 바뀐다).
 # 그래서 "오류 경로를 실제로 태워 `rule_id` 를 확인" 하는 것이 곧 슬롯 검증이다.
 #
-# 표가 낡지 않도록 `refs.py` 의 `_fail("STR-...")` 호출부를 소스에서 뽑아
+# 표가 낡지 않도록 `refs.py` 의 `_fail("LNT-...")` 호출부를 소스에서 뽑아
 # **전수 대조**한다 — 새 규칙을 내면서 여기 예제를 안 넣으면 테스트가 깨진다.
 
 _ERROR_PATHS: list[tuple[str, Callable[[], object]]] = [
-    ("STR-PATH-001", lambda: expand_path("nodes/a.json", {})),
-    ("STR-PATH-001", lambda: expand_path("", {})),
-    ("STR-PATH-002", lambda: expand_path("${env.NOPE}/x.json", {})),
-    ("STR-PATH-003", lambda: expand_path("${env.R}/x.json", {"R": "./foo"})),
-    ("STR-REF-006", lambda: collect_placeholders("${vars.HOME}")),
-    ("STR-REF-006", lambda: expand_path("/opt/${env.HOME/x", {"HOME": "/home/u"})),
-    ("STR-REF-007", lambda: expand_path("/x/${config.y}/z", {})),
-    ("STR-REG-003", lambda: parse_ref("${ref.xx_deadbeef}")),
-    ("STR-REG-003", lambda: parse_ref("${ref.pl_c9d0e1f2}", expected="node")),
-    ("STR-CONFIG-001", lambda: expand_config("${config.nope}", {})),
+    ("LNT-PATH-001", lambda: expand_path("nodes/a.json", {})),
+    ("LNT-PATH-001", lambda: expand_path("", {})),
+    ("LNT-PATH-002", lambda: expand_path("${env.NOPE}/x.json", {})),
+    ("LNT-PATH-003", lambda: expand_path("${env.R}/x.json", {"R": "./foo"})),
+    ("LNT-REF-006", lambda: collect_placeholders("${vars.HOME}")),
+    ("LNT-REF-006", lambda: expand_path("/opt/${env.HOME/x", {"HOME": "/home/u"})),
+    ("LNT-REF-007", lambda: expand_path("/x/${config.y}/z", {})),
+    ("LNT-REG-003", lambda: parse_ref("${ref.xx_deadbeef}")),
+    ("LNT-REG-003", lambda: parse_ref("${ref.pl_c9d0e1f2}", expected="node")),
+    ("LNT-CONFIG-001", lambda: expand_config("${config.nope}", {})),
     (
-        "STR-CMP-004",
+        "LNT-CMP-004",
         lambda: expand_config("${config.nope}", {"targets": {"v2": {}}}, target="v2"),
     ),
-    ("STR-STATE-001", lambda: expand_state("${state.__mine}", {"__mine": "x"})),
-    ("STR-STATE-002", lambda: expand_state("${state.phase}", {})),
+    ("LNT-STATE-001", lambda: expand_state("${state.__mine}", {"__mine": "x"})),
+    ("LNT-STATE-002", lambda: expand_state("${state.phase}", {})),
     # `expand_all` — 스크립트에 넘기는 값의 잔여 참조 (R5-1)
     (
-        "STR-REF-007",
+        "LNT-REF-007",
         lambda: expand_all(
             {"p": "${ref.sc_deadbeef}/x"}, config={}, state={}, env={}
         ),
@@ -561,8 +561,8 @@ _ERROR_PATHS: list[tuple[str, Callable[[], object]]] = [
 _UNFILLED_SLOT_C = re.compile(r"(?<!\$)\{(\w+)\}")
 """`{name}` 은 안 채워진 슬롯, `${env.X}` 는 가이드 본문이다 (R1-4)."""
 
-_FAIL_SITE_C = re.compile(r'_fail\(\s*\n?\s*"(STR-[A-Z]+-\d+)"')
-"""`refs.py` 안의 `_fail("STR-...")` 호출부."""
+_FAIL_SITE_C = re.compile(r'_fail\(\s*\n?\s*"(LNT-[A-Z]+-\d+)"')
+"""`refs.py` 안의 `_fail("LNT-...")` 호출부."""
 
 
 @pytest.mark.parametrize(
@@ -574,7 +574,7 @@ def test_error_path_carries_its_rule_id(
     rule_id: str, trigger: Callable[[], object]
 ) -> None:
     """오류 경로마다 규칙 id 가 살아 나온다 — 슬롯을 안 채우면 여기서 사라진다."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         trigger()
     assert _rule_ids(exc) == [rule_id]
 
@@ -588,7 +588,7 @@ def test_error_path_leaves_no_unfilled_slot(
     rule_id: str, trigger: Callable[[], object]
 ) -> None:
     """리포트에 `{path}` 가 그대로 새면 그건 검사기의 버그다."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         trigger()
     assert _UNFILLED_SLOT_C.findall(exc.value.message) == []
 
@@ -624,7 +624,7 @@ def test_expand_all_에서_config_는_state_보다_먼저_풀린다() -> None:
     """config 값이 `${state.X}` 를 품으면 **state 가 뒤**여야 풀린다.
 
     순서를 뒤집으면 config 가 끌고 들어온 `${state.X}` 가 그대로 남아
-    `STR-REF-007` 이 된다.
+    `LNT-REF-007` 이 된다.
     """
     out = expand_all(
         {"t": "${config.stamp}"},
@@ -667,15 +667,15 @@ def test_expand_all_은_타입을_보존한다() -> None:
 
 def test_expand_all_은_남은_참조를_STR_REF_007_로_잡는다() -> None:
     """리터럴로 통과시키면 나중에 엉뚱한 오류로 원인이 뭉개진다."""
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_all({"p": "${ref.sc_deadbeef}/x"}, config={}, state={}, env={})
-    assert _rule_ids(exc) == ["STR-REF-007"]
+    assert _rule_ids(exc) == ["LNT-REF-007"]
 
 
 def test_expand_all_의_미정의_env_는_STR_PATH_002() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         expand_all({"p": "${env.NOPE}/x"}, config={}, state={}, env={})
-    assert _rule_ids(exc) == ["STR-PATH-002"]
+    assert _rule_ids(exc) == ["LNT-PATH-002"]
 
 
 def test_expand_all_은_target_을_받는다() -> None:

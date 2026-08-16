@@ -19,17 +19,17 @@
   "nodes": [
     {
       "id": "page",
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/pick_page.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/pick_page.json",
       "params": { "pagePath": "${config.pagePath}" }
     },
     {
       "id": "html",
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/read_html.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/read_html.json",
       "inputs": { "scene": "page" }
     },
     {
       "id": "buttons",
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/compare_buttons.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/compare_buttons.json",
       "inputs": { "sensum": "html" }
     }
   ]

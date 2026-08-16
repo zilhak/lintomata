@@ -4,7 +4,7 @@
 통과해야 하는 것(필드 생략·파일 IO·`__startedAt`)과 걸려야 하는 것을 짝으로 둔다.
 
 ★ **모든 오류 경로를 실제로 태워 `Finding.rule_id` 를 단언한다.**
-슬롯이 비면 `rules.finding()` 이 `StrictlerError` 를 내면서 규칙 id 가 통째로 사라지므로,
+슬롯이 비면 `rules.finding()` 이 `LintomataError` 를 내면서 규칙 id 가 통째로 사라지므로,
 이 단언이 곧 슬롯 검증이다 (Step 1 통합에서 이게 없어 11건이 뒤늦게 깨졌다).
 """
 
@@ -14,12 +14,12 @@ import re
 
 import pytest
 
-from strictler import model, refs, rules
-from strictler.checks import script as sc
-from strictler.engine import state
-from strictler.errors import Finding, StrictlerError
-from strictler.typesys import primitives
-from strictler.typesys.registry import DataclassSpec, TypeRegistry
+from lintomata import model, refs, rules
+from lintomata.checks import script as sc
+from lintomata.engine import state
+from lintomata.errors import Finding, LintomataError
+from lintomata.typesys import primitives
+from lintomata.typesys.registry import DataclassSpec, TypeRegistry
 
 PATH = "/abs/scripts/node.py"
 
@@ -90,7 +90,7 @@ def test_contract_extracted() -> None:
 
 
 def test_syntax_error_is_tool_error_not_finding() -> None:
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         sc.extract_contract("def runNode(args: Args)\n    pass\n", PATH)
     assert PATH in exc.value.message
 
@@ -100,7 +100,7 @@ def test_syntax_error_is_tool_error_not_finding() -> None:
 
 def test_args_missing() -> None:
     source = "def runNode(args):\n    return returnResult(1)\n"
-    assert "STR-CONTRACT-001" in ids(sc.check_script(source, PATH))
+    assert "LNT-CONTRACT-001" in ids(sc.check_script(source, PATH))
 
 
 def test_entrypoint_forms() -> None:
@@ -112,16 +112,16 @@ def test_entrypoint_forms() -> None:
     )
     # 인자가 둘이면 형태가 다르다
     two = header + "def runNode(args: Args, extra: int):" + body
-    assert "STR-CONTRACT-002" in ids(sc.check_script(two, PATH))
+    assert "LNT-CONTRACT-002" in ids(sc.check_script(two, PATH))
     # 어노테이션이 `Args` 가 아니면 형태가 다르다
     wrong = header + "def runNode(args: Out):" + body
-    assert "STR-CONTRACT-002" in ids(sc.check_script(wrong, PATH))
+    assert "LNT-CONTRACT-002" in ids(sc.check_script(wrong, PATH))
     # 이름이 다르면 진입점이 없다
     renamed = header + "def run_node(args: Args):" + body
-    assert "STR-CONTRACT-002" in ids(sc.check_script(renamed, PATH))
+    assert "LNT-CONTRACT-002" in ids(sc.check_script(renamed, PATH))
     # 제대로 쓰면 안 걸린다
     ok = header + "def runNode(args: Args):" + body
-    assert "STR-CONTRACT-002" not in ids(sc.check_script(ok, PATH))
+    assert "LNT-CONTRACT-002" not in ids(sc.check_script(ok, PATH))
 
 
 def test_return_missing() -> None:
@@ -130,7 +130,7 @@ def test_return_missing() -> None:
         "@dataclass\nclass Args:\n    input: str\n\n\n"
         "def runNode(args: Args):\n    return args.input\n"
     )
-    assert "STR-CONTRACT-003" in ids(sc.check_script(source, PATH))
+    assert "LNT-CONTRACT-003" in ids(sc.check_script(source, PATH))
 
 
 def test_args_unknown_field() -> None:
@@ -140,8 +140,8 @@ def test_args_unknown_field() -> None:
         "def runNode(args: Args):\n    return returnResult(args.input)\n"
     )
     findings = sc.check_script(source, PATH)
-    assert "STR-CONTRACT-004" in ids(findings)
-    message = next(f.message for f in findings if f.rule_id == "STR-CONTRACT-004")
+    assert "LNT-CONTRACT-004" in ids(findings)
+    message = next(f.message for f in findings if f.rule_id == "LNT-CONTRACT-004")
     assert "config" in message
 
 
@@ -165,7 +165,7 @@ def test_state_reserved_prefix() -> None:
         "@dataclass\nclass Args:\n    state: State\n\n\n"
         "def runNode(args: Args):\n    return returnResult(args)\n"
     )
-    assert "STR-STATE-001" in ids(sc.check_script(source, PATH))
+    assert "LNT-STATE-001" in ids(sc.check_script(source, PATH))
 
 
 # --- TYPE ----------------------------------------------------------------
@@ -174,12 +174,12 @@ def test_state_reserved_prefix() -> None:
 @pytest.mark.parametrize(
     ("annotation", "rule_id"),
     [
-        ("dict", "STR-TYPE-001"),
-        ("dict[str, int]", "STR-TYPE-001"),
-        ("Optional[str]", "STR-TYPE-002"),
-        ("str | None", "STR-TYPE-002"),
-        ("set[str]", "STR-TYPE-003"),
-        ("Any", "STR-TYPE-003"),
+        ("dict", "LNT-TYPE-001"),
+        ("dict[str, int]", "LNT-TYPE-001"),
+        ("Optional[str]", "LNT-TYPE-002"),
+        ("str | None", "LNT-TYPE-002"),
+        ("set[str]", "LNT-TYPE-003"),
+        ("Any", "LNT-TYPE-003"),
     ],
 )
 def test_type_vocabulary(annotation: str, rule_id: str) -> None:
@@ -198,7 +198,7 @@ def test_primitives_pass(annotation: str) -> None:
         f"@dataclass\nclass Args:\n    input: {annotation}\n\n\n"
         "def runNode(args: Args):\n    return returnResult(args.input)\n"
     )
-    assert only(sc.check_script(source, PATH), "STR-TYPE") == []
+    assert only(sc.check_script(source, PATH), "LNT-TYPE") == []
 
 
 def test_nested_dataclass_is_registered_and_allowed() -> None:
@@ -214,7 +214,7 @@ def test_nested_dataclass_is_registered_and_allowed() -> None:
     assert set(contract.dataclasses) == {"Button", "Page", "Args"}
     page = contract.dataclasses["Page"]
     assert str(page.fields[0].type) == "list[Button]"
-    assert only(sc.check_script(source, PATH), "STR-TYPE") == []
+    assert only(sc.check_script(source, PATH), "LNT-TYPE") == []
 
 
 def test_bad_return_annotation_is_caught() -> None:
@@ -224,7 +224,7 @@ def test_bad_return_annotation_is_caught() -> None:
         "@dataclass\nclass Args:\n    input: str\n\n\n"
         "def runNode(args: Args) -> dict:\n    return returnResult(args.input)\n"
     )
-    assert "STR-TYPE-001" in ids(sc.check_script(source, PATH))
+    assert "LNT-TYPE-001" in ids(sc.check_script(source, PATH))
 
 
 def test_type_judgement_is_delegated_not_duplicated(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -257,7 +257,7 @@ def test_every_forbidden_name_is_rejected_through_check_script(name: str) -> Non
         f"@dataclass\nclass Args:\n    input: {name}\n\n\n"
         "def runNode(args: Args):\n    return returnResult(args.input)\n"
     )
-    assert only(sc.check_script(source, PATH), "STR-TYPE") != []
+    assert only(sc.check_script(source, PATH), "LNT-TYPE") != []
 
 
 @pytest.mark.parametrize("annotation", ["str | int", "Button[int]"])
@@ -269,7 +269,7 @@ def test_union_and_parameterized_dataclass_are_rejected(annotation: str) -> None
         f"@dataclass\nclass Args:\n    input: {annotation}\n\n\n"
         "def runNode(args: Args):\n    return returnResult(args.input)\n"
     )
-    assert only(sc.check_script(source, PATH), "STR-TYPE") == ["STR-TYPE-003"]
+    assert only(sc.check_script(source, PATH), "LNT-TYPE") == ["LNT-TYPE-003"]
 
 
 # --- BAN — 금지 4종 각각 --------------------------------------------------
@@ -289,13 +289,13 @@ def _with_body(body: str, *, state_field: str = "stop") -> str:
 @pytest.mark.parametrize(
     ("head", "body", "rule_id"),
     [
-        ("import time\n", "    now = time.time()\n", "STR-BAN-001"),
-        ("from datetime import datetime\n", "    now = datetime.now()\n", "STR-BAN-001"),
-        ("import random\n", "    x = random.random()\n", "STR-BAN-002"),
-        ("import os\n", "    x = os.urandom(4)\n", "STR-BAN-002"),
-        ("import subprocess\n", "    subprocess.run(['ls'])\n", "STR-BAN-003"),
-        ("import os\n", "    os.system('ls')\n", "STR-BAN-003"),
-        ("", "    exec('1')\n", "STR-BAN-003"),
+        ("import time\n", "    now = time.time()\n", "LNT-BAN-001"),
+        ("from datetime import datetime\n", "    now = datetime.now()\n", "LNT-BAN-001"),
+        ("import random\n", "    x = random.random()\n", "LNT-BAN-002"),
+        ("import os\n", "    x = os.urandom(4)\n", "LNT-BAN-002"),
+        ("import subprocess\n", "    subprocess.run(['ls'])\n", "LNT-BAN-003"),
+        ("import os\n", "    os.system('ls')\n", "LNT-BAN-003"),
+        ("", "    exec('1')\n", "LNT-BAN-003"),
     ],
 )
 def test_bans(head: str, body: str, rule_id: str) -> None:
@@ -306,25 +306,25 @@ def test_bans(head: str, body: str, rule_id: str) -> None:
 def test_ban_follows_import_alias() -> None:
     """`import os as o` 로 이름을 바꿔도 따라간다 — 사전에 추측 가능한 우회다."""
     source = "import os as o\n" + _with_body("    o.system('ls')\n")
-    assert "STR-BAN-003" in ids(sc.check_script(source, PATH))
+    assert "LNT-BAN-003" in ids(sc.check_script(source, PATH))
 
 
 def test_undeclared_state_access() -> None:
     source = _with_body("    x = args.state.settled\n")
     findings = sc.check_script(source, PATH)
-    assert "STR-BAN-004" in ids(findings)
-    assert "settled" in next(f.message for f in findings if f.rule_id == "STR-BAN-004")
+    assert "LNT-BAN-004" in ids(findings)
+    assert "settled" in next(f.message for f in findings if f.rule_id == "LNT-BAN-004")
 
 
 def test_declared_state_access_passes() -> None:
-    assert only(sc.check_script(_with_body("    x = args.state.stop\n"), PATH), "STR-BAN") == []
+    assert only(sc.check_script(_with_body("    x = args.state.stop\n"), PATH), "LNT-BAN") == []
 
 
 def test_engine_state_field_needs_no_declaration() -> None:
     """`__startedAt` 은 엔진이 준다. 사용자는 `__` 를 선언할 수 없으므로(STATE-001)
     선언 없이 읽는 것이 정상이다."""
     source = _with_body("    started = args.state.__startedAt\n")
-    assert only(sc.check_script(source, PATH), "STR-BAN") == []
+    assert only(sc.check_script(source, PATH), "LNT-BAN") == []
 
 
 def test_state_access_uses_actual_param_name() -> None:
@@ -337,7 +337,7 @@ def test_state_access_uses_actual_param_name() -> None:
         "    x = a.state.settled\n"
         "    return returnResult(a)\n"
     )
-    assert "STR-BAN-004" in ids(sc.check_script(source, PATH))
+    assert "LNT-BAN-004" in ids(sc.check_script(source, PATH))
 
 
 def test_file_io_and_network_are_free() -> None:
@@ -345,7 +345,7 @@ def test_file_io_and_network_are_free() -> None:
     source = "import os\nimport urllib.request\n" + _with_body(
         "    data = open('/etc/hosts').read()\n    root = os.environ['HOME']\n"
     )
-    assert only(sc.check_script(source, PATH), "STR-BAN") == []
+    assert only(sc.check_script(source, PATH), "LNT-BAN") == []
 
 
 # --- 노드 타입별 형식 요구 -------------------------------------------------
@@ -359,11 +359,11 @@ def test_reckon_without_params_is_caught() -> None:
         "def runNode(args: Args) -> Verdict:\n"
         "    return returnResult(Verdict(ok=args.input == 'expected'))\n"
     )
-    assert "STR-CONTRACT-005" in ids(sc.check_script(source, PATH, "reckon"))
+    assert "LNT-CONTRACT-005" in ids(sc.check_script(source, PATH, "reckon"))
     # 노드 타입을 모르면(스크립트 단독 등록) 타입별 요구는 안 돈다
-    assert "STR-CONTRACT-005" not in ids(sc.check_script(source, PATH))
+    assert "LNT-CONTRACT-005" not in ids(sc.check_script(source, PATH))
     # 같은 스크립트라도 Perceive 라면 요구가 없다
-    assert "STR-CONTRACT-005" not in ids(sc.check_script(source, PATH, "perceive"))
+    assert "LNT-CONTRACT-005" not in ids(sc.check_script(source, PATH, "perceive"))
 
 
 def test_reckon_with_empty_params_dataclass_is_caught() -> None:
@@ -374,7 +374,7 @@ def test_reckon_with_empty_params_dataclass_is_caught() -> None:
         "@dataclass\nclass Args:\n    input: str\n    params: Params\n\n\n"
         "def runNode(args: Args):\n    return returnResult(args.input)\n"
     )
-    assert "STR-CONTRACT-005" in ids(sc.check_script(source, PATH, "reckon"))
+    assert "LNT-CONTRACT-005" in ids(sc.check_script(source, PATH, "reckon"))
 
 
 def test_reckon_without_verdict_field_is_caught() -> None:
@@ -391,11 +391,11 @@ def test_reckon_without_verdict_field_is_caught() -> None:
         "def runNode(args: Args) -> Verdict:\n"
         "    return returnResult(Verdict(note='x'))\n"
     )
-    assert "STR-CONTRACT-007" in ids(sc.check_script(missing, PATH, "reckon"))
+    assert "LNT-CONTRACT-007" in ids(sc.check_script(missing, PATH, "reckon"))
     # 노드 타입을 모르면(스크립트 단독 등록) 타입별 요구는 안 돈다
-    assert "STR-CONTRACT-007" not in ids(sc.check_script(missing, PATH))
+    assert "LNT-CONTRACT-007" not in ids(sc.check_script(missing, PATH))
     # 판정 노드가 아니면 요구가 없다
-    assert "STR-CONTRACT-007" not in ids(sc.check_script(missing, PATH, "perceive"))
+    assert "LNT-CONTRACT-007" not in ids(sc.check_script(missing, PATH, "perceive"))
 
     ok = header + (
         "@dataclass\nclass Verdict:\n    passed: bool\n    message: str\n\n\n"
@@ -415,12 +415,12 @@ def test_verdict_field_must_be_bool() -> None:
         "def runNode(args: Args) -> Verdict:\n"
         "    return returnResult(Verdict(passed='yes'))\n"
     )
-    assert "STR-CONTRACT-007" in ids(sc.check_script(source, PATH, "reckon"))
+    assert "LNT-CONTRACT-007" in ids(sc.check_script(source, PATH, "reckon"))
 
 
 def test_verdict_field_name_matches_the_engine() -> None:
     """규약이 두 벌이면 등록은 통과하는데 실행에서 터진다."""
-    from strictler.engine import runtime
+    from lintomata.engine import runtime
 
     assert sc.VERDICT_FIELD == runtime.VERDICT_PASSED
 
@@ -433,8 +433,8 @@ def test_non_dataclass_output_defers_to_contract_003() -> None:
         "@dataclass\nclass Args:\n    input: str\n    params: Params\n\n\n"
         "def runNode(args: Args) -> str:\n    return returnResult(args.input)\n"
     )
-    found = only(sc.check_script(source, PATH, "reckon"), "STR-CONTRACT")
-    assert found == ["STR-CONTRACT-003"]
+    found = only(sc.check_script(source, PATH, "reckon"), "LNT-CONTRACT")
+    assert found == ["LNT-CONTRACT-003"]
 
 
 def test_action_must_be_transparent() -> None:
@@ -448,7 +448,7 @@ def test_action_must_be_transparent() -> None:
         "def runNode(args: Args) -> Other:\n"
         "    return returnResult(Other(selector=args.input.selector))\n"
     )
-    assert "STR-CONTRACT-006" in ids(sc.check_script(differ, PATH, "action"))
+    assert "LNT-CONTRACT-006" in ids(sc.check_script(differ, PATH, "action"))
 
     same = header + "def runNode(args: Args) -> Form:\n    return returnResult(args.input)\n"
     assert sc.check_script(same, PATH, "action") == []
@@ -461,7 +461,7 @@ def test_action_without_input_is_caught() -> None:
         "@dataclass\nclass Args:\n    params: str\n\n\n"
         "def runNode(args: Args):\n    return returnResult(args.params)\n"
     )
-    assert "STR-CONTRACT-006" in ids(sc.check_script(source, PATH, "action"))
+    assert "LNT-CONTRACT-006" in ids(sc.check_script(source, PATH, "action"))
 
 
 PASSTHROUGH = (
@@ -477,7 +477,7 @@ PASSTHROUGH = (
 
 def test_passthrough_output_type_comes_from_input() -> None:
     """`returnResult(args.input)` 에서 출력 타입을 못 뽑으면 `output_type` 이 비고
-    **교과서적 Action 이 `STR-CONTRACT-006` 으로 오탐된다.**"""
+    **교과서적 Action 이 `LNT-CONTRACT-006` 으로 오탐된다.**"""
     contract, _ = sc.extract_contract(PASSTHROUGH, PATH)
     assert (contract.input_type, contract.output_type) == ("Form", "Form")
     assert sc.check_script(PASSTHROUGH, PATH, "action") == []
@@ -490,8 +490,8 @@ def test_passthrough_is_not_an_action_only_concern(node_type: str) -> None:
     Reckon 만 기댓값 자리(`-005`)와 판정 자리(`-007`)를 따로 요구한다 —
     둘 다 통과형과 무관한 요구다.
     """
-    findings = only(sc.check_script(PASSTHROUGH, PATH, node_type), "STR-CONTRACT")
-    expected = ["STR-CONTRACT-005", "STR-CONTRACT-007"] if node_type == "reckon" else []
+    findings = only(sc.check_script(PASSTHROUGH, PATH, node_type), "LNT-CONTRACT")
+    expected = ["LNT-CONTRACT-005", "LNT-CONTRACT-007"] if node_type == "reckon" else []
     assert findings == expected
 
 
@@ -516,7 +516,7 @@ def test_passthrough_of_a_non_input_field_is_not_the_input_type() -> None:
     assert contract.output_type == ""
 
 
-# --- 출력은 dataclass 여야 한다 (`STR-CONTRACT-003`) -----------------------
+# --- 출력은 dataclass 여야 한다 (`LNT-CONTRACT-003`) -----------------------
 
 
 @pytest.mark.parametrize("input_type", ["str", "list[str]"])
@@ -527,7 +527,7 @@ def test_primitive_output_is_caught(input_type: str) -> None:
         f"@dataclass\nclass Args:\n    input: {input_type}\n\n\n"
         "def runNode(args: Args):\n    return returnResult(args.input)\n"
     )
-    assert "STR-CONTRACT-003" in ids(sc.check_script(source, PATH))
+    assert "LNT-CONTRACT-003" in ids(sc.check_script(source, PATH))
 
 
 def test_undetermined_output_is_caught() -> None:
@@ -538,12 +538,12 @@ def test_undetermined_output_is_caught() -> None:
         "@dataclass\nclass Args:\n    input: str\n\n\n"
         "def runNode(args: Args):\n    return returnResult(build())\n"
     )
-    assert "STR-CONTRACT-003" in ids(sc.check_script(source, PATH))
+    assert "LNT-CONTRACT-003" in ids(sc.check_script(source, PATH))
 
 
 def test_dataclass_output_passes() -> None:
     """짝 — 제대로 dataclass 를 내보내면 안 걸린다."""
-    assert "STR-CONTRACT-003" not in ids(sc.check_script(GOOD, PATH))
+    assert "LNT-CONTRACT-003" not in ids(sc.check_script(GOOD, PATH))
 
 
 def test_output_type_from_return_result_argument() -> None:
@@ -584,12 +584,12 @@ def test_tool_call_declared_passes() -> None:
 
 def test_tool_executable_undeclared() -> None:
     contract, _ = sc.extract_contract(_tool_script('launch("/usr/bin/whatever")'), PATH)
-    assert ids(sc.check_tool_calls(contract, TOOL_DECL)) == ["STR-TOOL-002"]
+    assert ids(sc.check_tool_calls(contract, TOOL_DECL)) == ["LNT-TOOL-002"]
 
 
 def test_tool_function_undeclared() -> None:
     contract, _ = sc.extract_contract(_tool_script(f'run_shell("{PLAYWRIGHT}")'), PATH)
-    assert ids(sc.check_tool_calls(contract, TOOL_DECL)) == ["STR-TOOL-001"]
+    assert ids(sc.check_tool_calls(contract, TOOL_DECL)) == ["LNT-TOOL-001"]
 
 
 def test_plain_path_argument_is_not_a_tool_call() -> None:
@@ -633,7 +633,7 @@ def test_two_scripts_each_declare_args_independently() -> None:
 
 
 def test_engine_state_fields_come_from_the_single_source() -> None:
-    """정본은 `model` 하나다 — 복제해 두면 엔진 제공 필드가 늘 때 `STR-BAN-004` 오탐이 난다."""
+    """정본은 `model` 하나다 — 복제해 두면 엔진 제공 필드가 늘 때 `LNT-BAN-004` 오탐이 난다."""
     assert sc.ENGINE_STATE_FIELDS is model.ENGINE_STATE_FIELDS
     assert refs._ENGINE_STATE_FIELDS is model.ENGINE_STATE_FIELDS
     assert set(state.ENGINE_FIELDS) == set(model.ENGINE_STATE_FIELDS)
@@ -646,7 +646,7 @@ def test_a_new_engine_state_field_needs_no_declaration(
     grown = frozenset(model.ENGINE_STATE_FIELDS | {"__attempt"})
     monkeypatch.setattr(sc, "ENGINE_STATE_FIELDS", grown)
     source = _with_body("    n = args.state.__attempt\n")
-    assert only(sc.check_script(source, PATH), "STR-BAN") == []
+    assert only(sc.check_script(source, PATH), "LNT-BAN") == []
 
 
 def test_extract_contract_never_reports_check_script_does() -> None:
@@ -675,26 +675,26 @@ def test_registered_specs_carry_origin() -> None:
 
 
 ALL_RULES = (
-    "STR-CONTRACT-001",
-    "STR-CONTRACT-002",
-    "STR-CONTRACT-003",
-    "STR-CONTRACT-004",
-    "STR-CONTRACT-005",
-    "STR-CONTRACT-006",
-    "STR-CONTRACT-007",
-    "STR-TYPE-001",
-    "STR-TYPE-002",
-    "STR-TYPE-003",
-    "STR-STATE-001",
-    "STR-BAN-001",
-    "STR-BAN-002",
-    "STR-BAN-003",
-    "STR-BAN-004",
-    "STR-TOOL-001",
-    "STR-TOOL-002",
+    "LNT-CONTRACT-001",
+    "LNT-CONTRACT-002",
+    "LNT-CONTRACT-003",
+    "LNT-CONTRACT-004",
+    "LNT-CONTRACT-005",
+    "LNT-CONTRACT-006",
+    "LNT-CONTRACT-007",
+    "LNT-TYPE-001",
+    "LNT-TYPE-002",
+    "LNT-TYPE-003",
+    "LNT-STATE-001",
+    "LNT-BAN-001",
+    "LNT-BAN-002",
+    "LNT-BAN-003",
+    "LNT-BAN-004",
+    "LNT-TOOL-001",
+    "LNT-TOOL-002",
 )
 """이 모듈이 낼 수 있는 규칙 전부. 하나라도 슬롯이 비면 `finding()` 이
-`StrictlerError` 를 내면서 **규칙 id 가 통째로 사라진다** — 그걸 여기서 막는다."""
+`LintomataError` 를 내면서 **규칙 id 가 통째로 사라진다** — 그걸 여기서 막는다."""
 
 
 def _every_finding() -> list[Finding]:
@@ -770,7 +770,7 @@ def test_findings_carry_location_and_guide() -> None:
 LIBRARY_USER = """
 from dataclasses import dataclass
 
-from strictler_lib import buttons, menus
+from lintomata_lib import buttons, menus
 
 @dataclass
 class Percept:
@@ -797,7 +797,7 @@ def test_라이브러리를_안_쓰면_슬롯이_비어_있다() -> None:
 
 def test_별칭은_가져오는_이름이_슬롯이다() -> None:
     """슬롯은 배선의 이름이고 지역 별칭은 그것과 무관하다."""
-    source = "from strictler_lib import buttons as b\n"
+    source = "from lintomata_lib import buttons as b\n"
     contract, _ = sc.extract_contract(source, PATH)
     assert contract.library_slots == ("buttons",)
     assert sc.check_library_imports(source, PATH) == []
@@ -806,17 +806,17 @@ def test_별칭은_가져오는_이름이_슬롯이다() -> None:
 @pytest.mark.parametrize(
     "source",
     [
-        "import strictler_lib\n",
-        "from strictler_lib.buttons import find\n",
-        "from strictler_lib import *\n",
-        "def runNode(args):\n    from strictler_lib import buttons\n",
+        "import lintomata_lib\n",
+        "from lintomata_lib.buttons import find\n",
+        "from lintomata_lib import *\n",
+        "def runNode(args):\n    from lintomata_lib import buttons\n",
     ],
     ids=["모듈-import", "서브모듈", "별표", "함수-안"],
 )
 def test_슬롯을_못_뽑는_형태는_STR_LIB_005(source: str) -> None:
     """정적으로 슬롯을 못 뽑으면 배선 검사가 무의미해진다."""
     findings = sc.check_library_imports(source, PATH)
-    assert [item.rule_id for item in findings] == ["STR-LIB-005"]
+    assert [item.rule_id for item in findings] == ["LNT-LIB-005"]
     contract, _ = sc.extract_contract(source, PATH)
     assert contract.library_slots == ()
 

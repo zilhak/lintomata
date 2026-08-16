@@ -1,6 +1,6 @@
 # 저작 가이드 — 검사를 하나 만들어 돌리기까지
 
-**이 문서의 독자는 AI 다.** strictler 는 기획 데이터도 노드 스크립트도 AI 가 쓴다는 전제로
+**이 문서의 독자는 AI 다.** lintomata 는 기획 데이터도 노드 스크립트도 AI 가 쓴다는 전제로
 설계됐다 — 사람은 전문을 읽지 않고 AI 가 요약한 의도를 읽고 승인한다.
 그러니 이 문서는 소개글이 아니라 **따라 하는 순서와 판단 기준**이다.
 
@@ -12,9 +12,9 @@
 돌리기 전에 두 경로를 환경변수로 준다 (예제 README 참조):
 
 ```bash
-export STRICTLER_EXAMPLE_ROOT=<저장소>/examples/home-check
-export STRICTLER_EXAMPLE_OUT=<쓰기 가능한 출력 디렉터리>
-export STRICTLER_HOME=$(mktemp -d)
+export LINTOMATA_EXAMPLE_ROOT=<저장소>/examples/home-check
+export LINTOMATA_EXAMPLE_OUT=<쓰기 가능한 출력 디렉터리>
+export LINTOMATA_HOME=$(mktemp -d)
 ```
 
 ---
@@ -99,7 +99,7 @@ Vantage 라서 `Args` 에 `input` 이 없다.
 {
   "info": { "name": "pick-page", "description": "검사할 HTML 파일 하나를 관측 지점으로 잡는다" },
   "type": "vantage",
-  "script": "${env.STRICTLER_EXAMPLE_ROOT}/scripts/vantage_pick_page.py"
+  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/vantage_pick_page.py"
 }
 ```
 
@@ -114,7 +114,7 @@ Vantage 라서 `Args` 에 `input` 이 없다.
 ```json
 {
   "id": "detectButtons",
-  "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/detect_buttons.json",
+  "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/detect_buttons.json",
   "inputs": { "sensum": "audit" },
   "states": { "ready": "observed" },
   "when": { "state": "ready" }
@@ -134,11 +134,11 @@ Vantage 라서 `Args` 에 `input` 이 없다.
   "info": { "description": "홈 화면(정상 판)이 기획대로 보이는지 검사한다", "version": "0.1.0" },
   "tool": {},
   "plan": [{
-    "source": "${env.STRICTLER_EXAMPLE_ROOT}/pipelines/page_check.json",
+    "source": "${env.LINTOMATA_EXAMPLE_ROOT}/pipelines/page_check.json",
     "description": "버튼 3개(시작하기·문서 보기·문의하기)와 메뉴 4개가 기획 순서대로 있어야 한다",
     "config": {
-      "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/home.html",
-      "auditLog": "${env.STRICTLER_EXAMPLE_OUT}/audit.log",
+      "pagePath": "${env.LINTOMATA_EXAMPLE_ROOT}/targets/home.html",
+      "auditLog": "${env.LINTOMATA_EXAMPLE_OUT}/audit.log",
       "expectedButtonCount": 3,
       "expectedButtonLabels": ["시작하기", "문서 보기", "문의하기"],
       "expectedMenuCount": 4,
@@ -175,7 +175,7 @@ Vantage 라서 `Args` 에 `input` 이 없다.
 ### 경로 규칙
 
 **모든 경로는 절대경로다.** `~` 와 `${env.X}` 만 허용한다. 상대경로는 cwd 의존을 만든다.
-이식성은 환경변수가 담당한다 — 예제가 `${env.STRICTLER_EXAMPLE_ROOT}` 를 쓰는 이유이고,
+이식성은 환경변수가 담당한다 — 예제가 `${env.LINTOMATA_EXAMPLE_ROOT}` 를 쓰는 이유이고,
 그래서 이 Spec 들은 **머신에 묶이지 않고 저장소에 그대로 커밋돼 있다.**
 자세히는 [schema.md 3절](schema.md#3-spec).
 
@@ -209,16 +209,16 @@ Vantage 라서 `Args` 에 `input` 이 없다.
 3. **같은 기획을 A/B 두 대상에 돌리는 용도**(리뉴얼 동일성 검증)가 성립하지 않는다.
 4. **노드 재사용이 불가능해진다.** `check_count` 를 버튼과 메뉴 두 자리에 쓸 수 없다.
 
-그래서 `Args.params` 에 기댓값 필드가 없으면 **등록이 실패한다**(`STR-CONTRACT-005`).
+그래서 `Args.params` 에 기댓값 필드가 없으면 **등록이 실패한다**(`LNT-CONTRACT-005`).
 그리고 필드만 두고 안 쓰는 경우는 정적으로 못 잡으므로 **단위테스트가 잡는다**(4절).
 
-출력 dataclass에는 **`passed: bool` 이 있어야** 엔진이 통과/위반을 읽는다(`STR-CONTRACT-007`).
+출력 dataclass에는 **`passed: bool` 이 있어야** 엔진이 통과/위반을 읽는다(`LNT-CONTRACT-007`).
 
 ### Action 은 `input == output`
 
 [`scripts/action_audit.py`](../examples/home-check/scripts/action_audit.py) 의 반환은
 `returnResult(args.input)` 이다. 데이터 변환은 하지 않고 부작용만 낸다.
-input 타입과 output 타입이 다르면 등록이 실패한다(`STR-CONTRACT-006`).
+input 타입과 output 타입이 다르면 등록이 실패한다(`LNT-CONTRACT-006`).
 클릭 결과를 뒷단이 알아야 하면 **후속 Sense 가 다시 관측한다.**
 
 ### 타입 어휘
@@ -228,22 +228,22 @@ input 타입과 output 타입이 다르면 등록이 실패한다(`STR-CONTRACT-
 
 | 금지 | 왜 |
 |---|---|
-| `dict` | 허용하면 dataclass 강제가 한 줄로 무의미해진다 (`STR-TYPE-001`) |
-| `Optional` / `None` | 부분집합 병합 규칙과 겹쳐 판정이 흐려진다. 값이 없을 수 있는 필드는 **선언하지 않는다** (`STR-TYPE-002`) |
-| primitive 를 그대로 반환 | 타입 동일성을 **구조로** 판정하므로 대조할 구조가 없다 (`STR-CONTRACT-003`) |
+| `dict` | 허용하면 dataclass 강제가 한 줄로 무의미해진다 (`LNT-TYPE-001`) |
+| `Optional` / `None` | 부분집합 병합 규칙과 겹쳐 판정이 흐려진다. 값이 없을 수 있는 필드는 **선언하지 않는다** (`LNT-TYPE-002`) |
+| primitive 를 그대로 반환 | 타입 동일성을 **구조로** 판정하므로 대조할 구조가 없다 (`LNT-CONTRACT-003`) |
 
 배선된 두 노드는 **정의가 엄격히 동일**해야 한다 — 앞단 output 과 뒷단 input 을
-`(필드명, 타입)` 쌍의 집합으로 대조한다(`STR-TYPE-004`). 자세히는
+`(필드명, 타입)` 쌍의 집합으로 대조한다(`LNT-TYPE-004`). 자세히는
 [schema.md 7절](schema.md#7-타입-시스템).
 
 ### 금지 4종
 
 | 금지 | 대신 | 규칙 |
 |---|---|---|
-| 시간 의존 (`time`, `datetime.now`) | `Args.state.__startedAt` (엔진이 준다, epoch ms) | `STR-BAN-001` |
-| 랜덤 | — 같은 입력에 같은 결과가 나와야 리포트를 믿을 수 있다 | `STR-BAN-002` |
-| 직접 `subprocess`/`exec` | Spec 의 `tool` 에 경로·허용 함수를 선언하고 그것을 쓴다 | `STR-BAN-003` |
-| 미선언 state 참조 | `Args.state` 에 먼저 선언한다 | `STR-BAN-004` |
+| 시간 의존 (`time`, `datetime.now`) | `Args.state.__startedAt` (엔진이 준다, epoch ms) | `LNT-BAN-001` |
+| 랜덤 | — 같은 입력에 같은 결과가 나와야 리포트를 믿을 수 있다 | `LNT-BAN-002` |
+| 직접 `subprocess`/`exec` | Spec 의 `tool` 에 경로·허용 함수를 선언하고 그것을 쓴다 | `LNT-BAN-003` |
+| 미선언 state 참조 | `Args.state` 에 먼저 선언한다 | `LNT-BAN-004` |
 
 **그 밖에는 아무것도 금지하지 않는다.** 노드 안에서 AI 를 부르든 파일을 읽든 네트워크를
 타든 상관없다 — output 이 계약과 다르면 타입 검사에 걸린다. 순수성은 요구하지 않는다.
@@ -255,7 +255,7 @@ input 타입과 output 타입이 다르면 등록이 실패한다(`STR-CONTRACT-
 1786874956395	…/examples/home-check/targets/home.html	612
 ```
 
-### 외부 패키지를 쓰려면 — PEP 723 로 선언하고 **strictler 환경에 설치한다**
+### 외부 패키지를 쓰려면 — PEP 723 로 선언하고 **lintomata 환경에 설치한다**
 
 stdlib 만 쓰면 아무것도 안 해도 된다. **대부분의 스크립트가 그렇고, 헤더가 없는 것이 정상이다.**
 
@@ -275,10 +275,10 @@ from selectolax.lexbor import LexborHTMLParser
 
 각 줄이 `# ` 로 시작하고, 사이는 TOML 이며, `# ///` 로 닫는다. 파일 맨 위여야 한다.
 
-**② strictler 가 설치된 환경에 함께 깐다.**
+**② lintomata 가 설치된 환경에 함께 깐다.**
 
 ```
-uv tool install strictler --with 'selectolax>=0.3'
+uv tool install lintomata --with 'selectolax>=0.3'
 ```
 
 > ### ⚠ `--with` 는 **선언적**이다 — 전부 함께 적어야 한다
@@ -287,7 +287,7 @@ uv tool install strictler --with 'selectolax>=0.3'
 > 나머지는 **지워진다.**
 >
 > ```
-> $ uv tool install strictler --with 'typing-extensions>=4'
+> $ uv tool install lintomata --with 'typing-extensions>=4'
 > Uninstalled 1 package in 1ms
 >  - myproject-perceive-lib==0.1.0        ← 다른 스크립트가 쓰던 것이 사라졌다
 > ```
@@ -295,15 +295,15 @@ uv tool install strictler --with 'selectolax>=0.3'
 > 그래서 하나를 추가할 때도 **이미 쓰는 것을 전부 나열**한다:
 >
 > ```
-> uv tool install strictler --with 'selectolax>=0.3' --with 'typing-extensions>=4'
+> uv tool install lintomata --with 'selectolax>=0.3' --with 'typing-extensions>=4'
 > ```
 >
-> **`STR-DEP-001` / `-003` 의 메시지는 이 완전한 명령을 만들어 준다** — 등록소에 선언된
+> **`LNT-DEP-001` / `-003` 의 메시지는 이 완전한 명령을 만들어 준다** — 등록소에 선언된
 > 것을 전부 모아 넣으므로 **그대로 복사해 쓰면 된다.** 직접 만들 때는
-> `strictler script list` / `show <id>` 의 **선언 의존성**으로 확인하라.
+> `lintomata script list` / `show <id>` 의 **선언 의존성**으로 확인하라.
 
-**★ 헤더는 선언일 뿐 환경을 만들어 주지 않는다.** 노드 스크립트는 strictler 와 **같은
-프로세스**에 로드되므로 `import` 는 strictler 가 설치된 환경에서 풀린다 — 격리 환경도,
+**★ 헤더는 선언일 뿐 환경을 만들어 주지 않는다.** 노드 스크립트는 lintomata 와 **같은
+프로세스**에 로드되므로 `import` 는 lintomata 가 설치된 환경에서 풀린다 — 격리 환경도,
 스크립트별 가상환경도 없다. ESLint 플러그인이 ESLint 와 같은 `node_modules` 를 쓰는 것과
 같은 모델이다 (`schema.md` 6절).
 
@@ -312,9 +312,9 @@ uv tool install strictler --with 'selectolax>=0.3'
 
 | 규칙 | 언제 | 무엇을 고치나 |
 |---|---|---|
-| `STR-DEP-001` | 선언한 패키지가 환경에 없다 | **설치한다** (메시지에 명령이 그대로 들어 있다) |
-| `STR-DEP-002` | 헤더 형식이 잘못됐다 | **헤더를 고친다** — 설치할 것이 없다 |
-| `STR-DEP-003` | 설치된 버전이 요구를 만족하지 않는다 | 버전을 맞추거나 헤더의 요구를 고친다 |
+| `LNT-DEP-001` | 선언한 패키지가 환경에 없다 | **설치한다** (메시지에 명령이 그대로 들어 있다) |
+| `LNT-DEP-002` | 헤더 형식이 잘못됐다 | **헤더를 고친다** — 설치할 것이 없다 |
+| `LNT-DEP-003` | 설치된 버전이 요구를 만족하지 않는다 | 버전을 맞추거나 헤더의 요구를 고친다 |
 
 > **HTML 파싱에는 `selectolax`(lexbor) 를 쓴다.** `BeautifulSoup` 은 lxml 백엔드로도
 > 13배 느리다 (`CLAUDE.md` 실측표).
@@ -328,7 +328,7 @@ from button_lib import is_button      # ✕ ModuleNotFoundError — 파일이 �
 ```
 
 스크립트가 있는 디렉터리는 `sys.path` 에 없다. 그리고 등록하면 **스크립트 파일 하나만**
-`~/.strictler/scripts/` 로 복사되므로 옆 파일은 따라오지 않는다 — `schema.md` 2절이
+`~/.lintomata/scripts/` 로 복사되므로 옆 파일은 따라오지 않는다 — `schema.md` 2절이
 **원본을 지워도 된다**고 못 박았으므로, 옆 파일에 기대는 순간 그 약속이 깨진다.
 
 **① 첫 번째 답은 노드 재사용이다.** 판정 *함수*를 공유하지 말고 **그 판정을 하는 노드**를
@@ -341,7 +341,7 @@ from button_lib import is_button      # ✕ ModuleNotFoundError — 파일이 �
 *"무엇이 버튼인가"* 를 판정하는 로직은 같다. **그때가 라이브러리다.**
 
 ```bash
-strictler library add /abs/libraries/buttons.py       # ① 본체를 등록한다 → lb_9f8e7d6c
+lintomata library add /abs/libraries/buttons.py       # ① 본체를 등록한다 → lb_9f8e7d6c
 ```
 
 ```jsonc
@@ -352,22 +352,22 @@ strictler library add /abs/libraries/buttons.py       # ① 본체를 등록한�
 
 ```python
 # ③ 스크립트는 필요하다고 선언만 한다 — **능력 선언**
-from strictler_lib import buttons
+from lintomata_lib import buttons
 
 found = buttons.collect(args.input.html, buttons.is_button)
 ```
 
-**허용되는 import 형태는 이것 하나뿐이다.** `import strictler_lib` 도,
-`from strictler_lib.x import y` 도, 함수 안에서의 import 도 `STR-LIB-005` 다 —
+**허용되는 import 형태는 이것 하나뿐이다.** `import lintomata_lib` 도,
+`from lintomata_lib.x import y` 도, 함수 안에서의 import 도 `LNT-LIB-005` 다 —
 슬롯을 정적으로 못 뽑으면 배선 검사가 무의미해지기 때문이다.
 
 | 이런 실수 | 규칙 |
 |---|---|
-| 스크립트는 요구하는데 노드가 배선 안 함 | `STR-LIB-001` — 노드에 넣는다 |
-| 노드는 배선했는데 스크립트가 안 씀 | `STR-LIB-002` — 배선을 뺀다 |
-| 라이브러리가 다른 라이브러리를 import | `STR-LIB-003` — **한 층만** |
-| 라이브러리가 `dataclass` 를 선언 | `STR-LIB-004` — 스크립트로 옮긴다 (v1 제한) |
-| `${ref.sc_...}` 를 `libraries` 에 배선 | `STR-REG-003` — 접두를 맞춘다 |
+| 스크립트는 요구하는데 노드가 배선 안 함 | `LNT-LIB-001` — 노드에 넣는다 |
+| 노드는 배선했는데 스크립트가 안 씀 | `LNT-LIB-002` — 배선을 뺀다 |
+| 라이브러리가 다른 라이브러리를 import | `LNT-LIB-003` — **한 층만** |
+| 라이브러리가 `dataclass` 를 선언 | `LNT-LIB-004` — 스크립트로 옮긴다 (v1 제한) |
+| `${ref.sc_...}` 를 `libraries` 에 배선 | `LNT-REG-003` — 접두를 맞춘다 |
 
 **배선은 `${ref.lb_...}` 말고 절대경로로도 된다** (`${env.X}` 포함). id 는 등록소마다
 다르게 발급되므로 **커밋할 것은 경로로 쓴다** (`schema.md` 2절).
@@ -385,7 +385,7 @@ found = buttons.collect(args.input.html, buttons.is_button)
 받지 않는다는 것이 차이다.
 
 ```
-uv tool install strictler --with /path/to/myproject-perceive-lib --with 'selectolax>=0.3'
+uv tool install lintomata --with /path/to/myproject-perceive-lib --with 'selectolax>=0.3'
 ```
 
 (`--with` 는 선언적이므로 **이미 쓰는 것을 함께 적는다** — 위 경고 참조.)
@@ -397,7 +397,7 @@ uv tool install strictler --with /path/to/myproject-perceive-lib --with 'selecto
 from myproject_perceive import is_button
 ```
 
-헤더로 선언하면 **등록 시점에 확인된다**(`STR-DEP-001`). 패키지는 파일이 아니라
+헤더로 선언하면 **등록 시점에 확인된다**(`LNT-DEP-001`). 패키지는 파일이 아니라
 환경에 있으므로 원본을 지워도, 등록소로 복사돼도 그대로 풀린다.
 
 > **`PYTHONPATH` 로도 되기는 한다. 권하지 않는다.** 등록 후 원본 폴더를 지우면 깨지고,
@@ -414,7 +414,7 @@ from myproject_perceive import is_button
 
 ```json
 {
-  "node": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/detect_buttons.json",
+  "node": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/detect_buttons.json",
   "cases": [
     { "name": "…", "args": { "input": {…}, "state": {…} }, "expect": {…} }
   ]
@@ -459,7 +459,7 @@ from myproject_perceive import is_button
 판단이 여기서 실증된다.
 
 ```
-$ uv run strictler node test $STRICTLER_EXAMPLE_ROOT/nodes/detect_buttons.test.json
+$ uv run lintomata node test $LINTOMATA_EXAMPLE_ROOT/nodes/detect_buttons.test.json
 pass 3  violation 0  not_run 0  error 0
 [pass] …/nodes/detect_buttons.json > cases[0] 버튼 3개짜리 평범한 페이지 — 개수와 라벨까지 본다 > detect-buttons
 [pass] …/nodes/detect_buttons.json > cases[1] 누를 수 있게 생긴 배경 장식은 버튼이 아니다 > detect-buttons
@@ -471,7 +471,7 @@ EXIT=0
 
 `input == output` 이 계약이므로 **기대값이 곧 입력**이다. 적을 필요가 없다.
 [`nodes/audit.test.json`](../examples/home-check/nodes/audit.test.json) 은 케이스 하나에
-`expect` 가 없는데도 반환이 입력과 다르면 `STR-TEST-005` 로 걸린다.
+`expect` 가 없는데도 반환이 입력과 다르면 `LNT-TEST-005` 로 걸린다.
 
 ### ★ Reckon 은 대조쌍이 필요하다
 
@@ -491,17 +491,17 @@ EXIT=0
 
 `input` 이 글자 하나까지 같고 `params` 만 다르다. **판정이 갈리지 않으면 기댓값을
 안 쓰는 것이다** — 정적으로는 못 잡는 하드코딩을 여기서 잡는다.
-대조쌍 자체가 없으면 `STR-TEST-006`(경고), 있는데 판정이 같으면 `STR-TEST-007`(오류).
+대조쌍 자체가 없으면 `LNT-TEST-006`(경고), 있는데 판정이 같으면 `LNT-TEST-007`(오류).
 
 `invalid/bad_reckon_hardcoded.py` 가 바로 그 경우다 — `Args.params` 에 기댓값 필드를
 두고도 `runNode` 는 `args.input.count == 3` 을 박아 놨다:
 
 ```
-$ uv run strictler node test $STRICTLER_EXAMPLE_ROOT/invalid/bad_reckon_hardcoded.test.json
+$ uv run lintomata node test $LINTOMATA_EXAMPLE_ROOT/invalid/bad_reckon_hardcoded.test.json
 pass 2  violation 0  not_run 0  error 1
 [pass] …/invalid/bad_reckon_hardcoded.json > cases[0] 기댓값 3 — 통과가 나온다 > bad-reckon-hardcoded
 [pass] …/invalid/bad_reckon_hardcoded.json > cases[1] input 은 같고 기댓값만 4 — 판정이 바뀌어야 하는데 안 바뀐다 > bad-reckon-hardcoded
-[error] …/invalid/bad_reckon_hardcoded.json > bad-reckon-hardcoded (STR-TEST-007)
+[error] …/invalid/bad_reckon_hardcoded.json > bad-reckon-hardcoded (LNT-TEST-007)
     대조쌍의 판정이 같습니다.
     기댓값을 바꿨는데 판정이 안 바뀝니다 — 기댓값을 쓰지 않고 하드코딩하고 있습니다
     `기댓값 3 — 통과가 나온다` 과 `input 은 같고 기댓값만 4 — …` 은 `params` 가 다른데 판정이 둘 다 통과입니다.
@@ -523,14 +523,14 @@ EXIT=2
 
 ```bash
 # (a) 파일 경로로 바로. 등록 없이 돈다
-uv run strictler check     $STRICTLER_EXAMPLE_ROOT/specs/home_ok.json
-uv run strictler node test $STRICTLER_EXAMPLE_ROOT/nodes/detect_buttons.test.json
+uv run lintomata check     $LINTOMATA_EXAMPLE_ROOT/specs/home_ok.json
+uv run lintomata node test $LINTOMATA_EXAMPLE_ROOT/nodes/detect_buttons.test.json
 
 # (b) 등록 후 id 로. scripts → nodes → pipelines → specs 순서
-uv run strictler script add $STRICTLER_EXAMPLE_ROOT/scripts/perceive_buttons.py
-uv run strictler node   add $STRICTLER_EXAMPLE_ROOT/nodes/detect_buttons.json
-uv run strictler check      sp_xxxxxxxx
-uv run strictler node test  nd_xxxxxxxx
+uv run lintomata script add $LINTOMATA_EXAMPLE_ROOT/scripts/perceive_buttons.py
+uv run lintomata node   add $LINTOMATA_EXAMPLE_ROOT/nodes/detect_buttons.json
+uv run lintomata check      sp_xxxxxxxx
+uv run lintomata node test  nd_xxxxxxxx
 ```
 
 **등록은 편의가 아니라 검증 결과를 재사용하는 기제다.** 등록 시 정적 검사를 통과해야
@@ -566,7 +566,7 @@ uv run strictler node test  nd_xxxxxxxx
 **통과 — 종료 0**
 
 ```
-$ uv run strictler check $STRICTLER_EXAMPLE_ROOT/specs/home_ok.json
+$ uv run lintomata check $LINTOMATA_EXAMPLE_ROOT/specs/home_ok.json
 pass 7  violation 0  not_run 0  error 0
 [pass] home_ok.json > plan[0] > page-check > pickPage
 [pass] home_ok.json > plan[0] > page-check > readHtml
@@ -585,7 +585,7 @@ EXIT=0
 같은 파이프라인·같은 노드에 **대상 파일만** `home_broken.html` 로 바꾼 Spec.
 
 ```
-$ uv run strictler check $STRICTLER_EXAMPLE_ROOT/specs/home_broken.json
+$ uv run lintomata check $LINTOMATA_EXAMPLE_ROOT/specs/home_broken.json
 pass 5  violation 2  not_run 0  error 0
 [pass] home_broken.json > plan[0] > page-check > pickPage
 [pass] home_broken.json > plan[0] > page-check > readHtml
@@ -605,7 +605,7 @@ Reckon 이 낸 규칙 이름(`expectedCount`)과 문구가 리포트에 그대�
 **오류 + not run — 종료 2**
 
 ```
-$ uv run strictler check $STRICTLER_EXAMPLE_ROOT/specs/home_missing.json
+$ uv run lintomata check $LINTOMATA_EXAMPLE_ROOT/specs/home_missing.json
 pass 1  violation 0  not_run 5  error 1
 [pass] home_missing.json > plan[0] > page-check > pickPage
 [error] home_missing.json > plan[0] > page-check > readHtml
@@ -632,7 +632,7 @@ EXIT=2
 **비교 파이프라인 — 전부 같으면 0**
 
 ```
-$ uv run strictler check $STRICTLER_EXAMPLE_ROOT/specs/compare_ok.json
+$ uv run lintomata check $LINTOMATA_EXAMPLE_ROOT/specs/compare_ok.json
 pass 3  violation 0  not_run 0  error 0
 [pass] compare_ok.json > plan[0] > buttons-same > page
 [pass] compare_ok.json > plan[0] > buttons-same > html
@@ -657,7 +657,7 @@ EXIT=0
 **비교 파이프라인 — 하나만 달라도 1**
 
 ```
-$ uv run strictler check $STRICTLER_EXAMPLE_ROOT/specs/compare_diff.json
+$ uv run lintomata check $LINTOMATA_EXAMPLE_ROOT/specs/compare_diff.json
 pass 2  violation 1  not_run 0  error 0
 [violation] compare_diff.json > plan[0] > buttons-same > buttons
     대상 간 출력이 다릅니다.
@@ -681,24 +681,24 @@ EXIT=1
 
 | 무엇이 틀렸나 | 명령 | 규칙 id | 무엇을 고치나 |
 |---|---|---|---|
-| 시간·랜덤·subprocess·미선언 state, `dict`, `Optional` | `script add invalid/bad_banned.py` | `STR-BAN-001/002/003/004`, `STR-TYPE-001/002` | 시각은 `Args.state.__startedAt`, 외부 도구는 Spec 의 `tool`, 복합 타입은 dataclass, 없을 수 있는 필드는 **선언하지 않는다** |
-| 출력이 dataclass 가 아니다 (primitive 반환) | `script add invalid/bad_output_primitive.py` | `STR-CONTRACT-003` | 값 하나라도 dataclass 로 감싼다 — 타입 동일성을 **구조로** 판정한다 |
-| PEP 723 헤더에 선언한 패키지가 환경에 없다 | `script add invalid/bad_dependency.py` | `STR-DEP-001` | 메시지에 적힌 `uv tool install strictler --with '...'` 를 그대로 실행한다. 헤더는 선언일 뿐이고 **격리 환경을 만들어 주지 않는다** |
-| Reckon 인데 판정 필드가 없다 (`ok` 로 지음) | `node add invalid/bad_reckon_no_verdict.json` | `STR-CONTRACT-007` | 출력 dataclass 에 `passed: bool` 을 둔다 |
-| 한 노드에 서로 다른 앞단 둘을 배선 | `pipeline add invalid/pipeline_ambiguous.json` | `STR-GRAPH-003` | `Args.input` 은 필드 하나다. 앞단을 하나로 줄이거나 둘을 합치는 노드를 사이에 둔다 |
-| `when` 이 기다리는 상태로 가는 전이가 없다 | `pipeline add invalid/pipeline_dead_state.json` | `STR-STATE-006` | `transitions` 를 추가하거나 `when` 을 지운다. 전이를 적는 자리는 **파이프라인 어휘** 쪽이다 |
-| 라이브러리에서 시간을 읽는다 | `library add invalid/lib_banned.py` | `STR-BAN-001` | 금지는 스크립트와 **똑같이** 걸린다 — 여기가 뚫리면 금지가 통째로 우회된다 |
-| 라이브러리가 `dataclass` 를 선언한다 | `library add invalid/lib_dataclass.py` | `STR-LIB-004` | 계약 타입은 스크립트에 둔다 (v1 제한) |
-| 스크립트가 요구한 슬롯을 노드가 배선 안 함 | `node add invalid/bad_unwired.json` | `STR-LIB-001` | 노드 JSON 에 `libraries` 배선을 넣는다 |
-| Reckon 이 기댓값을 안 쓰고 하드코딩 | `node test invalid/bad_reckon_hardcoded.test.json` | `STR-TEST-007` | `args.params` 의 기댓값을 실제로 읽는다. **정적으로는 못 잡혀 단위테스트에서 잡힌다** |
+| 시간·랜덤·subprocess·미선언 state, `dict`, `Optional` | `script add invalid/bad_banned.py` | `LNT-BAN-001/002/003/004`, `LNT-TYPE-001/002` | 시각은 `Args.state.__startedAt`, 외부 도구는 Spec 의 `tool`, 복합 타입은 dataclass, 없을 수 있는 필드는 **선언하지 않는다** |
+| 출력이 dataclass 가 아니다 (primitive 반환) | `script add invalid/bad_output_primitive.py` | `LNT-CONTRACT-003` | 값 하나라도 dataclass 로 감싼다 — 타입 동일성을 **구조로** 판정한다 |
+| PEP 723 헤더에 선언한 패키지가 환경에 없다 | `script add invalid/bad_dependency.py` | `LNT-DEP-001` | 메시지에 적힌 `uv tool install lintomata --with '...'` 를 그대로 실행한다. 헤더는 선언일 뿐이고 **격리 환경을 만들어 주지 않는다** |
+| Reckon 인데 판정 필드가 없다 (`ok` 로 지음) | `node add invalid/bad_reckon_no_verdict.json` | `LNT-CONTRACT-007` | 출력 dataclass 에 `passed: bool` 을 둔다 |
+| 한 노드에 서로 다른 앞단 둘을 배선 | `pipeline add invalid/pipeline_ambiguous.json` | `LNT-GRAPH-003` | `Args.input` 은 필드 하나다. 앞단을 하나로 줄이거나 둘을 합치는 노드를 사이에 둔다 |
+| `when` 이 기다리는 상태로 가는 전이가 없다 | `pipeline add invalid/pipeline_dead_state.json` | `LNT-STATE-006` | `transitions` 를 추가하거나 `when` 을 지운다. 전이를 적는 자리는 **파이프라인 어휘** 쪽이다 |
+| 라이브러리에서 시간을 읽는다 | `library add invalid/lib_banned.py` | `LNT-BAN-001` | 금지는 스크립트와 **똑같이** 걸린다 — 여기가 뚫리면 금지가 통째로 우회된다 |
+| 라이브러리가 `dataclass` 를 선언한다 | `library add invalid/lib_dataclass.py` | `LNT-LIB-004` | 계약 타입은 스크립트에 둔다 (v1 제한) |
+| 스크립트가 요구한 슬롯을 노드가 배선 안 함 | `node add invalid/bad_unwired.json` | `LNT-LIB-001` | 노드 JSON 에 `libraries` 배선을 넣는다 |
+| Reckon 이 기댓값을 안 쓰고 하드코딩 | `node test invalid/bad_reckon_hardcoded.test.json` | `LNT-TEST-007` | `args.params` 의 기댓값을 실제로 읽는다. **정적으로는 못 잡혀 단위테스트에서 잡힌다** |
 
 마지막 하나를 뺀 나머지는 **등록이 실패한다** — 등록소에 들어가지 않으므로 잘못된 것이 재사용될 일이 없다:
 
 ```
-$ uv run strictler pipeline add $STRICTLER_EXAMPLE_ROOT/invalid/pipeline_ambiguous.json
+$ uv run lintomata pipeline add $LINTOMATA_EXAMPLE_ROOT/invalid/pipeline_ambiguous.json
 등록하지 않았습니다 — 정적 검사를 통과해야 저장됩니다: …/invalid/pipeline_ambiguous.json
 pass 0  violation 0  not_run 0  error 1
-[error] …/invalid/pipeline_ambiguous.json > checkButtons (STR-GRAPH-003)
+[error] …/invalid/pipeline_ambiguous.json > checkButtons (LNT-GRAPH-003)
     `inputs` 가 서로 다른 앞단 노드를 둘 이상 가리킵니다: detectButtons, detectMenu
     `Args.input` 은 필드 하나라 값도 하나만 받습니다. `inputs` 에 서로 다른 노드를 둘 이상 적으면 어느 것을 넣어야 할지 정할 수 없습니다. 문제의 앞단: detectButtons, detectMenu — 앞단을 하나로 줄이거나, 둘을 합치는 노드를 사이에 두세요
 EXIT=2

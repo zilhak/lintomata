@@ -3,7 +3,7 @@
 짚는 것:
   - **금지 패턴이 스크립트와 똑같이 걸린다** — 안 걸리면 라이브러리가 우회로가 된다
   - 노드 계약(`runNode`/`Args`/출력 타입)은 **묻지 않는다** — 노드가 아니다
-  - 라이브러리 중첩 금지 (`STR-LIB-003`) / `dataclass` 금지 (`STR-LIB-004`)
+  - 라이브러리 중첩 금지 (`LNT-LIB-003`) / `dataclass` 금지 (`LNT-LIB-004`)
 """
 
 from __future__ import annotations
@@ -13,10 +13,10 @@ from textwrap import dedent
 
 import pytest
 
-from strictler.checks import library as lib
-from strictler.errors import Finding, StrictlerError
-from strictler.model import Node
-from strictler.store.entries import Store
+from lintomata.checks import library as lib
+from lintomata.errors import Finding, LintomataError
+from lintomata.model import Node
+from lintomata.store.entries import Store
 
 PATH = "/abs/libraries/buttons.py"
 
@@ -42,18 +42,18 @@ def test_함수만_있는_라이브러리는_통과한다() -> None:
 
 def test_노드_계약을_묻지_않는다() -> None:
     """`runNode` 도 `Args` 도 출력 타입도 없다 — 그래도 통과다. **노드가 아니다.**"""
-    assert "STR-CONTRACT-001" not in check(GOOD)
-    assert "STR-CONTRACT-002" not in check(GOOD)
-    assert "STR-CONTRACT-003" not in check(GOOD)
+    assert "LNT-CONTRACT-001" not in check(GOOD)
+    assert "LNT-CONTRACT-002" not in check(GOOD)
+    assert "LNT-CONTRACT-003" not in check(GOOD)
 
 
 @pytest.mark.parametrize(
     ("body", "rule"),
     [
-        ("import time\n\ndef now():\n    return time.time()\n", "STR-BAN-001"),
-        ("import random\n\ndef pick(xs):\n    return random.choice(xs)\n", "STR-BAN-002"),
-        ("import subprocess\n\ndef go():\n    subprocess.run(['ls'])\n", "STR-BAN-003"),
-        ("import os\n\ndef go():\n    os.system('ls')\n", "STR-BAN-003"),
+        ("import time\n\ndef now():\n    return time.time()\n", "LNT-BAN-001"),
+        ("import random\n\ndef pick(xs):\n    return random.choice(xs)\n", "LNT-BAN-002"),
+        ("import subprocess\n\ndef go():\n    subprocess.run(['ls'])\n", "LNT-BAN-003"),
+        ("import os\n\ndef go():\n    os.system('ls')\n", "LNT-BAN-003"),
     ],
     ids=["시간", "랜덤", "subprocess", "os.system"],
 )
@@ -63,7 +63,7 @@ def test_금지_패턴은_스크립트와_똑같이_걸린다(body: str, rule: s
 
 
 def test_state_참조는_판정하지_않는다() -> None:
-    """라이브러리에는 선언된 state 가 없다 — 근거 없이 `STR-BAN-004` 를 내지 않는다."""
+    """라이브러리에는 선언된 state 가 없다 — 근거 없이 `LNT-BAN-004` 를 내지 않는다."""
     body = """
         def read(args):
             return args.state.ready
@@ -74,15 +74,15 @@ def test_state_참조는_판정하지_않는다() -> None:
 @pytest.mark.parametrize(
     "line",
     [
-        "from strictler_lib import other",
-        "import strictler_lib",
-        "from strictler_lib.other import helper",
+        "from lintomata_lib import other",
+        "import lintomata_lib",
+        "from lintomata_lib.other import helper",
     ],
     ids=["from-import", "import", "서브모듈"],
 )
 def test_라이브러리는_다른_라이브러리를_import_할_수_없다(line: str) -> None:
     """**한 층만.** 허용하면 그때부터 패키지 매니저를 만들게 된다."""
-    assert check(f"{line}\n\ndef go():\n    return 1\n") == ["STR-LIB-003"]
+    assert check(f"{line}\n\ndef go():\n    return 1\n") == ["LNT-LIB-003"]
 
 
 def test_dataclass_선언은_v1_에서_막는다() -> None:
@@ -95,7 +95,7 @@ def test_dataclass_선언은_v1_에서_막는다() -> None:
             label: str
     """
     findings = lib.check_library(dedent(body).lstrip("\n"), PATH)
-    assert [item.rule_id for item in findings] == ["STR-LIB-004"]
+    assert [item.rule_id for item in findings] == ["LNT-LIB-004"]
     assert "Button" in findings[0].message
 
 
@@ -113,26 +113,26 @@ def test_dataclass_변형_데코레이터도_같은_판정을_받는다() -> Non
         class B:
             y: int
     """
-    assert check(body) == ["STR-LIB-004", "STR-LIB-004"]
+    assert check(body) == ["LNT-LIB-004", "LNT-LIB-004"]
 
 
 def test_실패를_최대한_모은다() -> None:
     """하나 걸렸다고 나머지를 멈추지 않는다."""
     body = """
         import time
-        from strictler_lib import other
+        from lintomata_lib import other
         from dataclasses import dataclass
 
         @dataclass
         class A:
             x: int
     """
-    assert set(check(body)) == {"STR-BAN-001", "STR-LIB-003", "STR-LIB-004"}
+    assert set(check(body)) == {"LNT-BAN-001", "LNT-LIB-003", "LNT-LIB-004"}
 
 
 def test_문법_오류는_위반이_아니라_오류다() -> None:
     """검사기가 못 돈 것이지 규칙 위반이 아니다."""
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         lib.check_library("def go(:\n", PATH)
 
 
@@ -146,7 +146,7 @@ def test_PEP723_헤더도_스크립트와_같이_본다() -> None:
         def go():
             return 1
     """
-    assert check(body) == ["STR-DEP-001"]
+    assert check(body) == ["LNT-DEP-001"]
 
 
 # ── 배선 — 선언(스크립트) / 사용(노드) 대조 ─────────────────────────────────
@@ -181,16 +181,16 @@ def test_슬롯과_배선이_맞으면_통과다() -> None:
 
 
 def test_배선이_빠지면_STR_LIB_001() -> None:
-    assert wiring(("buttons", "menus"), {"buttons": "/abs/b.py"}) == ["STR-LIB-001"]
+    assert wiring(("buttons", "menus"), {"buttons": "/abs/b.py"}) == ["LNT-LIB-001"]
 
 
 def test_안_쓰는_배선은_STR_LIB_002() -> None:
-    assert wiring((), {"buttons": "/abs/b.py"}) == ["STR-LIB-002"]
+    assert wiring((), {"buttons": "/abs/b.py"}) == ["LNT-LIB-002"]
 
 
 def test_빠진_것과_남는_것은_따로_보고된다() -> None:
     """고치는 법이 다르다 — 하나는 넣고 하나는 뺀다."""
-    assert wiring(("menus",), {"buttons": "/abs/b.py"}) == ["STR-LIB-001", "STR-LIB-002"]
+    assert wiring(("menus",), {"buttons": "/abs/b.py"}) == ["LNT-LIB-001", "LNT-LIB-002"]
 
 
 def test_resolve_는_절대경로를_그대로_푼다(tmp_path: Path) -> None:
@@ -212,7 +212,7 @@ def test_resolve_는_없는_파일을_STR_REF_001_로_짚는다(tmp_path: Path) 
         store=Store(tmp_path / "home"),
         env={},
     )
-    assert [item.rule_id for item in findings] == ["STR-REF-001"]
+    assert [item.rule_id for item in findings] == ["LNT-REF-001"]
 
 
 def test_resolve_는_라이브러리가_아닌_참조를_STR_REG_003_으로_짚는다(tmp_path: Path) -> None:
@@ -222,7 +222,7 @@ def test_resolve_는_라이브러리가_아닌_참조를_STR_REG_003_으로_짚�
         store=Store(tmp_path / "home"),
         env={},
     )
-    assert [item.rule_id for item in findings] == ["STR-REG-003"]
+    assert [item.rule_id for item in findings] == ["LNT-REG-003"]
 
 
 def test_resolve_는_없는_id_를_STR_REG_002_로_짚는다(tmp_path: Path) -> None:
@@ -231,7 +231,7 @@ def test_resolve_는_없는_id_를_STR_REG_002_로_짚는다(tmp_path: Path) -> 
         store=Store(tmp_path / "home"),
         env={},
     )
-    assert [item.rule_id for item in findings] == ["STR-REG-002"]
+    assert [item.rule_id for item in findings] == ["LNT-REG-002"]
 
 
 def test_resolve_는_상대경로를_STR_PATH_001_로_짚는다(tmp_path: Path) -> None:
@@ -240,7 +240,7 @@ def test_resolve_는_상대경로를_STR_PATH_001_로_짚는다(tmp_path: Path) 
         store=Store(tmp_path / "home"),
         env={},
     )
-    assert [item.rule_id for item in findings] == ["STR-PATH-001"]
+    assert [item.rule_id for item in findings] == ["LNT-PATH-001"]
 
 
 def test_resolve_는_node_를_채우지_않는다(tmp_path: Path) -> None:
@@ -265,7 +265,7 @@ def test_drive_는_발신처가_뭘_달고_와도_노드_id_로_찍는다(
     찍히면 같은 노드인지 알 수 없고, `not run` 전파도 노드 id 문자열로 대조하므로
     여파가 통째로 어긋난다.
     """
-    from strictler.engine import drive as drive_loop
+    from lintomata.engine import drive as drive_loop
 
     monkeypatch.setattr(
         lib, "resolve_libraries", lambda node, *, store, env: ({}, [Finding(status="error", node="detect", message="못 풀었다")])
@@ -282,7 +282,7 @@ def test_drive_는_발신처가_뭘_달고_와도_노드_id_로_찍는다(
 
 def test_drive_는_등록소_라이브러리의_해시를_대조한다(tmp_path: Path) -> None:
     """등록은 **검증 결과를 재사용하는 기제**다 — 내용이 바뀌었으면 그 재사용이 무효다."""
-    from strictler.engine import drive as drive_loop
+    from lintomata.engine import drive as drive_loop
 
     source = tmp_path / "buttons.py"
     source.write_text("def go():\n    return 1\n", encoding="utf-8")
@@ -297,5 +297,5 @@ def test_drive_는_등록소_라이브러리의_해시를_대조한다(tmp_path:
         path="pl.json",
         node_id="detectButtons",
     )
-    assert [item.rule_id for item in findings] == ["STR-REG-001"]
+    assert [item.rule_id for item in findings] == ["LNT-REG-001"]
     assert [item.node for item in findings] == ["detectButtons"]

@@ -1,4 +1,4 @@
-"""`deps.py` — PEP 723 의존성 선언 확인 (`STR-DEP-001/002/003`).
+"""`deps.py` — PEP 723 의존성 선언 확인 (`LNT-DEP-001/002/003`).
 
 **격리를 만들지 않는다**(`schema.md` 6절). 여기서 검증하는 것은 *"선언을 읽어
 지금 환경에 있는지 확인하고 설치 명령을 안내한다"* 하나뿐이다.
@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from strictler import deps
-from strictler.checks import script as sc
-from strictler.errors import Finding
+from lintomata import deps
+from lintomata.checks import script as sc
+from lintomata.errors import Finding
 
 PATH = "/abs/scripts/node.py"
 
@@ -101,17 +101,17 @@ def test_marker_not_for_this_environment_is_skipped() -> None:
     assert deps.check_dependencies(source, PATH) == []
 
 
-# --- STR-DEP-001 — 선언한 패키지가 없다 ------------------------------------
+# --- LNT-DEP-001 — 선언한 패키지가 없다 ------------------------------------
 
 
 def test_missing_package() -> None:
     source = header('dependencies = ["definitely-not-installed-xyz"]') + NO_HEADER
     findings = deps.check_dependencies(source, PATH)
-    assert ids(findings) == ["STR-DEP-001"]
+    assert ids(findings) == ["LNT-DEP-001"]
     assert "definitely-not-installed-xyz" in findings[0].message
     # 설치 명령이 곧 자기 수정 신호다.
     assert (
-        "uv tool install strictler --with 'definitely-not-installed-xyz'"
+        "uv tool install lintomata --with 'definitely-not-installed-xyz'"
         in findings[0].message
     )
     assert findings[0].status == "error"
@@ -123,10 +123,10 @@ def test_all_missing_packages_are_collected() -> None:
         'dependencies = ["definitely-not-installed-xyz", "also-not-installed-zzz"]'
     ) + NO_HEADER
     findings = deps.check_dependencies(source, PATH)
-    assert ids(findings) == ["STR-DEP-001", "STR-DEP-001"]
+    assert ids(findings) == ["LNT-DEP-001", "LNT-DEP-001"]
 
 
-# --- STR-DEP-002 — 헤더 형식이 잘못됐다 ------------------------------------
+# --- LNT-DEP-002 — 헤더 형식이 잘못됐다 ------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -150,7 +150,7 @@ def test_all_missing_packages_are_collected() -> None:
 )
 def test_malformed_header(block: str) -> None:
     findings = deps.check_dependencies(block + NO_HEADER, PATH)
-    assert ids(findings) == ["STR-DEP-002"]
+    assert ids(findings) == ["LNT-DEP-002"]
     assert "# /// script" in findings[0].message  # 올바른 형식을 보여준다
 
 
@@ -160,18 +160,18 @@ def test_malformed_header_stops_dependency_checks() -> None:
         '# /// script\n# dependencies = ["definitely-not-installed-xyz"\n# ///\n'
         + NO_HEADER
     )
-    assert ids(deps.check_dependencies(source, PATH)) == ["STR-DEP-002"]
+    assert ids(deps.check_dependencies(source, PATH)) == ["LNT-DEP-002"]
 
 
-# --- STR-DEP-003 — 설치돼 있는데 버전이 안 맞는다 ---------------------------
+# --- LNT-DEP-003 — 설치돼 있는데 버전이 안 맞는다 ---------------------------
 
 
 def test_version_unsatisfied() -> None:
     source = header('dependencies = ["pydantic<1"]') + NO_HEADER
     findings = deps.check_dependencies(source, PATH)
-    assert ids(findings) == ["STR-DEP-003"]
+    assert ids(findings) == ["LNT-DEP-003"]
     assert "pydantic<1" in findings[0].message
-    assert "uv tool install strictler --with 'pydantic<1'" in findings[0].message
+    assert "uv tool install lintomata --with 'pydantic<1'" in findings[0].message
 
 
 def test_name_normalization_pep503() -> None:
@@ -186,7 +186,7 @@ def test_name_normalization_pep503() -> None:
 def test_install_command_falls_back_to_the_simple_form() -> None:
     """등록소가 비었으면(또는 못 읽으면) 단순 형태. **여기서 예외를 내지 않는다.**"""
     assert deps.install_command("selectolax>=0.3") == (
-        "uv tool install strictler --with 'selectolax>=0.3'"
+        "uv tool install lintomata --with 'selectolax>=0.3'"
     )
 
 
@@ -197,7 +197,7 @@ def test_install_command_keeps_every_known_requirement() -> None:
         "typing-extensions>=4", ["myproject-perceive-lib==0.1.0", "selectolax>=0.3"]
     )
     assert command == (
-        "uv tool install strictler "
+        "uv tool install lintomata "
         "--with 'myproject-perceive-lib==0.1.0' "
         "--with 'selectolax>=0.3' "
         "--with 'typing-extensions>=4'"
@@ -229,7 +229,7 @@ def test_install_command_is_deterministic() -> None:
 def test_finding_carries_the_complete_command() -> None:
     source = header('dependencies = ["definitely-not-installed-xyz"]') + NO_HEADER
     findings = deps.check_dependencies(source, PATH, known=["selectolax>=0.3"])
-    assert ids(findings) == ["STR-DEP-001"]
+    assert ids(findings) == ["LNT-DEP-001"]
     assert "--with 'selectolax>=0.3'" in findings[0].message
     assert "--with 'definitely-not-installed-xyz'" in findings[0].message
     assert "`--with` 는 **선언적**" in findings[0].message
@@ -246,7 +246,7 @@ def test_unreadable_requirement_in_known_is_not_dropped() -> None:
 def test_check_script_runs_dependency_check() -> None:
     """등록 시점의 정본은 `check_script` 다 — 여기 안 걸리면 등록소에 그냥 들어간다."""
     source = header('dependencies = ["definitely-not-installed-xyz"]') + NO_HEADER
-    assert "STR-DEP-001" in ids(sc.check_script(source, PATH))
+    assert "LNT-DEP-001" in ids(sc.check_script(source, PATH))
     assert sc.check_script(WITH_HEADER, PATH) == []
 
 
@@ -256,7 +256,7 @@ def test_check_script_runs_dependency_check() -> None:
 def test_missing_module_hint() -> None:
     source = header('dependencies = ["selectolax>=0.3"]') + NO_HEADER
     hint = deps.missing_module_hint(source, "selectolax")
-    assert "uv tool install strictler --with 'selectolax>=0.3'" in hint
+    assert "uv tool install lintomata --with 'selectolax>=0.3'" in hint
 
 
 def test_missing_module_hint_only_for_declared() -> None:
@@ -283,8 +283,8 @@ def test_missing_submodule_hint_is_empty_when_root_is_absent() -> None:
 
 def test_load_script_submodule_error_drops_the_sibling_paragraph(tmp_path: Path) -> None:
     """원인이 확정된 자리에 **다른 방향을 얹지 않는다.**"""
-    from strictler.engine import exec as engine_exec
-    from strictler.errors import StrictlerError
+    from lintomata.engine import exec as engine_exec
+    from lintomata.errors import LintomataError
 
     path = tmp_path / "node.py"
     path.write_text(
@@ -292,7 +292,7 @@ def test_load_script_submodule_error_drops_the_sibling_paragraph(tmp_path: Path)
         + "import pydantic.nope_this_submodule_does_not_exist\n",
         encoding="utf-8",
     )
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         engine_exec.load_script(path)
     message = exc.value.message
     assert "설치돼 있으나" in message
@@ -303,8 +303,8 @@ def test_load_script_submodule_error_drops_the_sibling_paragraph(tmp_path: Path)
 
 def test_load_script_appends_install_command(tmp_path: Path) -> None:
     """실행 시점 `ModuleNotFoundError` 에 설치 명령이 붙는다 (예외 텍스트만 나가지 않는다)."""
-    from strictler.engine import exec as engine_exec
-    from strictler.errors import StrictlerError
+    from lintomata.engine import exec as engine_exec
+    from lintomata.errors import LintomataError
 
     path = tmp_path / "node.py"
     path.write_text(
@@ -312,10 +312,10 @@ def test_load_script_appends_install_command(tmp_path: Path) -> None:
         + "import definitely_not_installed_xyz\n",
         encoding="utf-8",
     )
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         engine_exec.load_script(path)
     assert (
-        "uv tool install strictler --with 'definitely-not-installed-xyz'"
+        "uv tool install lintomata --with 'definitely-not-installed-xyz'"
         in exc.value.message
     )
 
@@ -324,17 +324,17 @@ def test_load_script_without_header_still_explains_module_not_found(
     tmp_path: Path,
 ) -> None:
     """헤더가 없어도 **모듈을 못 찾은 것**은 부작용 문제가 아니다 — 따로 안내한다."""
-    from strictler.engine import exec as engine_exec
-    from strictler.errors import StrictlerError
+    from lintomata.engine import exec as engine_exec
+    from lintomata.errors import LintomataError
 
     path = tmp_path / "node.py"
     path.write_text("import definitely_not_installed_xyz\n", encoding="utf-8")
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         engine_exec.load_script(path)
     message = exc.value.message
     assert "definitely_not_installed_xyz" in message
     # 선언에 없으므로 요구 원문을 짚는 PEP 723 안내는 붙지 않는다.
-    assert "uv tool install strictler --with 'definitely" not in message
+    assert "uv tool install lintomata --with 'definitely" not in message
     # 대신 구조를 바꾸라는 안내가 나온다.
     assert "형제 파일 import 는 되지 않습니다" in message
     assert "부작용" not in message
@@ -346,30 +346,30 @@ def test_sibling_file_import_fails_with_structural_guide(tmp_path: Path) -> None
     스크립트 디렉터리는 `sys.path` 에 없고, 등록하면 스크립트 파일 하나만 복사되므로
     옆 파일은 따라오지 않는다. 안내는 경로를 고치라고 하지 않고 **구조를 바꾸라고** 한다.
     """
-    from strictler.engine import exec as engine_exec
-    from strictler.errors import StrictlerError
+    from lintomata.engine import exec as engine_exec
+    from lintomata.errors import LintomataError
 
     (tmp_path / "button_lib.py").write_text("def is_button(x):\n    return True\n", encoding="utf-8")
     path = tmp_path / "node.py"
     path.write_text("from button_lib import is_button\n", encoding="utf-8")
 
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         engine_exec.load_script(path)
     message = exc.value.message
     assert "button_lib" in message
     assert "형제 파일 import 는 되지 않습니다" in message
     assert "노드를 재사용" in message
-    assert "uv tool install strictler --with <패키지>" in message
+    assert "uv tool install lintomata --with <패키지>" in message
 
 
 def test_other_load_errors_keep_the_side_effect_guide(tmp_path: Path) -> None:
     """모듈 최상위에서 터지는 **다른** 예외에는 기존 안내가 그대로 맞다."""
-    from strictler.engine import exec as engine_exec
-    from strictler.errors import StrictlerError
+    from lintomata.engine import exec as engine_exec
+    from lintomata.errors import LintomataError
 
     path = tmp_path / "node.py"
     path.write_text("VALUE = 1 // 0\n", encoding="utf-8")
-    with pytest.raises(StrictlerError) as exc:
+    with pytest.raises(LintomataError) as exc:
         engine_exec.load_script(path)
     assert "import 만으로 부작용이 없어야" in exc.value.message
     assert "형제 파일" not in exc.value.message

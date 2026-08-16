@@ -2,12 +2,12 @@
 
 마크업은 `<a>` 링크지만 역할이 버튼이므로 버튼으로 센다.
 
-훑는 방법과 라벨 정규화는 `strictler_lib.buttons` 와 공유한다.
+훑는 방법과 라벨 정규화는 `lintomata_lib.buttons` 와 공유한다.
 """
 
 from dataclasses import dataclass
 
-from strictler_lib import buttons
+from lintomata_lib import buttons
 
 
 @dataclass

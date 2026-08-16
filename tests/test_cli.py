@@ -3,7 +3,7 @@
 **대역을 쓰지 않는다.** 진짜 등록소·진짜 검사기·진짜 엔진·진짜 하네스로 돈다 —
 Step 1 통합에서 남의 모듈을 stub 으로 끼고 돌린 탓에 규칙 슬롯 누락 11건이 merge
 시점까지 안 잡혔다. 여기서 진짜 구현을 그대로 쓰면 슬롯 누락이 곧바로
-`StrictlerError` 로 터진다.
+`LintomataError` 로 터진다.
 
 ⚠ `testing.harness` 를 대역으로 끼고 있던 탓에 **`node test <id>` 가 요청한 노드가
 아닌 다른 노드를 돌리고 `[pass]` 를 내는 결함**(R6-1)이 merge 까지 살아남았다.
@@ -16,7 +16,7 @@ Step 1 통합에서 남의 모듈을 stub 으로 끼고 돌린 탓에 규칙 슬
   - **`remove` 후 `list` 가 참조 깨짐을 표시하는가**
   - **종료 코드 0/1/2 — 특히 위반(1) 과 오류(2) 가 안 섞이는가**
   - **모든 오류 경로의 `Finding.rule_id` 가 기대값인가** (슬롯 누락은 여기서 터진다)
-  - `$STRICTLER_HOME` 을 tmp 로 돌려 **사용자 홈을 오염시키지 않는가**
+  - `$LINTOMATA_HOME` 을 tmp 로 돌려 **사용자 홈을 오염시키지 않는가**
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ from typing import Any
 
 import pytest
 
-from strictler import cli
-from strictler.store.entries import Store
+from lintomata import cli
+from lintomata.store.entries import Store
 
 # ── 스크립트 본문 ────────────────────────────────────────────────────────────
 
@@ -372,12 +372,12 @@ def basic_pipeline(project: Project) -> Path:
 
 
 def rule_ids(out: str) -> set[str]:
-    """사람이 읽는 출력에서 규칙 id 를 긁는다 — `render_text` 가 `(STR-...)` 로 낸다."""
+    """사람이 읽는 출력에서 규칙 id 를 긁는다 — `render_text` 가 `(LNT-...)` 로 낸다."""
     return {
         token.strip("()")
         for line in out.splitlines()
         for token in line.split()
-        if token.startswith("(STR-") and token.endswith(")")
+        if token.startswith("(LNT-") and token.endswith(")")
     }
 
 
@@ -523,7 +523,7 @@ def test_잘못된_스크립트를_add_하면_등록되지_않는다(
     assert project.run("script", "add", str(bad)) == 2
 
     out = capsys.readouterr().out
-    assert "STR-CONTRACT-001" in rule_ids(out)
+    assert "LNT-CONTRACT-001" in rule_ids(out)
     assert project.ids("script") == []
     # 복사본조차 만들어지지 않는다 — 검사 통과가 저장의 전제다
     assert list((project.home / "scripts").iterdir()) == []
@@ -537,7 +537,7 @@ def test_금지_패턴이_든_라이브러리는_add_되지_않는다(
 
     assert project.run("library", "add", str(bad)) == 2
 
-    assert "STR-BAN-001" in rule_ids(capsys.readouterr().out)
+    assert "LNT-BAN-001" in rule_ids(capsys.readouterr().out)
     assert project.ids("library") == []
     assert list((project.home / "libraries").iterdir()) == []
 
@@ -552,7 +552,7 @@ def test_라이브러리는_노드_계약을_요구받지_않는다(project: Pro
 def test_list_는_어느_등록소를_보고_있는지_낸다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`STRICTLER_HOME` 을 깜빡하고 전역 등록소에 쓰는 것이 가장 흔한 사고다.
+    """`LINTOMATA_HOME` 을 깜빡하고 전역 등록소에 쓰는 것이 가장 흔한 사고다.
 
     비어 있을 때 *"등록이 안 된 것"* 과 *"다른 등록소를 보고 있는 것"* 이 구분되지
     않으면 라이브러리처럼 **공유되는 것**에서 특히 아프다 (`schema.md` 2절).
@@ -597,7 +597,7 @@ def test_앞단이_모호한_파이프라인은_add_에서_걸린다(
     assert project.run("pipeline", "add", str(ambiguous)) == 2
 
     out = capsys.readouterr().out
-    assert "STR-GRAPH-003" in rule_ids(out)
+    assert "LNT-GRAPH-003" in rule_ids(out)
     assert project.ids("pipeline") == []
 
 
@@ -629,7 +629,7 @@ def test_update_도_통과해야_성사된다(
     capsys.readouterr()
 
     assert project.run("script", "update", entry_id, str(project.script("bad", BROKEN))) == 2
-    assert "STR-CONTRACT-001" in rule_ids(capsys.readouterr().out)
+    assert "LNT-CONTRACT-001" in rule_ids(capsys.readouterr().out)
     # 내용이 바뀌지 않았다 — 검사에 걸린 것은 등록소에 들어가지 않는다
     assert project.store.read(entry_id) == before
 
@@ -648,7 +648,7 @@ def test_update_는_id_를_유지하고_상위를_전이적으로_재검증한�
     assert project.run("script", "update", ids["script"], str(changed)) == 1
 
     out = capsys.readouterr().out
-    assert "STR-REG-005" in rule_ids(out)
+    assert "LNT-REG-005" in rule_ids(out)
     # id 가 유지된다 — 참조가 안 깨진다
     assert project.ids("script") == sorted([ids["script"], ids["script2"]])
 
@@ -656,12 +656,12 @@ def test_update_는_id_를_유지하고_상위를_전이적으로_재검증한�
     # 배선 타입이 어긋난 것은 파이프라인이므로 거기에 표시가 붙는다.
     pipeline_entry = project.store.show(ids["pipeline"])
     assert pipeline_entry.broken == "validation"
-    assert pipeline_entry.broken_detail == "STR-TYPE-004"
+    assert pipeline_entry.broken_detail == "LNT-TYPE-004"
 
     # 목록이 그것을 드러낸다
     assert project.run("pipeline", "list") == 1
     listed = capsys.readouterr().out
-    assert "검증 깨짐" in listed and "STR-TYPE-004" in listed
+    assert "검증 깨짐" in listed and "LNT-TYPE-004" in listed
 
 
 def test_참조_대상이_검증_깨짐이면_상위도_깨짐으로_나온다(
@@ -740,7 +740,7 @@ def test_remove_후_list_가_참조_깨짐을_표시한다(
     # 참조가 있어도 삭제를 막지 않는다 — 대신 깨짐을 드러낸다
     assert project.run("script", "remove", ids["script"]) == 1
     removed_out = capsys.readouterr().out
-    assert "STR-REG-004" in rule_ids(removed_out)
+    assert "LNT-REG-004" in rule_ids(removed_out)
     assert project.store.list("script") == [project.store.show(ids["script2"])]
 
     assert project.run("node", "list") == 1
@@ -874,7 +874,7 @@ def test_not_run_은_1_이다(
 
     그래서 not run 이 `1` 로 나오는 자리는 `_exit_code` 단위로 직접 확인한다.
     """
-    from strictler.errors import Finding, NotRunCause
+    from lintomata.errors import Finding, NotRunCause
 
     not_run = Finding(
         status="not_run",
@@ -901,7 +901,7 @@ def test_없는_spec_id_는_STR_REG_002_다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert project.run("check", "sp_00000000") == 2
-    assert "STR-REG-002" in rule_ids(capsys.readouterr().out)
+    assert "LNT-REG-002" in rule_ids(capsys.readouterr().out)
 
 
 def test_등록_이후_직접_고친_Spec_은_STR_REG_001_이다(
@@ -918,7 +918,7 @@ def test_등록_이후_직접_고친_Spec_은_STR_REG_001_이다(
     )
 
     assert project.run("check", ids["spec"]) == 2
-    assert "STR-REG-001" in rule_ids(capsys.readouterr().out)
+    assert "LNT-REG-001" in rule_ids(capsys.readouterr().out)
 
 
 def test_경로로_준_Spec_은_실행_전에_검사한다(
@@ -945,7 +945,7 @@ def test_check_는_시각을_스스로_주입한다(
     대역으로 갈아끼우지 않고 **진짜 엔진을 그대로 태운 채 인자만 엿본다** —
     갈아끼우면 그 뒤가 한 번도 안 돌아 결함을 가린다 (R6-2).
     """
-    from strictler.engine import runtime
+    from lintomata.engine import runtime
 
     seen: dict[str, Any] = {}
     real_run_spec = runtime.run_spec
@@ -972,7 +972,7 @@ def test_경로_Spec_은_실행_전에_정적_검사를_탄다(
     아니라 **검증 결과를 재사용하는 기제**다 (`schema.md` 2절).
     대역이 아니라 **진짜 검사기를 그대로 태운 채 호출만 기록한다.**
     """
-    from strictler import checks
+    from lintomata import checks
 
     calls: list[str] = []
     real = checks.check_registration
@@ -1072,7 +1072,7 @@ def test_tool_경로가_상대경로면_오류다(
     spec = spec_with_tool(project, "./bin/pw")
 
     assert project.run("check", str(spec)) == 2
-    assert "STR-PATH-001" in rule_ids(capsys.readouterr().out)
+    assert "LNT-PATH-001" in rule_ids(capsys.readouterr().out)
 
 
 def test_tool_경로의_미정의_환경변수는_오류다(
@@ -1081,7 +1081,7 @@ def test_tool_경로의_미정의_환경변수는_오류다(
     spec = spec_with_tool(project, "${env.없는변수}/bin/pw")
 
     assert project.run("check", str(spec)) == 2
-    assert "STR-PATH-002" in rule_ids(capsys.readouterr().out)
+    assert "LNT-PATH-002" in rule_ids(capsys.readouterr().out)
 
 
 def test_tool_경로가_규칙을_지키면_그냥_돈다(
@@ -1226,8 +1226,8 @@ def test_선언한_패키지가_없으면_등록되지_않는다(
     source = project.script("page", VANTAGE_MISSING_DEP)
     assert project.run("script", "add", str(source)) == 2
     out = capsys.readouterr().out
-    assert "STR-DEP-001" in out
-    assert "uv tool install strictler --with 'definitely-not-installed-xyz'" in out
+    assert "LNT-DEP-001" in out
+    assert "uv tool install lintomata --with 'definitely-not-installed-xyz'" in out
     assert project.ids("script") == []
 
 
@@ -1261,7 +1261,7 @@ def test_등록소가_비어도_안내가_나온다(
     assert project.run("script", "add", str(project.script("c", VANTAGE_MISSING_DEP))) == 2
     out = capsys.readouterr().out
     assert (
-        "uv tool install strictler --with 'definitely-not-installed-xyz'" in out
+        "uv tool install lintomata --with 'definitely-not-installed-xyz'" in out
     )
 
 
@@ -1321,7 +1321,7 @@ def test_node_test_는_등록된_노드_옆의_test_json_을_돌린다(
 def test_node_test_는_실패를_그대로_종료_코드로_낸다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """스크립트가 터지면 `STR-TEST-002` 이고 **오류이므로 종료 코드 2** 다."""
+    """스크립트가 터지면 `LNT-TEST-002` 이고 **오류이므로 종료 코드 2** 다."""
     node = project.node("boom", "perceive", project.script("boom", RAISES_AT_RUN))
     test_file = write_json(
         node.with_suffix(".test.json"),
@@ -1332,7 +1332,7 @@ def test_node_test_는_실패를_그대로_종료_코드로_낸다(
     )
 
     assert project.run("node", "test", str(test_file)) == 2
-    assert "STR-TEST-002" in rule_ids(capsys.readouterr().out)
+    assert "LNT-TEST-002" in rule_ids(capsys.readouterr().out)
 
 
 # ── R6-1. `node test <id>` 는 **그 id 의 노드**를 돌린다 ──────────────────────
@@ -1370,7 +1370,7 @@ def test_id_로_부르면_테스트가_다른_노드를_가리켜도_그_id_를_
 
     assert project.run("node", "test", a_id) == 2
     out = capsys.readouterr().out
-    assert "STR-TEST-008" in rule_ids(out)
+    assert "LNT-TEST-008" in rule_ids(out)
     assert a_id in out
     # b 는 돌지 않았다 — 통과가 하나도 나오지 않는다.
     assert "pass 0" in out
@@ -1405,7 +1405,7 @@ def test_원본_노드를_지워도_id_로_부르면_돈다(
     """R5-2 의 목표가 경로 형태에서도 성립한다 (R6-1).
 
     예전에는 `node` 필드를 **경로로 다시 해석**해서 원본을 지우면
-    `STR-REF-002` 로 죽었다 — *"등록 후 원본을 지워도 된다"* 와 정면으로 어긋난다.
+    `LNT-REF-002` 로 죽었다 — *"등록 후 원본을 지워도 된다"* 와 정면으로 어긋난다.
     """
     node, test = node_with_test(project)  # `node` 는 원본 **경로**를 가리킨다
     assert project.run("node", "add", str(node)) == 0
@@ -1418,7 +1418,7 @@ def test_원본_노드를_지워도_id_로_부르면_돈다(
     assert project.run("node", "test", node_id) == 0
     out = capsys.readouterr().out
     assert "pass 1" in out
-    assert "STR-REF-002" not in rule_ids(out)
+    assert "LNT-REF-002" not in rule_ids(out)
 
 
 def test_등록소의_test_json_을_직접_고치면_STR_REG_001(
@@ -1435,7 +1435,7 @@ def test_등록소의_test_json_을_직접_고치면_STR_REG_001(
     write_json(stored, {"node": str(node), "cases": []})
 
     assert project.run("node", "test", node_id) == 2
-    assert "STR-REG-001" in rule_ids(capsys.readouterr().out)
+    assert "LNT-REG-001" in rule_ids(capsys.readouterr().out)
 
 
 def test_test_json_이_없으면_오류다(
@@ -1456,14 +1456,14 @@ def test_test_json_이_없으면_오류다(
 
 
 def test_CLI_가_직접_만드는_규칙은_슬롯이_전부_채워진다() -> None:
-    """슬롯을 빠뜨리면 **규칙 id 가 사라지는 게 아니라 `StrictlerError` 로 터진다.**
+    """슬롯을 빠뜨리면 **규칙 id 가 사라지는 게 아니라 `LintomataError` 로 터진다.**
 
     `cli.py` 가 `rules.finding` 을 직접 부르는 자리는 셋이다 —
-    `STR-REG-004`(remove), `STR-REG-002`/`-001`(check). 눈으로 읽지 말고 돌려서 본다.
+    `LNT-REG-004`(remove), `LNT-REG-002`/`-001`(check). 눈으로 읽지 말고 돌려서 본다.
     """
-    from strictler import rules
+    from lintomata import rules
 
-    for rule_id in ("STR-REG-001", "STR-REG-002", "STR-REG-004"):
+    for rule_id in ("LNT-REG-001", "LNT-REG-002", "LNT-REG-004"):
         made = rules.finding(rule_id, path="자리", fields={"id": "sc_1a2b3c4d"})
         assert made.rule_id == rule_id
         assert "{" not in made.message
@@ -1480,32 +1480,32 @@ def test_깨짐_표시는_4상태_요약을_붙이지_않는다(
     assert project.run("script", "remove", ids["script"]) == 1
 
     out = capsys.readouterr().out
-    assert "STR-REG-004" in rule_ids(out)
+    assert "LNT-REG-004" in rule_ids(out)
     assert "violation 0" not in out  # 4상태 요약 헤더가 없다
 
 
 # ── 등록소 위치 — 사용자 홈을 오염시키지 않는다 ──────────────────────────────
 
 
-def test_STRICTLER_HOME_을_따른다(
+def test_LINTOMATA_HOME_을_따른다(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    home = tmp_path / "strictler-home"
+    home = tmp_path / "lintomata-home"
     fake_user_home = tmp_path / "user"
     fake_user_home.mkdir()
-    monkeypatch.setenv("STRICTLER_HOME", str(home))
+    monkeypatch.setenv("LINTOMATA_HOME", str(home))
     monkeypatch.setenv("HOME", str(fake_user_home))
 
     project = Project(tmp_path)
     script = project.script("page", VANTAGE)
 
-    # `--home` 없이 — `$STRICTLER_HOME` 이 잡는다
+    # `--home` 없이 — `$LINTOMATA_HOME` 이 잡는다
     assert cli.main(["script", "add", str(script)]) == 0
     capsys.readouterr()
 
     assert (home / "registry.json").is_file()
     assert list((home / "scripts").glob("sc_*.py"))
-    assert not (fake_user_home / ".strictler").exists()
+    assert not (fake_user_home / ".lintomata").exists()
 
 
 # ── 라이브러리 배선 — 선언(스크립트) / 사용(노드) 분리 (`schema.md` 6.5절) ──
@@ -1528,7 +1528,7 @@ SHARED_LIBRARY_V2 = """
 USES_LIBRARY = """
     from dataclasses import dataclass
 
-    from strictler_lib import shared
+    from lintomata_lib import shared
 
     @dataclass
     class Scene:
@@ -1549,7 +1549,7 @@ USES_LIBRARY = """
 USES_OTHER_SLOT = """
     from dataclasses import dataclass
 
-    from strictler_lib import 다른슬롯
+    from lintomata_lib import 다른슬롯
 
     @dataclass
     class Scene:
@@ -1620,7 +1620,7 @@ def library_project(project: Project, *, by_ref: bool) -> dict[str, str]:
 def test_배선된_라이브러리가_실행까지_주입된다(
     project: Project, capsys: pytest.CaptureFixture[str], by_ref: bool
 ) -> None:
-    """`from strictler_lib import shared` 가 **로드 직전에** 심긴다."""
+    """`from lintomata_lib import shared` 가 **로드 직전에** 심긴다."""
     ids = library_project(project, by_ref=by_ref)
     capsys.readouterr()
 
@@ -1635,7 +1635,7 @@ def test_슬롯을_요구하는데_배선이_없으면_등록되지_않는다(
 
     assert project.run("node", "add", str(node)) == 2
 
-    assert "STR-LIB-001" in rule_ids(capsys.readouterr().out)
+    assert "LNT-LIB-001" in rule_ids(capsys.readouterr().out)
     assert project.ids("node") == []
 
 
@@ -1652,7 +1652,7 @@ def test_안_쓰는_배선은_등록되지_않는다(
     )
     assert project.run("node", "add", str(node)) == 2
 
-    assert "STR-LIB-002" in rule_ids(capsys.readouterr().out)
+    assert "LNT-LIB-002" in rule_ids(capsys.readouterr().out)
 
 
 def test_라이브러리_자리에_스크립트를_배선하면_STR_REG_003(
@@ -1670,7 +1670,7 @@ def test_라이브러리_자리에_스크립트를_배선하면_STR_REG_003(
         {"shared": f"${{ref.{sc}}}"},
     )
     assert project.run("node", "add", str(node)) == 2
-    assert "STR-REG-003" in rule_ids(capsys.readouterr().out)
+    assert "LNT-REG-003" in rule_ids(capsys.readouterr().out)
 
 
 def test_없는_라이브러리를_배선하면_STR_REF_001(
@@ -1683,7 +1683,7 @@ def test_없는_라이브러리를_배선하면_STR_REF_001(
         {"shared": str(project.root / "libraries" / "없다.py")},
     )
     assert project.run("node", "add", str(node)) == 2
-    assert "STR-REF-001" in rule_ids(capsys.readouterr().out)
+    assert "LNT-REF-001" in rule_ids(capsys.readouterr().out)
 
 
 def test_배선된_라이브러리의_금지_패턴도_노드_등록이_막는다(
@@ -1699,7 +1699,7 @@ def test_배선된_라이브러리의_금지_패턴도_노드_등록이_막는�
     )
 
     assert project.run("node", "add", str(node)) == 2
-    assert "STR-BAN-001" in rule_ids(capsys.readouterr().out)
+    assert "LNT-BAN-001" in rule_ids(capsys.readouterr().out)
 
 
 def test_라이브러리_update_는_상위를_전이적으로_재검증한다(
@@ -1754,9 +1754,9 @@ def test_라이브러리를_쓰는_노드가_상위_재검증에서_깨질_수_�
     assert project.run("script", "update", sc, str(changed)) == 1
 
     out = capsys.readouterr().out
-    assert "STR-REG-005" in rule_ids(out)
+    assert "LNT-REG-005" in rule_ids(out)
     assert project.run("node", "list") == 1
-    assert "✕ 검증 깨짐 — STR-LIB-001" in capsys.readouterr().out
+    assert "✕ 검증 깨짐 — LNT-LIB-001" in capsys.readouterr().out
 
 
 def test_라이브러리를_지우면_상위가_전이적으로_깨진다(
@@ -1779,7 +1779,7 @@ def test_라이브러리를_지우면_상위가_전이적으로_깨진다(
 def test_등록_이후_직접_고친_라이브러리는_실행에서_걸린다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """**정적 검사 루트를 피해 고치는 것**을 막는 자리가 해시다 (`STR-REG-001`)."""
+    """**정적 검사 루트를 피해 고치는 것**을 막는 자리가 해시다 (`LNT-REG-001`)."""
     ids = library_project(project, by_ref=True)
     capsys.readouterr()
 
@@ -1789,7 +1789,7 @@ def test_등록_이후_직접_고친_라이브러리는_실행에서_걸린다(
     )
 
     assert project.run("check", ids["spec"]) == 2
-    assert "STR-REG-001" in rule_ids(capsys.readouterr().out)
+    assert "LNT-REG-001" in rule_ids(capsys.readouterr().out)
 
 
 def test_node_test_에서도_라이브러리가_주입된다(

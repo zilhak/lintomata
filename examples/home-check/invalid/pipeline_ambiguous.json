@@ -54,21 +54,21 @@
   "nodes": [
     {
       "id": "pickPage",
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/pick_page.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/pick_page.json",
       "params": {
         "pagePath": "${config.pagePath}"
       }
     },
     {
       "id": "readHtml",
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/read_html.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/read_html.json",
       "inputs": {
         "scene": "pickPage"
       }
     },
     {
       "id": "audit",
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/audit.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/audit.json",
       "inputs": {
         "sensum": "readHtml"
       },
@@ -79,7 +79,7 @@
     },
     {
       "id": "detectButtons",
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/detect_buttons.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/detect_buttons.json",
       "inputs": {
         "sensum": "audit"
       },
@@ -92,7 +92,7 @@
     },
     {
       "id": "checkButtons",
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/check_count.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/check_count.json",
       "inputs": {
         "percept": "detectButtons",
         "other": "detectMenu"
@@ -104,14 +104,14 @@
     },
     {
       "id": "detectMenu",
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/detect_menu.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/detect_menu.json",
       "inputs": {
         "sensum": "audit"
       }
     },
     {
       "id": "checkMenu",
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/check_count.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/check_count.json",
       "inputs": {
         "percept": "detectMenu"
       },

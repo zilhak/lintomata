@@ -1,4 +1,4 @@
-# strictler
+# lintomata
 
 ## 이 프로젝트는 무엇인가
 
@@ -85,7 +85,7 @@ input/output 타입이 맞는지만 검사하고, 타입을 맞추는 건 스크
 
 ## 기획 데이터
 
-- **strictler 가 "기획 표현 스키마"를 정의한다.**
+- **lintomata 가 "기획 표현 스키마"를 정의한다.**
 - **사용하는 쪽이 그 스키마에 맞춰 기획 데이터를 미리 준비해 둔다.**
 - 기획 데이터는 **언제나 입력**이다. 도구가 만들어내는 경로는 없다.
   기획 데이터가 없으면 검사할 것도 없다 — 전제 조건이지 결함이 아니다.
@@ -107,7 +107,7 @@ input/output 타입이 맞는지만 검사하고, 타입을 맞추는 건 스크
 
 | | 무엇 |
 |---|---|
-| **strictler 가 제공** | 스키마, DAG·상태머신 실행 엔진, 타입 계약 검증, 노드 단위테스트 하네스, 리포터 |
+| **lintomata 가 제공** | 스키마, DAG·상태머신 실행 엔진, 타입 계약 검증, 노드 단위테스트 하네스, 리포터 |
 | **사용자 쪽이 제공** | **모든 노드의 스크립트** — 내장 동작은 하나도 없다. 실제 작성은 AI 가 한다 |
 
 Perceive 스크립트는 규칙마다가 아니라 **프로젝트마다 한 번** 만든다. 일회용 스크립트가 아니라 프로젝트 자산이다.
@@ -168,9 +168,9 @@ Perceive 스크립트가 틀리면 검사 전체가 조용히 무의미해진다
 ### ★ 모든 노드의 본체는 스크립트다
 
 **특정 노드만 스크립트인 게 아니다.** 다섯 타입 전부 본체가 스크립트다.
-→ **strictler 에 내장된 동작이 하나도 없다.** input/output 타입 계약과 단위테스트가 다섯 타입에 균일하게 적용된다.
+→ **lintomata 에 내장된 동작이 하나도 없다.** input/output 타입 계약과 단위테스트가 다섯 타입에 균일하게 적용된다.
 
-**노드 타입은 스크립트의 형식까지 제한하고, strictler 가 타입별 스크립트 검사기를 제공한다.**
+**노드 타입은 스크립트의 형식까지 제한하고, lintomata 가 타입별 스크립트 검사기를 제공한다.**
 이게 여러 성질을 구조적으로 강제한다:
 - **Reckon 은 기댓값을 Spec 에서 파라미터로 받아야 한다** — `Args.params` 에 기댓값 필드 필수.
   스크립트에 기댓값을 하드코딩하면 **기획 파일이 껍데기가 되고**, 기획을 고쳐도 판정이 안 바뀌며,
@@ -393,7 +393,7 @@ Perceive 스크립트가 좌표를 뽑고 Reckon 스크립트가 비교하며, S
 - **기본 검사값·내장 룰셋이 존재하지 않는다.**
 - **Vantage 조차 사용자가 확장한다.** 예: `특정 프로세스 지목 → 스크린샷`.
 
-strictler 가 파는 것은 **파이프라인 엔진과 스키마**이지 검사 내용이 아니다.
+lintomata 가 파는 것은 **파이프라인 엔진과 스키마**이지 검사 내용이 아니다.
 
 ## 경계
 
@@ -402,9 +402,9 @@ strictler 가 파는 것은 **파이프라인 엔진과 스키마**이지 검사
 | lint / 타입체커 | AST / IR | 코드의 형태 |
 | DOM 셀렉터 E2E | DOM 트리 | 마크업의 형태 |
 | 스냅샷 / VRT | 픽셀 | 과거의 자기 자신 |
-| **strictler** | **형상(shape)** | **기획** |
+| **lintomata** | **형상(shape)** | **기획** |
 
-strictler 는 lint 를 안 하는 도구가 아니다. **lint 의 대상을 AST 에서 형상으로,
+lintomata 는 lint 를 안 하는 도구가 아니다. **lint 의 대상을 AST 에서 형상으로,
 판정 기준을 코딩 컨벤션에서 기획으로 바꾼 도구**다.
 
 **스코프: 기존 lint 영역은 하지 않는다.** 코드 레벨 검사는 기존 lint 도구에 맡긴다.
@@ -412,8 +412,8 @@ strictler 는 lint 를 안 하는 도구가 아니다. **lint 의 대상을 AST 
 
 ## 인터페이스 — 등록소가 중심이다
 
-**스크립트 / 라이브러리 / 노드 / 파이프라인 / Spec 다섯 다 strictler 에 등록한다.**
-등록하면 strictler 폴더(`~/.strictler`)로 **파일이 복사되고 해시가 함께 저장**된다.
+**스크립트 / 라이브러리 / 노드 / 파이프라인 / Spec 다섯 다 lintomata 에 등록한다.**
+등록하면 lintomata 폴더(`~/.lintomata`)로 **파일이 복사되고 해시가 함께 저장**된다.
 사용자는 원본을 지워도 된다.
 
 - **등록 시 정적 검사를 통과해야 저장된다.** 잘못된 것이 등록소에 들어가지 않는다
@@ -421,7 +421,7 @@ strictler 는 lint 를 안 하는 도구가 아니다. **lint 의 대상을 AST 
 - **해시가 그대로면 재검사하지 않는다.** 등록은 편의가 아니라 **검증 결과를 재사용하는 기제**다
 - 등록 시 이름을 적지만 **참조는 자동 발급된 id 로** 한다 — `${ref.nd_e5f6a7b8}`
   (접두 `sc_`=스크립트 `lb_`=라이브러리 `nd_`=노드 `pl_`=파이프라인 `sp_`=Spec)
-- **등록소는 프로젝트마다 따로 둔다** — `STRICTLER_HOME=$PROJECT_ROOT/.strictler`.
+- **등록소는 프로젝트마다 따로 둔다** — `LINTOMATA_HOME=$PROJECT_ROOT/.lintomata`.
   cwd 를 거슬러 올라가는 자동 탐색은 하지 않는다 (경로 규칙과 어긋난다)
 - **id 는 재현되지 않는다.** 같은 파일도 다른 등록소에선 다른 id 다 →
   **`${ref.}` 는 로컬 최적화, 절대경로+`${env.X}` 는 이식 가능.** 커밋할 것은 경로로 쓴다
@@ -434,13 +434,13 @@ strictler 는 lint 를 안 하는 도구가 아니다. **lint 의 대상을 AST 
 
 | 명령 | 하는 일 |
 |---|---|
-| `strictler <종류> add <파일>` | 정적 검사 후 등록. id 발급 |
-| `strictler <종류> list` | 목록. 깨진 구성 표시 |
-| `strictler <종류> show <id>` | 상세 — 내용·해시·참조 관계 |
-| `strictler <종류> update <id> <파일>` | 내용 교체. **id 유지.** 상위 재검증 |
-| `strictler <종류> remove <id>` | 삭제 |
-| `strictler node test <id>` | 노드 단위테스트 (실제 실행) |
-| `strictler check <spec-id>` | 검사 실행 |
+| `lintomata <종류> add <파일>` | 정적 검사 후 등록. id 발급 |
+| `lintomata <종류> list` | 목록. 깨진 구성 표시 |
+| `lintomata <종류> show <id>` | 상세 — 내용·해시·참조 관계 |
+| `lintomata <종류> update <id> <파일>` | 내용 교체. **id 유지.** 상위 재검증 |
+| `lintomata <종류> remove <id>` | 삭제 |
+| `lintomata node test <id>` | 노드 단위테스트 (실제 실행) |
+| `lintomata check <spec-id>` | 검사 실행 |
 
 **CLI 가 유일한 표면이다.** AI 가 쓰고 등록하면 그 자리에서 걸리는 것이 저작 루프의 핵심인데,
 그건 `add` 가 규칙 id·자연어 가이드·종료 코드 `2` 를 돌려주는 것으로 이미 성립한다.
@@ -460,13 +460,13 @@ strictler 는 lint 를 안 하는 도구가 아니다. **lint 의 대상을 AST 
 ## 구현 언어 — Python + uv
 
 **외부 도구는 철저히 외부로 분리한다.** Playwright 등은 사용자가 직접 설치하고,
-경로를 Vantage config 로 받는다. strictler 는 그걸 import 하지 않는다.
+경로를 Vantage config 로 받는다. lintomata 는 그걸 import 하지 않는다.
 
 **지원 스크립트 언어는 단 하나.** 크로스 랭귀지는 최소한으로 간다.
 → 엔진 언어 ≠ 스크립트 언어면 런타임을 영구 임베딩해야 하므로, **엔진 = 스크립트 언어 = Python**.
 
 채택 근거:
-- **pydantic** — strictler 의 중심 기능이 "스크립트 input/output 계약 검증"인데 이건 **런타임 검증**이다.
+- **pydantic** — lintomata 의 중심 기능이 "스크립트 input/output 계약 검증"인데 이건 **런타임 검증**이다.
   TS 타입은 런타임에 소거되어 결국 zod 이중 구조가 된다. pydantic 은 타입 선언 = 검증기 = JSON Schema 생성기.
   **검증 에러가 구조화되어 AI 가 읽고 자기 수정하기 좋다.**
 - **PEP 723** — 노드 스크립트가 자기 의존성을 **헤더에 선언**한다. 엔진은 이걸 읽어
@@ -474,9 +474,9 @@ strictler 는 lint 를 안 하는 도구가 아니다. **lint 의 대상을 AST 
   ⚠️ **격리 환경을 만들어 주지는 않는다** — 아래 참조.
 - **uvx** — 런타임 버전까지 uv 가 관리한다.
 
-**스크립트 의존성은 격리하지 않는다.** 노드 스크립트는 strictler 와 **같은 프로세스**에
-로드되므로 `import` 가 strictler 환경에서 풀린다 → 외부 패키지는 그쪽에 함께 깐다
-(`uv tool install strictler --with selectolax`).
+**스크립트 의존성은 격리하지 않는다.** 노드 스크립트는 lintomata 와 **같은 프로세스**에
+로드되므로 `import` 가 lintomata 환경에서 풀린다 → 외부 패키지는 그쪽에 함께 깐다
+(`uv tool install lintomata --with selectolax`).
 **이게 lint 의 표준 모델이다** — ESLint 플러그인도 ESLint 와 같은 `node_modules` 를 쓴다.
 스크립트마다 `uv run --script` 를 띄우는 안은 **일관성 때문에** 채택하지 않았다.
 뒤집을 조건은 *"같은 패키지의 호환 불가 버전을 요구하는 스크립트가 등록소에 둘 이상"* 하나뿐이고,
@@ -504,17 +504,17 @@ selectolax 는 트리를 C 메모리에 두고 접근 시에만 Python 객체를
 **동작한다.** 다섯 노드 타입·두 파이프라인 종류·등록소 CRUD 가 CLI 로 끝까지 돈다.
 
 ```
-src/strictler/
+src/lintomata/
   model/     네 층(Spec/Pipeline/Node/NodeTest)의 pydantic 모델
   typesys/   타입 어휘 + dataclass 집합 정규화 (구조 동일성·부분집합 병합)
   refs.py    ${env.X}/${config.X}/${state.X}/${ref.<id>} 전개, 절대경로 강제
   rules.py   검사 규칙 69개 + 슬롯 검증          report.py  리포트
-  deps.py    PEP 723 의존성 선언 검사 (STR-DEP)
+  deps.py    PEP 723 의존성 선언 검사 (LNT-DEP)
   store/     등록소 CRUD·해시 대조·참조 그래프
   checks/    script(AST) · library · node · pipeline · reachability · contracts(해시 재사용)
   engine/    drive(구동 루프 정본) · state · exec · runtime(값 검증) · compare(비교)
   testing/   노드 단위테스트 하네스
-  cli.py     strictler <종류> add|list|show|update|remove / node test / check
+  cli.py     lintomata <종류> add|list|show|update|remove / node test / check
 ```
 
 **종료 코드**: `0` 통과만 / `1` **위반·not run**(정상 결과) / `2` **오류**(도구가 못 돔).

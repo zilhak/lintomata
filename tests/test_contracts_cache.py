@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from strictler.checks import script as script_checks
-from strictler.checks.contracts import ContractPayload, ScriptCache
-from strictler.errors import Finding, StrictlerError
+from lintomata.checks import script as script_checks
+from lintomata.checks.contracts import ContractPayload, ScriptCache
+from lintomata.errors import Finding, LintomataError
 
 SOURCE = '''\
 from dataclasses import dataclass
@@ -106,13 +106,13 @@ def test_돌려준_목록을_고쳐도_캐시가_오염되지_않는다() -> Non
 
 
 def test_파싱_실패는_캐시하지_않는다(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`StrictlerError` 는 위반이 아니라 검사기가 못 돈 것이다 — 그대로 올라간다."""
+    """`LintomataError` 는 위반이 아니라 검사기가 못 돈 것이다 — 그대로 올라간다."""
     counter = Counter(monkeypatch)
     cache = ScriptCache()
     broken = "def runNode(args: Args)\n    pass\n"
 
     for _ in range(2):
-        with pytest.raises(StrictlerError):
+        with pytest.raises(LintomataError):
             cache.contract(broken, PATH)
 
     assert len(counter.calls) == 2
@@ -128,7 +128,7 @@ def test_캐시를_써도_check_script_결과가_같다() -> None:
 
 @pytest.mark.parametrize("node_type", ["reckon", "action"])
 def test_캐시를_써도_타입별_형식_판정이_같다(node_type: str) -> None:
-    """`STR-CONTRACT-005/006/007` 은 계약을 재사용해도 그대로 나야 한다."""
+    """`LNT-CONTRACT-005/006/007` 은 계약을 재사용해도 그대로 나야 한다."""
     plain = script_checks.check_script(SOURCE, PATH, node_type)  # type: ignore[arg-type]
     cached = script_checks.check_script(
         SOURCE, PATH, node_type, cache=ScriptCache()  # type: ignore[arg-type]
@@ -207,7 +207,7 @@ def test_해석_안_되는_타입도_그대로_되살아난다() -> None:
     """`_type_of` 는 못 읽은 어노테이션을 **원문 그대로의 미지 타입**으로 남긴다.
 
     문자열로 접었다 펴면 되돌아온다는 보장이 없어서 구조 그대로 담는다 —
-    여기서 뭉개지면 `STR-TYPE-003` 의 문구가 달라진다.
+    여기서 뭉개지면 `LNT-TYPE-003` 의 문구가 달라진다.
     """
     weird = SOURCE.replace("count: int", "count: Callable[[int], str]")
     original, _ = script_checks.extract_contract(weird, PATH)
@@ -226,11 +226,11 @@ def test_한_번의_check_는_스크립트마다_한_번만_파싱한다(
     `recheck_resolved` 가 한 번, 그 안의 `check_script` 가 또 한 번,
     `_load_nodes` 가 또 한 번. 셋 다 같은 파일에서 같은 계약을 뽑는다.
     """
-    from strictler import cli
+    from lintomata import cli
 
-    monkeypatch.setenv("STRICTLER_HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("STRICTLER_EXAMPLE_ROOT", str(EXAMPLE_ROOT))
-    monkeypatch.setenv("STRICTLER_EXAMPLE_OUT", str(tmp_path / "out"))
+    monkeypatch.setenv("LINTOMATA_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("LINTOMATA_EXAMPLE_ROOT", str(EXAMPLE_ROOT))
+    monkeypatch.setenv("LINTOMATA_EXAMPLE_OUT", str(tmp_path / "out"))
     counter = Counter(monkeypatch)
 
     code = cli.main(["check", str(EXAMPLE_ROOT / "specs" / "home_ok.json"), "--json"])

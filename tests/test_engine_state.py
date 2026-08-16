@@ -13,11 +13,11 @@ from typing import Any
 
 import pytest
 
-from strictler.checks import reachability
-from strictler.engine import state as state_module
-from strictler.engine.state import ENGINE_FIELDS, StateMachine
-from strictler.errors import StrictlerError
-from strictler.model import ENGINE_STATE_FIELDS, Pipeline, States, Transition
+from lintomata.checks import reachability
+from lintomata.engine import state as state_module
+from lintomata.engine.state import ENGINE_FIELDS, StateMachine
+from lintomata.errors import LintomataError
+from lintomata.model import ENGINE_STATE_FIELDS, Pipeline, States, Transition
 
 STARTED_AT = 1_700_000_000_000
 
@@ -39,7 +39,7 @@ def machine(
 
 
 def test_엔진_제공_필드의_정본은_model_이다() -> None:
-    """복제해 두면 엔진 제공 필드가 늘 때 `STR-BAN-004` 오탐이 난다 (R3-13)."""
+    """복제해 두면 엔진 제공 필드가 늘 때 `LNT-BAN-004` 오탐이 난다 (R3-13)."""
     assert set(ENGINE_FIELDS) == set(ENGINE_STATE_FIELDS)
 
 
@@ -146,17 +146,17 @@ def test_delay_의_config_값이_env_를_품어도_풀린다() -> None:
 
 
 def test_delay_의_미정의_env_는_STR_PATH_002() -> None:
-    with pytest.raises(StrictlerError) as caught:
+    with pytest.raises(LintomataError) as caught:
         machine(
             ["idle", "settled"],
             "idle",
             [{"after": "a", "to": "settled", "delay": "${env.NOPE}"}],
         )
-    assert [item.rule_id for item in caught.value.findings] == ["STR-PATH-002"]
+    assert [item.rule_id for item in caught.value.findings] == ["LNT-PATH-002"]
 
 
 def test_delay_가_정수로_안_풀리면_오류다() -> None:
-    with pytest.raises(StrictlerError) as caught:
+    with pytest.raises(LintomataError) as caught:
         machine(
             ["idle", "settled"],
             "idle",
@@ -167,7 +167,7 @@ def test_delay_가_정수로_안_풀리면_오류다() -> None:
 
 
 def test_delay_가_음수면_오류다() -> None:
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         machine(["idle", "x"], "idle", [{"after": "a", "to": "x", "delay": -1}])
 
 
@@ -198,7 +198,7 @@ def test_matches_는_노드_어휘를_파이프라인_상태로_번역한다() -
     assert m.matches({"stop": "settled"}, "stop") is False
     step_through(m, "a")
     assert m.matches({"stop": "settled"}, "stop") is True
-    # 매핑에 없는 이름은 만족될 수 없다 — `STR-STATE-002` 가 등록 시점에 짚는다.
+    # 매핑에 없는 이름은 만족될 수 없다 — `LNT-STATE-002` 가 등록 시점에 짚는다.
     assert m.matches({"stop": "settled"}, "모름") is False
 
 

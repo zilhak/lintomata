@@ -1,4 +1,4 @@
-# strictler 스키마 — 확정 사항 정리
+# lintomata 스키마 — 확정 사항 정리
 
 > 설계 논의 결과를 하나로 정리한 문서. **여기 적힌 것은 전부 확정**이고, 미결은 17절에만 있다.
 > 폐기된 안과 그 이유는 16절 — **다시 꺼내지 말 것.**
@@ -47,13 +47,13 @@ Spec (JSON)  →  Pipeline (JSON)  →  Node (JSON)  →  Script (.py)
 
 ---
 
-## 2. 등록소 — strictler 가 파일을 관리한다
+## 2. 등록소 — lintomata 가 파일을 관리한다
 
-**스크립트 / 라이브러리 / 노드 / 파이프라인 / Spec 다섯 다 strictler 에 등록한다.**
-등록하면 strictler 가 쓰는 폴더 아래로 **파일이 복사되어 저장**된다.
+**스크립트 / 라이브러리 / 노드 / 파이프라인 / Spec 다섯 다 lintomata 에 등록한다.**
+등록하면 lintomata 가 쓰는 폴더 아래로 **파일이 복사되어 저장**된다.
 
 ```
-$STRICTLER_HOME/                    (기본 ~/.strictler)
+$LINTOMATA_HOME/                    (기본 ~/.lintomata)
   registry.json                     인덱스 — id · 이름 · 종류 · 해시 · 등록시각 · 참조
   scripts/    sc_a1b2c3d4.py
   libraries/  lb_9f8e7d6c.py
@@ -125,12 +125,12 @@ Spec 등에 절대경로를 그대로 적을 수 있다. 대신 **실행 시점�
 
 | 깨짐 | 원인 | 규칙 |
 |---|---|---|
-| **참조 깨짐** | 참조 대상이 **삭제**됐다 | `STR-REG-004` |
-| **검증 깨짐** | 참조 대상이 **수정**되어 상위 검증이 더는 통과하지 않는다 | `STR-REG-005` |
+| **참조 깨짐** | 참조 대상이 **삭제**됐다 | `LNT-REG-004` |
+| **검증 깨짐** | 참조 대상이 **수정**되어 상위 검증이 더는 통과하지 않는다 | `LNT-REG-005` |
 
 ```
-$ strictler pipeline list
-pl_c9d0e1f2  login-flow   ✕ 검증 깨짐 — nd_e5f6a7b8 수정으로 STR-TYPE-004
+$ lintomata pipeline list
+pl_c9d0e1f2  login-flow   ✕ 검증 깨짐 — nd_e5f6a7b8 수정으로 LNT-TYPE-004
 pl_7f8a9b0c  menu-check   ✕ 참조 깨짐 — nd_1a2b3c4d 없음
 pl_5e6f7a8b  cart-flow    ○
 ```
@@ -141,22 +141,22 @@ lint 사고방식(9절)과 일관된다.
 
 ### 등록소는 프로젝트마다 따로 둔다
 
-위치는 **`$STRICTLER_HOME`** 또는 **`--home`** 으로 정한다. 기본값은 `~/.strictler` 지만
+위치는 **`$LINTOMATA_HOME`** 또는 **`--home`** 으로 정한다. 기본값은 `~/.lintomata` 지만
 **실사용에서는 프로젝트마다 하나씩 두는 것이 정본이다.**
 
 ```
-export STRICTLER_HOME=$PROJECT_ROOT/.strictler   # 프로젝트에 두고 커밋한다
+export LINTOMATA_HOME=$PROJECT_ROOT/.lintomata   # 프로젝트에 두고 커밋한다
 ```
 
 - 등록소가 다르면 **완전히 별개다** — 같은 파일을 두 등록소에 넣어도 id 가 따로 발급되고
   이름이 겹쳐도 섞이지 않는다
 - **cwd 를 거슬러 올라가며 찾는 자동 탐색은 하지 않는다.** 3절의 *"상대 경로 금지 → cwd 의존성이
   사라진다"* 와 정면으로 어긋나기 때문이다. **이식성은 여기서도 환경변수가 담당한다** —
-  `STRICTLER_HOME` 은 등록소에 대해 `${env.PROJECT_ROOT}` 와 같은 자리다
+  `LINTOMATA_HOME` 은 등록소에 대해 `${env.PROJECT_ROOT}` 와 같은 자리다
 - 상대 경로를 주면 **에러**다. 경로 규칙은 등록소에도 똑같이 걸린다
 - 등록소를 프로젝트 안에 두면 **검증된 파일 묶음이 레포와 함께 이동한다**
 
-**어느 등록소를 쓰고 있는지는 항상 출력에 드러나야 한다.** `STRICTLER_HOME` 을 깜빡하고
+**어느 등록소를 쓰고 있는지는 항상 출력에 드러나야 한다.** `LINTOMATA_HOME` 을 깜빡하고
 전역 등록소에 조용히 쓰는 것이 가장 흔한 사고다.
 
 ### ★ id 는 재현되지 않는다 — ref 는 로컬, 경로는 이식 가능
@@ -177,31 +177,31 @@ id 는 등록할 때 무작위로 발급된다. **같은 파일을 다른 머신
 ### CLI 표면 — 종류 다섯에 CRUD 가 완전하다
 
 ```
-strictler <종류> add | list | show | update | remove
+lintomata <종류> add | list | show | update | remove
 ```
 
 `<종류>` = `script` / `library` / `node` / `pipeline` / `spec`.
 
 | 명령 | 하는 일 |
 |---|---|
-| `strictler <종류> add <파일>` | 정적 검사 후 등록. **통과해야 저장된다.** id 발급 |
-| `strictler <종류> list` | 목록. **깨진 구성 표시** |
-| `strictler <종류> show <id>` | 상세 — 내용·해시·참조 관계 |
-| `strictler <종류> update <id> <파일>` | 내용 교체. **id 유지.** 상위 전이적 재검증 |
-| `strictler <종류> remove <id>` | 삭제. 참조가 있어도 막지 않는다 |
+| `lintomata <종류> add <파일>` | 정적 검사 후 등록. **통과해야 저장된다.** id 발급 |
+| `lintomata <종류> list` | 목록. **깨진 구성 표시** |
+| `lintomata <종류> show <id>` | 상세 — 내용·해시·참조 관계 |
+| `lintomata <종류> update <id> <파일>` | 내용 교체. **id 유지.** 상위 전이적 재검증 |
+| `lintomata <종류> remove <id>` | 삭제. 참조가 있어도 막지 않는다 |
 
 실행 계열은 따로 선다:
 
 | 명령 | 하는 일 |
 |---|---|
-| `strictler node test <id>` | 노드 단위테스트 (실제 실행) |
-| `strictler check <spec-id>` | 검사 실행 |
+| `lintomata node test <id>` | 노드 단위테스트 (실제 실행) |
+| `lintomata check <spec-id>` | 검사 실행 |
 
 ```
-strictler script  add    ./detect_buttons.py
-strictler node    update nd_e5f6a7b8 ./detect_buttons.json
-strictler pipeline list
-strictler spec    show   sp_3a4b5c6d
+lintomata script  add    ./detect_buttons.py
+lintomata node    update nd_e5f6a7b8 ./detect_buttons.json
+lintomata pipeline list
+lintomata spec    show   sp_3a4b5c6d
 ```
 
 **CLI 가 유일한 표면이다.** AI 가 쓰고 등록하면 그 자리에서 걸리는 것이 저작 루프의 핵심인데,
@@ -449,13 +449,13 @@ AI 를 껴서 output 을 잘못 내놓으면 **타입 계약에 걸려 그냥 �
 
 **그 외에는 아무것도 금지하지 않는다.** 파일 IO·네트워크·환경변수 전부 자유다.
 
-### 스크립트의 의존성 — 격리하지 않는다. strictler 환경을 공유한다
+### 스크립트의 의존성 — 격리하지 않는다. lintomata 환경을 공유한다
 
-**노드 스크립트는 strictler 와 같은 프로세스에 로드된다.** 그래서 스크립트의 `import` 는
-**strictler 가 설치된 환경**에서 풀린다. 스크립트가 외부 패키지를 쓰면 그쪽에 함께 깔아야 한다.
+**노드 스크립트는 lintomata 와 같은 프로세스에 로드된다.** 그래서 스크립트의 `import` 는
+**lintomata 가 설치된 환경**에서 풀린다. 스크립트가 외부 패키지를 쓰면 그쪽에 함께 깔아야 한다.
 
 ```
-uv tool install strictler --with selectolax
+uv tool install lintomata --with selectolax
 ```
 
 **이게 lint 의 표준 실행 모델이다.** ESLint 플러그인의 의존성은 ESLint 와 같은
@@ -467,7 +467,7 @@ uv tool install strictler --with selectolax
 헤더를 보고 환경을 만들어 주지는 않는다.
 
 **스크립트마다 `uv run --script` 로 격리 프로세스를 띄우는 안은 채택하지 않았다.** 이유는
-비용이 아니라 **일관성**이다 — 그렇게 하면 lint 중에서 strictler 만 혼자 튄다. 게다가
+비용이 아니라 **일관성**이다 — 그렇게 하면 lint 중에서 lintomata 만 혼자 튄다. 게다가
 의존성이 갈리는 단위는 스크립트가 아니라 **프로젝트**고, 그건 이미 `uv` 가 푸는 문제다.
 
 → **뒤집을 조건은 하나다.** 등록소에 **같은 패키지의 호환되지 않는 버전을 요구하는
@@ -486,7 +486,7 @@ run_shell("...")                               # 함수명이 tool 에 없음 �
 
 **검사 강도는 얕다** — 함수 호출 형태 전체를 정의하는 게 아니라
 **함수명 + 그 인자로 적힌 실행파일 경로**를 매칭하는 정도다.
-인자 전체를 검증하려 들면 strictler 가 외부 도구의 API 를 알아야 하고,
+인자 전체를 검증하려 들면 lintomata 가 외부 도구의 API 를 알아야 하고,
 그건 **"외부 도구는 철저히 외부로 분리한다"를 깬다.**
 
 **`tool` 에 선언된 것이 부가적으로 subprocess 를 띄우는 건 막지 않는다.**
@@ -515,7 +515,7 @@ run_shell("...")                               # 함수명이 tool 에 없음 �
 | 본체가 **단 하나** | 엔트리 하나 = 파일 하나 |
 | 여러 스크립트가 참조 | 참조 그래프 |
 | 본체를 고치면 쓰는 쪽이 안전한가 | **수정은 id 를 유지하고 상위를 전이적으로 재검증한다** |
-| 몰래 못 고치게 | 실행 시 해시 대조 (`STR-REG-001`) |
+| 몰래 못 고치게 | 실행 시 해시 대조 (`LNT-REG-001`) |
 | 안 쓰는 것·깨진 것 파악 | `list` 의 깨짐 표시 |
 
 세 번째 줄이 핵심이다 — **판정 함수를 고치면 그것을 쓰는 모든 노드의 검증이 무효화된다.**
@@ -535,19 +535,19 @@ run_shell("...")                               # 함수명이 tool 에 없음 �
 
 ```python
 # 스크립트
-from strictler_lib import buttons
+from lintomata_lib import buttons
 ...
 found = buttons.find_buttons(args.input.html)
 ```
 
 | | 어디 | 무엇 |
 |---|---|---|
-| `from strictler_lib import buttons` | **스크립트** | **능력 선언** — "`buttons` 슬롯이 필요합니다" |
+| `from lintomata_lib import buttons` | **스크립트** | **능력 선언** — "`buttons` 슬롯이 필요합니다" |
 | `"libraries": { "buttons": … }` | **노드 JSON** | **사용 선언** — "그 슬롯엔 이걸 씁니다" |
 
 1절의 선언/사용 분리와 그대로 겹친다. 새 개념이 늘지 않는다.
 
-- 엔진이 로드 시점에 `strictler_lib.<이름>` 을 심는다. **네임스페이스를 쓰는 이유**는 같은 이름의
+- 엔진이 로드 시점에 `lintomata_lib.<이름>` 을 심는다. **네임스페이스를 쓰는 이유**는 같은 이름의
   실제 패키지를 가리는 사고를 막기 위해서다
 - `script add` 는 스크립트만 보고 **필요한 슬롯 목록**을 계약에 기록한다
 - `node add` 는 **슬롯이 전부 배선됐는지 + 그 참조가 실제로 라이브러리인지** 검사한다
@@ -574,7 +574,7 @@ found = buttons.find_buttons(args.input.html)
 하므로(7절) 원리적으로는 라이브러리를 또 하나의 origin 으로 등록하면 맞물린다. **그건 v2 다.**
 실제로 답답한지 예제로 확인한 뒤에 연다 — 성급히 열었다가 타입 체계에 구멍이 나면 훨씬 비싸다.
 
-**`strictler library test` 도 v1 에 두지 않는다.** 라이브러리엔 `runNode` 계약이 없어 지금
+**`lintomata library test` 도 v1 에 두지 않는다.** 라이브러리엔 `runNode` 계약이 없어 지금
 하네스가 그대로 맞지 않는다. 라이브러리는 그것을 쓰는 **노드 단위테스트를 통해 간접 검증**된다.
 
 ### "단 하나만 있을 수 있게" 는 강제하지 않는다 — 보이게 한다
@@ -774,7 +774,7 @@ lint 가 스크린샷을 남기지 않는 것과 같다.
       "cause": { "node": "captureHtml", "reason": "state_unreachable" } },
 
     { "path": "login.json > plan[1] > menu-check", "node": "detectMenu",
-      "status": "error", "rule": "STR-N002",
+      "status": "error", "rule": "LNT-N002",
       "message": "runNode 의 인자 타입 `Args` 가 선언돼 있지 않습니다. 모든 노드 스크립트는 `Args` 라는 이름의 dataclass 를 정의하고 runNode(args: Args) 형태여야 합니다." }
   ]
 }
@@ -1064,8 +1064,8 @@ AI 가 fixture 를 잘못 썼는지 스크립트를 잘못 썼는지 구분되�
 ### 등록 시 테스트를 요구하지 않는다 — 별도 명령이다
 
 ```
-strictler register-node <node>   → 정적 검사. 통과해야 등록됨
-strictler test-node <node>       → 실제 실행. 명시적으로 돌린다
+lintomata register-node <node>   → 정적 검사. 통과해야 등록됨
+lintomata test-node <node>       → 실제 실행. 명시적으로 돌린다
 ```
 
 이유 둘:
@@ -1205,7 +1205,7 @@ strictler test-node <node>       → 실제 실행. 명시적으로 돌린다
   전부 두 겹이 되고 8절(*"상태 전이는 파이프라인 구동 엔진이 관리한다"*)이 무너진다.
   인라인이면 평평한 DAG 하나·상태머신 하나라 **엔진이 거의 안 바뀐다 — 로더 기능이다**
 - **`nodes[].source` 를 겸용하지 않는다. 별도 필드(`subroutine`)를 쓴다.**
-  겸용하면 `STR-REG-003`(ref-kind-mismatch)이 지키던 것이 사라져 **오타로 `pl_` 을 쓴 것과
+  겸용하면 `LNT-REG-003`(ref-kind-mismatch)이 지키던 것이 사라져 **오타로 `pl_` 을 쓴 것과
   의도적 서브루틴을 구분할 수 없다.** `libraries` 를 별도 필드로 둔 것과 같은 이유다
 - **노드 타입 라벨을 붙이지 않는다.** `type` 은 *형식 검사*를 구동하려고 존재하는데
   (Reckon 의 기댓값 필드, Action 의 `input == output`) 서브루틴은 스크립트가 없어 돌릴 형식 검사가 없다.

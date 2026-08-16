@@ -10,7 +10,7 @@
 
 from dataclasses import dataclass
 
-from strictler_lib import buttons
+from lintomata_lib import buttons
 
 
 @dataclass

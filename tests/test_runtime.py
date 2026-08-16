@@ -3,7 +3,7 @@
 **대역을 쓰지 않는다.** 실제 스크립트 파일·노드 JSON·파이프라인 JSON·등록소로 돌린다 —
 Step 1 통합에서 남의 모듈을 stub 으로 끼고 돌린 탓에 슬롯 계약 위반 11건이 merge
 시점까지 안 잡혔기 때문이다. 여기서 진짜 구현을 그대로 쓰면 규칙 슬롯 누락이 곧바로
-`StrictlerError` 로 터진다.
+`LintomataError` 로 터진다.
 
 짚는 것:
   - not run 전파 **두 경로 각각**과 `NotRunCause.reason` 이 올바로 갈리는가
@@ -23,13 +23,13 @@ from typing import Any
 
 import pytest
 
-from strictler import rules
-from strictler.checks import reachability
-from strictler.engine import runtime
-from strictler.errors import Finding
-from strictler.model import Pipeline, Spec
-from strictler.report import render_json
-from strictler.store.entries import Store
+from lintomata import rules
+from lintomata.checks import reachability
+from lintomata.engine import runtime
+from lintomata.errors import Finding
+from lintomata.model import Pipeline, Spec
+from lintomata.report import render_json
+from lintomata.store.entries import Store
 
 STARTED_AT = 1_700_000_000_000
 
@@ -1060,7 +1060,7 @@ def test_config_required_누락은_STR_CONFIG_001_이다(project: Project) -> No
         spec, store=project.store, env=project.env, started_at_ms=STARTED_AT
     )
 
-    assert {f.rule_id for f in report.results} == {"STR-CONFIG-001"}
+    assert {f.rule_id for f in report.results} == {"LNT-CONFIG-001"}
     # config 가 안 풀리면 그 지점에서 진행하지 않는다 — 노드는 하나도 안 돈다.
     assert report.summary.passed == 0
 
@@ -1077,7 +1077,7 @@ def test_비교_파이프라인인데_report_가_없으면_STR_CMP_001(project: 
         spec, store=project.store, env=project.env, started_at_ms=STARTED_AT
     )
 
-    assert [f.rule_id for f in report.results] == ["STR-CMP-001"]
+    assert [f.rule_id for f in report.results] == ["LNT-CMP-001"]
 
 
 def test_리포트_JSON_이_11절_예시와_키_구성이_같다(project: Project) -> None:
@@ -1126,7 +1126,7 @@ def test_등록소_파일이_수정되면_STR_REG_001(project: Project) -> None:
     )
     result = project.run(path, {"url": "abcd"})
 
-    assert "STR-REG-001" in {f.rule_id for f in result.findings}
+    assert "LNT-REG-001" in {f.rule_id for f in result.findings}
 
 
 def test_등록된_스크립트가_수정되면_STR_REG_001(project: Project) -> None:
@@ -1146,7 +1146,7 @@ def test_등록된_스크립트가_수정되면_STR_REG_001(project: Project) ->
     )
     result = project.run(path, {"url": "abcd"})
 
-    assert "STR-REG-001" in {f.rule_id for f in result.findings}
+    assert "LNT-REG-001" in {f.rule_id for f in result.findings}
 
 
 def test_등록된_파이프라인은_ref_로_실행된다(project: Project) -> None:
@@ -1187,11 +1187,11 @@ def test_참조한_id_가_삭제되면_STR_REG_002(project: Project) -> None:
     )
     result = project.run(path, {"url": "abcd"})
 
-    assert "STR-REG-002" in {f.rule_id for f in result.findings}
+    assert "LNT-REG-002" in {f.rule_id for f in result.findings}
 
 
 def test_tool_미선언_경로는_STR_TOOL_002_다(project: Project) -> None:
-    """`STR-TOOL-001`/`-002` 는 **실행 시점** 규칙이다 — Spec 이 `tool` 을 갖기 때문."""
+    """`LNT-TOOL-001`/`-002` 는 **실행 시점** 규칙이다 — Spec 이 `tool` 을 갖기 때문."""
     project.node("page", "vantage", project.script("page", TOOL_USER))
     path = project.pipeline(
         "tooled",
@@ -1212,7 +1212,7 @@ def test_tool_미선언_경로는_STR_TOOL_002_다(project: Project) -> None:
         spec, store=project.store, env=project.env, started_at_ms=STARTED_AT
     )
 
-    assert "STR-TOOL-002" in {f.rule_id for f in report.results}
+    assert "LNT-TOOL-002" in {f.rule_id for f in report.results}
 
 
 def test_선언된_경로면_통과한다(project: Project) -> None:
@@ -1419,7 +1419,7 @@ def test_config_가_풀린_뒤_스크립트_금지_검사가_다시_돈다(proje
     )
     result = project.run(path, {"url": "abcd"})
 
-    assert "STR-BAN-001" in {f.rule_id for f in result.findings}
+    assert "LNT-BAN-001" in {f.rule_id for f in result.findings}
     # 금지 위반은 오류이므로 그 노드는 돌지 않는다 — 여파는 not run 이다.
     assert assert_four_states(project, path, result) == {"page": "error"}
 
@@ -1467,7 +1467,7 @@ def test_비교_파이프라인의_target_스크립트도_재검을_받는다(pr
         spec, store=project.store, env=project.env, started_at_ms=STARTED_AT
     )
 
-    assert "STR-BAN-001" in {f.rule_id for f in report.results}
+    assert "LNT-BAN-001" in {f.rule_id for f in report.results}
 
 
 def test_params_의_startedAt_은_엔진이_넣어준_값이다(project: Project) -> None:
@@ -1493,12 +1493,12 @@ def test_params_의_startedAt_은_엔진이_넣어준_값이다(project: Project
 
 
 def test_이_모듈이_내는_모든_규칙의_슬롯이_채워진다() -> None:
-    """슬롯을 빠뜨리면 `StrictlerError` 가 나면서 **원래 규칙 id 가 사라진다.**
+    """슬롯을 빠뜨리면 `LintomataError` 가 나면서 **원래 규칙 id 가 사라진다.**
     눈으로 읽지 않고 돌려서 확인한다."""
     made = {
-        "STR-CMP-001": rules.finding("STR-CMP-001", path="p"),
-        "STR-REG-001": rules.finding("STR-REG-001", path="p", fields={"id": "nd_1"}),
-        "STR-REG-002": rules.finding("STR-REG-002", path="p", fields={"id": "nd_1"}),
+        "LNT-CMP-001": rules.finding("LNT-CMP-001", path="p"),
+        "LNT-REG-001": rules.finding("LNT-REG-001", path="p", fields={"id": "nd_1"}),
+        "LNT-REG-002": rules.finding("LNT-REG-002", path="p", fields={"id": "nd_1"}),
     }
     for rule_id, finding in made.items():
         assert finding.rule_id == rule_id
@@ -1576,7 +1576,7 @@ def test_params_에_남은_참조는_STR_REF_007_이다(project: Project) -> Non
 
     result = project.run(path, {"pagePath": "${ref.sc_deadbeef}/x.html"})
 
-    assert {f.rule_id for f in errors(result.findings)} == {"STR-REF-007"}
+    assert {f.rule_id for f in errors(result.findings)} == {"LNT-REF-007"}
     assert_four_states(project, path, result)
 
 
@@ -1610,7 +1610,7 @@ def test_env_전개는_config_와_state_뒤에_온다(project: Project) -> None:
 PERCEIVE_WITH_LIB = """
     from dataclasses import dataclass
 
-    from strictler_lib import buttons
+    from lintomata_lib import buttons
 
     @dataclass
     class Scene:
@@ -1659,5 +1659,5 @@ def test_라이브러리를_못_풀면_그_노드는_로드에서_빠진다(proj
 
     assert "detectButtons" not in loaded
     broken = [item for item in findings if item.status == "error"]
-    assert [item.rule_id for item in broken] == ["STR-REF-001"]
+    assert [item.rule_id for item in broken] == ["LNT-REF-001"]
     assert [item.node for item in broken] == ["detectButtons"]

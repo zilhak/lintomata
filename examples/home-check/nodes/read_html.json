@@ -1,5 +1,5 @@
 {
   "info": { "name": "read-html", "description": "관측 지점의 파일을 읽어 원시 HTML 을 낸다" },
   "type": "sense",
-  "script": "${env.STRICTLER_EXAMPLE_ROOT}/scripts/sense_read_html.py"
+  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/sense_read_html.py"
 }

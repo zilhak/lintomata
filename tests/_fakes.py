@@ -2,15 +2,15 @@
 
 ⚠ **`rules` / `refs` / `typesys` / `store` 는 대역을 쓰지 않는다.** Step 1 통합에서
 남의 모듈을 stub 으로 끼고 돌린 탓에 슬롯 계약 위반 11건이 merge 시점까지 안 잡혔다.
-여기서 진짜 구현을 그대로 쓰면 **규칙 슬롯 누락이 곧바로 `StrictlerError` 로 터진다.**
+여기서 진짜 구현을 그대로 쓰면 **규칙 슬롯 누락이 곧바로 `LintomataError` 로 터진다.**
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from strictler.typesys.primitives import parse_type
-from strictler.typesys.registry import DataclassSpec, FieldSpec
+from lintomata.typesys.primitives import parse_type
+from lintomata.typesys.registry import DataclassSpec, FieldSpec
 
 
 def dc(name: str, origin: str, **fields: str) -> DataclassSpec:
@@ -113,7 +113,7 @@ class ScriptStub:
         return made
 
     def install(self, monkeypatch: Any) -> None:
-        import strictler.checks.script as script_module
+        import lintomata.checks.script as script_module
 
         def check_script(
             source: str,
@@ -136,7 +136,7 @@ class ScriptStub:
 
 def stub_reachability(monkeypatch: Any) -> None:
     """도달 가능성(2-c)은 별도 담당이다 — 여기서는 통과시킨다."""
-    import strictler.checks.reachability as reach
+    import lintomata.checks.reachability as reach
 
     monkeypatch.setattr(
         reach, "check_reachability", lambda pipeline, node_states, source_path: []

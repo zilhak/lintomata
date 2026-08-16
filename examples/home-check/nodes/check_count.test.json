@@ -1,5 +1,5 @@
 {
-  "node": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/check_count.json",
+  "node": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/check_count.json",
   "cases": [
     {
       "name": "기획대로 3개 — 통과",

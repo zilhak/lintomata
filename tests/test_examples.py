@@ -8,7 +8,7 @@
 그리고 **반드시 `cli.main()` 을 통해 태운다** — 내부 함수를 직접 부르면 CLI 배선
 결함을 못 잡는다(이 프로젝트에서 실제로 그런 결함이 있었다: R6-1).
 
-**사용자 홈을 오염시키지 않는다.** `$STRICTLER_HOME` 과 예제의 출력 디렉터리를
+**사용자 홈을 오염시키지 않는다.** `$LINTOMATA_HOME` 과 예제의 출력 디렉터리를
 전부 `tmp_path` 아래로 돌린다.
 
 예제가 안 돌면 **그게 본체의 결함**이다 — 여기서 예제를 고쳐 통과시키지 말 것.
@@ -22,12 +22,12 @@ from pathlib import Path
 
 import pytest
 
-from strictler import cli
+from lintomata import cli
 
 # ── 예제 위치 ────────────────────────────────────────────────────────────────
 
 EXAMPLE_ROOT = Path(__file__).resolve().parent.parent / "examples" / "home-check"
-"""저장소 안의 예제 루트. `${env.STRICTLER_EXAMPLE_ROOT}` 로 주입한다."""
+"""저장소 안의 예제 루트. `${env.LINTOMATA_EXAMPLE_ROOT}` 로 주입한다."""
 
 SPECS = EXAMPLE_ROOT / "specs"
 NODES = EXAMPLE_ROOT / "nodes"
@@ -40,9 +40,9 @@ INVALID = EXAMPLE_ROOT / "invalid"
 def example(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """등록소와 출력 디렉터리를 tmp 로 돌린다. 반환값은 출력 디렉터리."""
     out = tmp_path / "out"
-    monkeypatch.setenv("STRICTLER_HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("STRICTLER_EXAMPLE_ROOT", str(EXAMPLE_ROOT))
-    monkeypatch.setenv("STRICTLER_EXAMPLE_OUT", str(out))
+    monkeypatch.setenv("LINTOMATA_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("LINTOMATA_EXAMPLE_ROOT", str(EXAMPLE_ROOT))
+    monkeypatch.setenv("LINTOMATA_EXAMPLE_OUT", str(out))
     return out
 
 
@@ -69,7 +69,7 @@ def text_rule_ids(out: str) -> set[str]:
         for line in out.splitlines()
         if line.startswith("[error]")
         for token in line.split()
-        if token.startswith("(STR-")
+        if token.startswith("(LNT-")
     }
 
 
@@ -242,53 +242,53 @@ def test_노드_단위테스트가_경로로_돈다(
         pytest.param(
             ("script", "add", str(INVALID / "bad_banned.py")),
             {
-                "STR-BAN-001",
-                "STR-BAN-002",
-                "STR-BAN-003",
-                "STR-BAN-004",
-                "STR-TYPE-001",
-                "STR-TYPE-002",
+                "LNT-BAN-001",
+                "LNT-BAN-002",
+                "LNT-BAN-003",
+                "LNT-BAN-004",
+                "LNT-TYPE-001",
+                "LNT-TYPE-002",
             },
             id="금지-위반",
         ),
         pytest.param(
             ("script", "add", str(INVALID / "bad_output_primitive.py")),
-            {"STR-CONTRACT-003"},
+            {"LNT-CONTRACT-003"},
             id="출력이-dataclass-아님",
         ),
         pytest.param(
             ("script", "add", str(INVALID / "bad_dependency.py")),
-            {"STR-DEP-001"},
+            {"LNT-DEP-001"},
             id="선언한-패키지가-환경에-없음",
         ),
         pytest.param(
             ("node", "add", str(INVALID / "bad_reckon_no_verdict.json")),
-            {"STR-CONTRACT-007"},
+            {"LNT-CONTRACT-007"},
             id="판정-필드-없는-Reckon",
         ),
         pytest.param(
             ("library", "add", str(INVALID / "lib_banned.py")),
-            {"STR-BAN-001"},
+            {"LNT-BAN-001"},
             id="라이브러리에서-시간을-읽음",
         ),
         pytest.param(
             ("library", "add", str(INVALID / "lib_dataclass.py")),
-            {"STR-LIB-004"},
+            {"LNT-LIB-004"},
             id="라이브러리가-dataclass-선언",
         ),
         pytest.param(
             ("node", "add", str(INVALID / "bad_unwired.json")),
-            {"STR-LIB-001"},
+            {"LNT-LIB-001"},
             id="슬롯을-요구하는데-배선이-없음",
         ),
         pytest.param(
             ("pipeline", "add", str(INVALID / "pipeline_ambiguous.json")),
-            {"STR-GRAPH-003"},
+            {"LNT-GRAPH-003"},
             id="모호한-inputs",
         ),
         pytest.param(
             ("pipeline", "add", str(INVALID / "pipeline_dead_state.json")),
-            {"STR-STATE-006"},
+            {"LNT-STATE-006"},
             id="도달-불가-노드",
         ),
     ],
@@ -327,7 +327,7 @@ def test_기댓값_하드코딩은_단위테스트가_잡는다(
 
     assert code == 2
     assert report["summary"]["pass"] == 2
-    assert rule_ids(report) == {"STR-TEST-007"}
+    assert rule_ids(report) == {"LNT-TEST-007"}
 
 
 # ── 6. fresh 등록소로 처음부터 — id 참조가 남아 있으면 여기서 깨진다 ─────────
@@ -392,9 +392,9 @@ def broken_library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "example"
     shutil.copytree(EXAMPLE_ROOT, root, ignore=shutil.ignore_patterns("__pycache__"))
     (root / "libraries" / "buttons.py").unlink()
-    monkeypatch.setenv("STRICTLER_HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("STRICTLER_EXAMPLE_ROOT", str(root))
-    monkeypatch.setenv("STRICTLER_EXAMPLE_OUT", str(tmp_path / "out"))
+    monkeypatch.setenv("LINTOMATA_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("LINTOMATA_EXAMPLE_ROOT", str(root))
+    monkeypatch.setenv("LINTOMATA_EXAMPLE_OUT", str(tmp_path / "out"))
     return root
 
 
@@ -417,7 +417,7 @@ def test_라이브러리를_못_풀면_노드_id_하나로_찍히고_실행되�
     assert code == 2
     errors = [item for item in report["results"] if item["status"] == "error"]
     assert [item["node"] for item in errors] == ["detectButtons"]
-    assert rule_ids(report) == {"STR-REF-001"}
+    assert rule_ids(report) == {"LNT-REF-001"}
     # 노드 `info.name` 으로는 아무것도 찍히지 않는다.
     assert all(item["node"] != "detect-buttons" for item in report["results"])
     # **거짓 안내가 없다** — 배선은 있고 파일이 없는 것이다.
@@ -439,6 +439,6 @@ def test_비교_파이프라인도_같은_형태로_낸다(
     assert code == 2
     errors = [item for item in report["results"] if item["status"] == "error"]
     assert [item["node"] for item in errors] == ["buttons"]
-    assert rule_ids(report) == {"STR-REF-001"}
+    assert rule_ids(report) == {"LNT-REF-001"}
     assert all(item["node"] != "compare-buttons" for item in report["results"])
     assert "배선이 없습니다" not in json.dumps(report, ensure_ascii=False)

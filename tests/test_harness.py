@@ -2,7 +2,7 @@
 
 **대역을 쓰지 않는다.** 실제 스크립트 파일·노드 JSON·등록소로 돌린다 — Step 1·2 통합에서
 남의 모듈을 stub 으로 끼고 돌린 탓에 규칙 슬롯 계약 위반 14건이 merge 시점까지 안 잡혔기
-때문이다. 여기서 진짜 구현을 그대로 쓰면 슬롯 누락이 곧바로 `StrictlerError` 로 터진다.
+때문이다. 여기서 진짜 구현을 그대로 쓰면 슬롯 누락이 곧바로 `LintomataError` 로 터진다.
 
 짚는 것:
   - 3단계가 **각자 자기 규칙 id** 로 나오는가 (①은 테스트가, ②③은 스크립트가 틀린 것)
@@ -23,12 +23,12 @@ from typing import Any
 
 import pytest
 
-from strictler import rules
-from strictler.errors import Finding, StrictlerError
-from strictler.model import NodeTest
-from strictler.model import TestCase as Case
-from strictler.store.entries import Store
-from strictler.testing import harness
+from lintomata import rules
+from lintomata.errors import Finding, LintomataError
+from lintomata.model import NodeTest
+from lintomata.model import TestCase as Case
+from lintomata.store.entries import Store
+from lintomata.testing import harness
 
 
 # ── fixture 조립 ─────────────────────────────────────────────────────────────
@@ -317,7 +317,7 @@ FORGOT_RETURN = """
 """
 
 UNIMPORTABLE = """
-    import strictler_그런_모듈은_없다
+    import lintomata_그런_모듈은_없다
     from dataclasses import dataclass
 
     @dataclass
@@ -398,13 +398,13 @@ def test_load_node_test_applies_path_rule(project: Project) -> None:
     node_test, findings = harness.load_node_test(path, project.env)
 
     assert node_test is None
-    assert ids(findings) == ["STR-PATH-001"]
+    assert ids(findings) == ["LNT-PATH-001"]
 
 
 def test_load_node_test_broken_json_is_an_error(project: Project) -> None:
     path = write(project.root / "x.test.json", "{ not json")
 
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         harness.load_node_test(path, project.env)
 
 
@@ -430,7 +430,7 @@ def test_missing_node_file_is_ref_not_found(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-REF-002"]
+    assert ids(findings) == ["LNT-REF-002"]
 
 
 def test_unregistered_ref_is_reg_not_found(project: Project) -> None:
@@ -438,7 +438,7 @@ def test_unregistered_ref_is_reg_not_found(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-REG-002"]
+    assert ids(findings) == ["LNT-REG-002"]
 
 
 def test_registered_node_runs(project: Project) -> None:
@@ -462,8 +462,8 @@ def test_static_failure_stops_before_running(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert "STR-BAN-001" in ids(findings)
-    assert not any(item.rule_id.startswith("STR-TEST") for item in findings)
+    assert "LNT-BAN-001" in ids(findings)
+    assert not any(item.rule_id.startswith("LNT-TEST") for item in findings)
 
 
 # ── 3단계 ────────────────────────────────────────────────────────────────────
@@ -475,7 +475,7 @@ def test_stage1_missing_fixture_field_blames_the_test(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-TEST-001"]
+    assert ids(findings) == ["LNT-TEST-001"]
     assert "테스트 정의가 잘못됐습니다" in findings[0].message
 
 
@@ -485,7 +485,7 @@ def test_stage1_wrong_fixture_type_blames_the_test(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-TEST-001"]
+    assert ids(findings) == ["LNT-TEST-001"]
 
 
 def test_stage1_unknown_args_key_blames_the_test(project: Project) -> None:
@@ -497,7 +497,7 @@ def test_stage1_unknown_args_key_blames_the_test(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-TEST-001"]
+    assert ids(findings) == ["LNT-TEST-001"]
 
 
 def test_stage2_script_exception(project: Project) -> None:
@@ -506,7 +506,7 @@ def test_stage2_script_exception(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-TEST-002"]
+    assert ids(findings) == ["LNT-TEST-002"]
     assert "버튼을 셀 수 없습니다" in findings[0].message
 
 
@@ -516,7 +516,7 @@ def test_stage3_output_type_mismatch(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-TEST-003"]
+    assert ids(findings) == ["LNT-TEST-003"]
     assert "Percept" in findings[0].message
 
 
@@ -527,7 +527,7 @@ def test_stages_run_in_order(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-TEST-001"]
+    assert ids(findings) == ["LNT-TEST-001"]
 
 
 # ── expect (커스텀 층) ───────────────────────────────────────────────────────
@@ -560,7 +560,7 @@ def test_expect_mismatch(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-TEST-004"]
+    assert ids(findings) == ["LNT-TEST-004"]
     assert "'count': 3" in findings[0].message and "'count': 1" in findings[0].message
 
 
@@ -569,7 +569,7 @@ def test_no_expect_still_type_checks(project: Project) -> None:
     node_path = perceive_node(project, PERCEIVE_BAD_OUTPUT, "freebie")
     node_test = project.test_file(node_path, [{"name": "expect 없음", "args": {"input": {"html": ""}}}])
 
-    assert ids(project.run(node_test)) == ["STR-TEST-003"]
+    assert ids(project.run(node_test)) == ["LNT-TEST-003"]
 
 
 # ── Action — 값 동일성 ───────────────────────────────────────────────────────
@@ -581,7 +581,7 @@ def test_action_transparency_checked_without_expect(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-TEST-005"]
+    assert ids(findings) == ["LNT-TEST-005"]
     assert "값을 건드린다" in findings[0].message
     # 다른 TEST 규칙은 전부 `node` 가 차 있다 — 여기만 비면 리포트의 노드 칸이
     # Action 결과에서만 빈다 (R6-3).
@@ -619,7 +619,7 @@ def test_action_transparency_compares_by_structure() -> None:
     assert harness.check_action_transparency(case, Left(1, [Item("a")]), Right(1, [Item("a")])) == []
     assert ids(
         harness.check_action_transparency(case, Left(1, [Item("a")]), Right(1, [Item("b")]))
-    ) == ["STR-TEST-005"]
+    ) == ["LNT-TEST-005"]
 
 
 # ── Reckon — 기댓값 반응성 ───────────────────────────────────────────────────
@@ -651,7 +651,7 @@ def test_reckon_without_contrast_pair_warns(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    warned = [item for item in findings if item.rule_id == "STR-TEST-006"]
+    warned = [item for item in findings if item.rule_id == "LNT-TEST-006"]
     assert len(warned) == 1
     assert warned[0].status == "violation"  # 경고 — 정상 결과지 도구 실패가 아니다
 
@@ -663,7 +663,7 @@ def test_reckon_hardcoded_expected_is_an_error(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    caught = [item for item in findings if item.rule_id == "STR-TEST-007"]
+    caught = [item for item in findings if item.rule_id == "LNT-TEST-007"]
     assert len(caught) == 1
     assert caught[0].status == "error"
     assert "판정이 둘 다 통과" in caught[0].message
@@ -681,7 +681,7 @@ def test_reckon_같은_params_케이스_둘은_대조쌍이_아니다(project: P
 
     findings = project.run(node_test)
 
-    assert [item.rule_id for item in findings if item.rule_id] == ["STR-TEST-006"]
+    assert [item.rule_id for item in findings if item.rule_id] == ["LNT-TEST-006"]
 
 
 def test_reckon_contrast_ignores_unreadable_verdicts(project: Project) -> None:
@@ -697,7 +697,7 @@ def test_reckon_contrast_ignores_unreadable_verdicts(project: Project) -> None:
 
     findings = harness.check_reckon_contrast(cases, [None, None])
 
-    assert ids(findings) == ["STR-TEST-006"]
+    assert ids(findings) == ["LNT-TEST-006"]
 
 
 def test_reckon_contrast_not_run_for_other_types(project: Project) -> None:
@@ -758,7 +758,7 @@ def test_bytes_fixture_missing_file_blames_the_test(project: Project) -> None:
         ],
     )
 
-    assert ids(project.run(node_test)) == ["STR-TEST-001"]
+    assert ids(project.run(node_test)) == ["LNT-TEST-001"]
 
 
 def test_bytes_fixture_relative_path_is_caught(project: Project) -> None:
@@ -770,8 +770,8 @@ def test_bytes_fixture_relative_path_is_caught(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-TEST-001"]
-    assert "STR-PATH-001" in findings[0].message or "절대경로" in findings[0].message
+    assert ids(findings) == ["LNT-TEST-001"]
+    assert "LNT-PATH-001" in findings[0].message or "절대경로" in findings[0].message
 
 
 def test_file_marker_must_be_alone(project: Project) -> None:
@@ -786,7 +786,7 @@ def test_file_marker_must_be_alone(project: Project) -> None:
         ],
     )
 
-    assert ids(project.run(node_test)) == ["STR-TEST-001"]
+    assert ids(project.run(node_test)) == ["LNT-TEST-001"]
 
 
 def test_every_case_runs_even_if_one_fails(project: Project) -> None:
@@ -803,7 +803,7 @@ def test_every_case_runs_even_if_one_fails(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-TEST-001", "", "STR-TEST-004"]
+    assert ids(findings) == ["LNT-TEST-001", "", "LNT-TEST-004"]
     assert [item.path.split(" > ")[-1] for item in findings] == [
         "cases[0] 깨진 fixture",
         "cases[1] 멀쩡",
@@ -843,7 +843,7 @@ def test_file_marker_value_must_be_a_path(project: Project) -> None:
         node_path, [{"name": "숫자", "args": {"input": {"image": {"$file": 7}}}}]
     )
 
-    assert ids(project.run(node_test)) == ["STR-TEST-001"]
+    assert ids(project.run(node_test)) == ["LNT-TEST-001"]
 
 
 def test_bad_file_marker_in_expect_blames_the_test(project: Project) -> None:
@@ -862,7 +862,7 @@ def test_bad_file_marker_in_expect_blames_the_test(project: Project) -> None:
         ],
     )
 
-    assert ids(project.run(node_test)) == ["STR-TEST-001"]
+    assert ids(project.run(node_test)) == ["LNT-TEST-001"]
 
 
 def test_forgotten_return_is_output_mismatch(project: Project) -> None:
@@ -872,12 +872,12 @@ def test_forgotten_return_is_output_mismatch(project: Project) -> None:
 
     findings = project.run(node_test)
 
-    assert ids(findings) == ["STR-TEST-003"]
+    assert ids(findings) == ["LNT-TEST-003"]
     assert "(없음)" in findings[0].message
 
 
 def test_action_transparency_skips_when_no_input() -> None:
-    """입력 없는 Action 은 대조할 것이 없다 — `STR-CONTRACT-006` 이 등록 때 잡는다."""
+    """입력 없는 Action 은 대조할 것이 없다 — `LNT-CONTRACT-006` 이 등록 때 잡는다."""
     case = Case.model_validate({"name": "n", "args": {}})
 
     assert harness.check_action_transparency(case, None, object()) == []
@@ -894,7 +894,7 @@ def test_wrong_ref_kind_on_load(project: Project) -> None:
     node_test, findings = harness.load_node_test(path, project.env)
 
     assert node_test is None
-    assert ids(findings) == ["STR-REG-003"]
+    assert ids(findings) == ["LNT-REG-003"]
 
 
 def test_wrong_ref_kind_on_run(project: Project) -> None:
@@ -903,13 +903,13 @@ def test_wrong_ref_kind_on_run(project: Project) -> None:
 
     findings = project.run(project.test_file(f"${{ref.{entry.id}}}", []))
 
-    assert ids(findings) == ["STR-REG-003"]
+    assert ids(findings) == ["LNT-REG-003"]
 
 
 def test_relative_node_path_on_run(project: Project) -> None:
     findings = project.run(project.test_file("nodes/x.json", []))
 
-    assert ids(findings) == ["STR-PATH-001"]
+    assert ids(findings) == ["LNT-PATH-001"]
 
 
 def test_broken_node_json_shape_is_a_finding(project: Project) -> None:
@@ -924,14 +924,14 @@ def test_broken_node_json_shape_is_a_finding(project: Project) -> None:
 def test_unparseable_node_json_is_an_error(project: Project) -> None:
     node_path = write(project.root / "nodes" / "bad.json", "{ not json")
 
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         project.run(project.test_file(node_path, []))
 
 
 def test_node_json_top_level_must_be_an_object(project: Project) -> None:
     node_path = write_json(project.root / "nodes" / "list.json", [1, 2])
 
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         project.run(project.test_file(node_path, []))
 
 
@@ -939,7 +939,7 @@ def test_test_file_must_be_utf8(project: Project) -> None:
     path = project.root / "x.test.json"
     path.write_bytes(b"\xff\xfe{}")
 
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         harness.load_node_test(path, project.env)
 
 
@@ -953,14 +953,14 @@ def test_unimportable_script_is_an_error(project: Project) -> None:
     assert statuses(findings) == ["error"]
     assert ids(findings) == [""]  # 규칙 없는 오류 — 그래도 결과가 사라지지 않는다
     # 모듈을 못 찾은 것은 **부작용 문제가 아니다** — 못 찾은 이름을 짚어 안내한다.
-    assert "strictler_그런_모듈은_없다" in findings[0].message
+    assert "lintomata_그런_모듈은_없다" in findings[0].message
     assert "형제 파일 import 는 되지 않습니다" in findings[0].message
 
 
 def test_test_file_top_level_must_be_an_object(project: Project) -> None:
     path = write_json(project.root / "x.test.json", [1, 2])
 
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         harness.load_node_test(path, project.env)
 
 
@@ -995,7 +995,7 @@ def test_테스트가_다른_노드를_가리키면_STR_TEST_008(project: Projec
 
     findings = project.run_by_id(project.test_file(b, []), a_id)
 
-    assert ids(findings) == ["STR-TEST-008"]
+    assert ids(findings) == ["LNT-TEST-008"]
     assert a_id in findings[0].message
     assert str(b) in findings[0].message
 
@@ -1008,7 +1008,7 @@ def test_ref_가_다른_노드_id_면_STR_TEST_008(project: Project) -> None:
 
     findings = project.run_by_id(project.test_file(f"${{ref.{b_id}}}", []), a_id)
 
-    assert ids(findings) == ["STR-TEST-008"]
+    assert ids(findings) == ["LNT-TEST-008"]
 
 
 def test_자기_id_를_ref_로_가리키면_통과한다(project: Project) -> None:
@@ -1025,7 +1025,7 @@ def test_자기_id_를_ref_로_가리키면_통과한다(project: Project) -> No
 def test_원본이_지워져_있어도_id_로_돈다(project: Project) -> None:
     """*"등록 후 원본을 지워도 된다"* — `node` 를 경로로 해석하지 않으므로 무관하다.
 
-    예전에는 여기서 `STR-REF-002`(파일 없음)로 죽었다. R5-2 가 없애려던 바로 그
+    예전에는 여기서 `LNT-REF-002`(파일 없음)로 죽었다. R5-2 가 없애려던 바로 그
     상황이 `node` 재해석 때문에 남아 있었다.
     """
     node_path = project.node("open", "vantage", project.script("open", VANTAGE))
@@ -1054,7 +1054,7 @@ def test_경로로_부르면_node_필드가_실행_대상이다(project: Project
 def test_every_test_rule_renders(project: Project) -> None:
     """이 모듈이 내는 규칙 전부가 슬롯 계약을 지키는가.
 
-    슬롯을 빠뜨리면 `rules.finding()` 이 `StrictlerError` 로 터진다 — 눈으로 읽지
+    슬롯을 빠뜨리면 `rules.finding()` 이 `LintomataError` 로 터진다 — 눈으로 읽지
     않고 실제로 태워서 확인한다.
     """
     fired: dict[str, Finding] = {}
@@ -1101,16 +1101,16 @@ def test_every_test_rule_renders(project: Project) -> None:
         fired[item.rule_id] = item
 
     assert set(fired) == {
-        "STR-TEST-001",
-        "STR-TEST-002",
-        "STR-TEST-003",
-        "STR-TEST-004",
-        "STR-TEST-005",
-        "STR-TEST-006",
-        "STR-TEST-007",
-        "STR-TEST-008",
-        "STR-REF-002",
-        "STR-REG-002",
+        "LNT-TEST-001",
+        "LNT-TEST-002",
+        "LNT-TEST-003",
+        "LNT-TEST-004",
+        "LNT-TEST-005",
+        "LNT-TEST-006",
+        "LNT-TEST-007",
+        "LNT-TEST-008",
+        "LNT-REF-002",
+        "LNT-REG-002",
     }
     for rule_id, item in fired.items():
         rule = rules.get_rule(rule_id)

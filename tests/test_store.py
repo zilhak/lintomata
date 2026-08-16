@@ -1,6 +1,6 @@
 """등록소(`store.entries` / `store.graph`) 테스트 — Step 1-d.
 
-실제 `~/.strictler` 를 건드리지 않는다. 모든 테스트가 `STRICTLER_HOME` 을
+실제 `~/.lintomata` 를 건드리지 않는다. 모든 테스트가 `LINTOMATA_HOME` 을
 `tmp_path` 로 바꿔 쓴다.
 """
 
@@ -12,17 +12,17 @@ from pathlib import Path
 
 import pytest
 
-from strictler import rules
-from strictler.errors import Finding, StrictlerError
-from strictler.store import entries, graph
-from strictler.store.entries import (
+from lintomata import rules
+from lintomata.errors import Finding, LintomataError
+from lintomata.store import entries, graph
+from lintomata.store.entries import (
     RegistryIndex,
     Store,
     default_home,
     hash_file,
     new_id,
 )
-from strictler.store.graph import RefGraph
+from lintomata.store.graph import RefGraph
 
 
 # ── 공통 fixture ─────────────────────────────────────────────────────────────
@@ -30,8 +30,8 @@ from strictler.store.graph import RefGraph
 
 @pytest.fixture()
 def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    target = tmp_path / "strictler-home"
-    monkeypatch.setenv("STRICTLER_HOME", str(target))
+    target = tmp_path / "lintomata-home"
+    monkeypatch.setenv("LINTOMATA_HOME", str(target))
     return target
 
 
@@ -55,20 +55,20 @@ def runNode(args):
 
 
 def test_default_home_uses_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("STRICTLER_HOME", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("LINTOMATA_HOME", str(tmp_path / "elsewhere"))
     assert default_home() == tmp_path / "elsewhere"
 
 
-def test_default_home_falls_back_to_dot_strictler(
+def test_default_home_falls_back_to_dot_lintomata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("STRICTLER_HOME", raising=False)
-    assert default_home() == Path.home() / ".strictler"
+    monkeypatch.delenv("LINTOMATA_HOME", raising=False)
+    assert default_home() == Path.home() / ".lintomata"
 
 
 def test_default_home_rejects_relative_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("STRICTLER_HOME", "./somewhere")
-    with pytest.raises(StrictlerError):
+    monkeypatch.setenv("LINTOMATA_HOME", "./somewhere")
+    with pytest.raises(LintomataError):
         default_home()
 
 
@@ -124,19 +124,19 @@ def test_add_defaults_name_to_file_stem(store: Store, tmp_path: Path) -> None:
 
 
 def test_add_rejects_missing_source(store: Store, tmp_path: Path) -> None:
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         store.add("script", tmp_path / "nope.py")
 
 
 def test_add_rejects_non_utf8_source(store: Store, tmp_path: Path) -> None:
-    """UTF-8 이 아닌 파일은 raw `UnicodeDecodeError` 가 아니라 `StrictlerError` 다.
+    """UTF-8 이 아닌 파일은 raw `UnicodeDecodeError` 가 아니라 `LintomataError` 다.
 
     위반도 not run 도 아닌 **오류**(도구가 못 돈 것)이므로 가이드가 붙어야 한다.
     """
     source = tmp_path / "cp949.py"
     source.write_bytes("# 버튼\n".encode("cp949"))
 
-    with pytest.raises(StrictlerError) as excinfo:
+    with pytest.raises(LintomataError) as excinfo:
         store.add("script", source)
     assert "UTF-8" in excinfo.value.message
     assert store.list() == []
@@ -147,29 +147,29 @@ def test_update_rejects_non_utf8_source(store: Store, tmp_path: Path) -> None:
     bad = tmp_path / "cp949.py"
     bad.write_bytes("# 버튼\n".encode("cp949"))
 
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         store.update(entry.id, bad)
     assert store.read(entry.id) == SCRIPT_SRC
 
 
 def test_read_rejects_a_tampered_non_utf8_copy(store: Store, tmp_path: Path) -> None:
-    """등록소 복사본이 UTF-8 이 아니게 되면 `StrictlerError` 다.
+    """등록소 복사본이 UTF-8 이 아니게 되면 `LintomataError` 다.
 
     등록소에 들어갈 때는 UTF-8 이었으나 **정적 검사 루트를 피해 직접 고치는 것**이
-    `STR-REG-001` 이 상정하는 시나리오다. `verify_hash` 를 먼저 부른다는 보장이
+    `LNT-REG-001` 이 상정하는 시나리오다. `verify_hash` 를 먼저 부른다는 보장이
     없으므로 `read()` 가 raw `UnicodeDecodeError` 를 내면 안 된다.
     """
     entry = store.add("script", write(tmp_path / "detect.py", SCRIPT_SRC))
     store.path_of(entry.id).write_bytes("# 버튼\n".encode("cp949"))
 
-    with pytest.raises(StrictlerError) as excinfo:
+    with pytest.raises(LintomataError) as excinfo:
         store.read(entry.id)
     assert "UTF-8" in excinfo.value.message
     assert str(store.path_of(entry.id)) in excinfo.value.message
 
 
 def test_show_unknown_id_is_an_error(store: Store) -> None:
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         store.show("nd_deadbeef")
 
 
@@ -191,7 +191,7 @@ def test_index_is_persisted_as_json(store: Store, tmp_path: Path, home: Path) ->
     assert Store().show(entry.id).hash == entry.hash
 
 
-# ── 해시 대조 (STR-REG-001) ──────────────────────────────────────────────────
+# ── 해시 대조 (LNT-REG-001) ──────────────────────────────────────────────────
 
 
 def test_verify_hash_detects_direct_edit(store: Store, tmp_path: Path) -> None:
@@ -287,7 +287,7 @@ def test_update_clears_own_broken_mark(store: Store, tmp_path: Path) -> None:
     entry = store.add("script", write(tmp_path / "detect.py", SCRIPT_SRC))
     index = store.load_index()
     index.entries[entry.id].broken = "validation"
-    index.entries[entry.id].broken_detail = "STR-TYPE-004"
+    index.entries[entry.id].broken_detail = "LNT-TYPE-004"
     store.save_index(index)
 
     updated = store.update(entry.id, write(tmp_path / "detect2.py", SCRIPT_SRC + "#\n"))
@@ -296,7 +296,7 @@ def test_update_clears_own_broken_mark(store: Store, tmp_path: Path) -> None:
 
 
 def test_update_unknown_id_is_an_error(store: Store, tmp_path: Path) -> None:
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         store.update("sc_deadbeef", write(tmp_path / "a.py", SCRIPT_SRC))
 
 
@@ -310,12 +310,12 @@ def test_remove_deletes_entry_and_file(store: Store, tmp_path: Path) -> None:
 
     assert not path.exists()
     assert store.list() == []
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         store.show(entry.id)
 
 
 def test_remove_unknown_id_is_an_error(store: Store) -> None:
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         store.remove("sc_deadbeef")
 
 
@@ -437,7 +437,7 @@ def test_transitive_dependents_survives_a_cycle(store: Store, tmp_path: Path) ->
     assert graph.transitive_dependents(a.id) == [b.id]
 
 
-# ── 참조 깨짐 (STR-REG-004) ──────────────────────────────────────────────────
+# ── 참조 깨짐 (LNT-REG-004) ──────────────────────────────────────────────────
 
 
 def test_remove_leaves_dependents_ref_broken(store: Store, tmp_path: Path) -> None:
@@ -448,7 +448,7 @@ def test_remove_leaves_dependents_ref_broken(store: Store, tmp_path: Path) -> No
     graph = RefGraph.build(store)
     findings = graph.broken_refs()
 
-    assert [f.rule_id for f in findings] == ["STR-REG-004"]
+    assert [f.rule_id for f in findings] == ["LNT-REG-004"]
     assert findings[0].path == nd_id
     assert graph.entries[nd_id].broken == "ref"
     assert graph.entries[nd_id].broken_detail == sc_id
@@ -482,9 +482,9 @@ def test_graph_calls_finding_with_the_fields_dict(
     monkeypatch.setattr(rules, "finding", spy)
 
     RefGraph.build(store).broken_refs()
-    # `STR-REG-004` 의 슬롯은 `{id}` 하나뿐이다 (계약 개정 R2-8). 선언되지 않은
+    # `LNT-REG-004` 의 슬롯은 `{id}` 하나뿐이다 (계약 개정 R2-8). 선언되지 않은
     # 슬롯을 얹으면 R1-3 의 슬롯 검증에 걸려 런타임에 터진다.
-    assert calls == [("STR-REG-004", {"id": sc_id})]
+    assert calls == [("LNT-REG-004", {"id": sc_id})]
 
 
 def test_broken_refs_is_empty_for_a_healthy_registry(
@@ -494,7 +494,7 @@ def test_broken_refs_is_empty_for_a_healthy_registry(
     assert RefGraph.build(store).broken_refs() == []
 
 
-# ── 검증 깨짐 (STR-REG-005) ─────────────────────────────────────────────────
+# ── 검증 깨짐 (LNT-REG-005) ─────────────────────────────────────────────────
 
 
 def _mock_checks(
@@ -505,7 +505,7 @@ def _mock_checks(
     재검증 자체는 Step 2 의 몫이라 여기서는 "무엇이 재검증됐고 실패가 어떻게
     표시되는가"만 본다. `failures` 는 `{종류: 실패 규칙 id}`.
     """
-    import strictler.checks as checks
+    import lintomata.checks as checks
 
     called: list[str] = []
 
@@ -524,7 +524,7 @@ def test_update_marks_dependents_validation_broken(
     store: Store, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     sc_id, nd_id, pl_id, sp_id = _chain(store, tmp_path)
-    called = _mock_checks(monkeypatch, {"pipeline": "STR-TYPE-004"})
+    called = _mock_checks(monkeypatch, {"pipeline": "LNT-TYPE-004"})
 
     store.update(sc_id, write(tmp_path / "detect2.py", SCRIPT_SRC + "# v2\n"))
     graph = RefGraph.build(store)
@@ -532,18 +532,18 @@ def test_update_marks_dependents_validation_broken(
 
     assert called == [nd_id, pl_id, sp_id]  # 전이적으로, 아래에서 위로
     # 깨진 파이프라인 자신 + 그것을 참조해 **덩달아 못 돌게 된 Spec** (R5-4).
-    assert [f.rule_id for f in findings] == ["STR-REG-005", "STR-REG-005"]
+    assert [f.rule_id for f in findings] == ["LNT-REG-005", "LNT-REG-005"]
     assert findings[0].path == pl_id
     assert findings[1].path == sp_id
     # 실패한 규칙 id 가 메시지에 실려 나간다. 대역이든 실제 구현이든 성립한다 —
-    # `STR-REG-005` 의 guide 자체가 `{rule}` 슬롯을 갖기 때문이다 (`rules.md`).
-    assert "STR-TYPE-004" in findings[0].message
+    # `LNT-REG-005` 의 guide 자체가 `{rule}` 슬롯을 갖기 때문이다 (`rules.md`).
+    assert "LNT-TYPE-004" in findings[0].message
     assert pl_id in findings[1].message
 
     # 인덱스에 남아 있어야 이후 `list` 에서 드러난다.
     reloaded = {e.id: e for e in Store().list()}
     assert reloaded[pl_id].broken == "validation"
-    assert reloaded[pl_id].broken_detail == "STR-TYPE-004"
+    assert reloaded[pl_id].broken_detail == "LNT-TYPE-004"
     assert reloaded[nd_id].broken == ""
     # 전이는 **파생값이라 저장하지 않는다** — 아래가 고쳐지면 그 자리에서 사라져야 한다.
     assert reloaded[sp_id].broken == ""
@@ -567,15 +567,15 @@ def test_revalidate_calls_finding_with_the_fields_dict(
         return Finding(status="error", path=path, node=node, rule_id=rule_id)
 
     sc_id, _nd_id, _pl_id, _sp_id = _chain(store, tmp_path)
-    _mock_checks(monkeypatch, {"pipeline": "STR-TYPE-004"})
+    _mock_checks(monkeypatch, {"pipeline": "LNT-TYPE-004"})
     monkeypatch.setattr(rules, "finding", spy)
 
     RefGraph.build(store).revalidate(store, sc_id)
-    # `STR-REG-005` 의 슬롯은 `{id}`·`{rule}` 둘이다. `path` 와 `{id}` 는 값이 같아도
+    # `LNT-REG-005` 의 슬롯은 `{id}`·`{rule}` 둘이다. `path` 와 `{id}` 는 값이 같아도
     # 별개 채널이라 둘 다 넘겨야 한다 (계약 개정 R1-2).
     # 전이분(R5-4)도 같은 규약을 지킨다 — 슬롯 둘을 딕셔너리로만 넘긴다.
-    assert calls[0] == ("STR-REG-005", {"id": _pl_id, "rule": "STR-TYPE-004"})
-    assert [rule_id for rule_id, _ in calls] == ["STR-REG-005", "STR-REG-005"]
+    assert calls[0] == ("LNT-REG-005", {"id": _pl_id, "rule": "LNT-TYPE-004"})
+    assert [rule_id for rule_id, _ in calls] == ["LNT-REG-005", "LNT-REG-005"]
     assert set(calls[1][1]) == {"id", "rule"}
     assert calls[1][1]["id"] == _sp_id
 
@@ -586,7 +586,7 @@ def test_revalidate_clears_a_stale_validation_mark(
     sc_id, nd_id, pl_id, _sp_id = _chain(store, tmp_path)
     index = store.load_index()
     index.entries[pl_id].broken = "validation"
-    index.entries[pl_id].broken_detail = "STR-TYPE-004"
+    index.entries[pl_id].broken_detail = "LNT-TYPE-004"
     store.save_index(index)
 
     _mock_checks(monkeypatch, {})
@@ -615,7 +615,7 @@ def test_revalidate_of_a_leaf_does_nothing(
     store: Store, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _sc_id, _nd_id, _pl_id, sp_id = _chain(store, tmp_path)
-    called = _mock_checks(monkeypatch, {"spec": "STR-TYPE-004"})
+    called = _mock_checks(monkeypatch, {"spec": "LNT-TYPE-004"})
 
     graph = RefGraph.build(store)
     assert graph.revalidate(store, sp_id) == []
@@ -633,7 +633,7 @@ def test_load_index_of_a_fresh_home_is_empty(store: Store) -> None:
 
 def test_load_index_rejects_broken_json(store: Store, home: Path) -> None:
     (home / "registry.json").write_text("{ not json", encoding="utf-8")
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         store.load_index()
 
 
@@ -643,7 +643,7 @@ def test_load_index_rejects_non_utf8_index(store: Store, home: Path) -> None:
     `JSONDecodeError` 만 감싸면 나머지 절반이 raw `UnicodeDecodeError` 로 샌다.
     """
     (home / "registry.json").write_bytes('{"version": 1, "name": "버튼"}'.encode("cp949"))
-    with pytest.raises(StrictlerError) as excinfo:
+    with pytest.raises(LintomataError) as excinfo:
         store.load_index()
     assert "UTF-8" in excinfo.value.message
     assert "registry.json" in excinfo.value.message
@@ -659,8 +659,8 @@ def test_load_index_rejects_non_utf8_index(store: Store, home: Path) -> None:
 _UNFILLED_SLOT_C = re.compile(r"(?<!\$)\{(\w+)\}")
 """`{id}` 는 안 채워진 슬롯, `${env.X}` 는 가이드 본문이다."""
 
-_FINDING_SITE_C = re.compile(r'rules\.finding\(\s*\n?\s*"(STR-[A-Z]+-\d+)"')
-"""`store` 안의 `rules.finding("STR-...")` 호출부."""
+_FINDING_SITE_C = re.compile(r'rules\.finding\(\s*\n?\s*"(LNT-[A-Z]+-\d+)"')
+"""`store` 안의 `rules.finding("LNT-...")` 호출부."""
 
 
 def _broken_ref_findings(store: Store, tmp_path: Path) -> list[Finding]:
@@ -673,14 +673,14 @@ def _revalidate_findings(
     store: Store, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> list[Finding]:
     sc_id, _nd_id, _pl_id, _sp_id = _chain(store, tmp_path)
-    _mock_checks(monkeypatch, {"pipeline": "STR-TYPE-004"})
+    _mock_checks(monkeypatch, {"pipeline": "LNT-TYPE-004"})
     store.update(sc_id, write(tmp_path / "detect2.py", SCRIPT_SRC + "# v2\n"))
     return RefGraph.build(store).revalidate(store, sc_id)
 
 
 def test_broken_ref_finding_carries_its_rule_id(store: Store, tmp_path: Path) -> None:
     findings = _broken_ref_findings(store, tmp_path)
-    assert [f.rule_id for f in findings] == ["STR-REG-004"]
+    assert [f.rule_id for f in findings] == ["LNT-REG-004"]
     assert _UNFILLED_SLOT_C.findall(findings[0].message) == []
 
 
@@ -689,7 +689,7 @@ def test_revalidate_finding_carries_its_rule_id(
 ) -> None:
     findings = _revalidate_findings(store, tmp_path, monkeypatch)
     # 깨진 것 하나 + 그것을 참조해 덩달아 깨진 상위 하나 (R5-4). **둘 다** 슬롯이 찬다.
-    assert [f.rule_id for f in findings] == ["STR-REG-005", "STR-REG-005"]
+    assert [f.rule_id for f in findings] == ["LNT-REG-005", "LNT-REG-005"]
     assert [_UNFILLED_SLOT_C.findall(f.message) for f in findings] == [[], []]
 
 
@@ -703,4 +703,4 @@ def test_every_finding_site_in_store_is_exercised() -> None:
     for module in (entries, graph):
         source = Path(module.__file__).read_text(encoding="utf-8")
         declared |= set(_FINDING_SITE_C.findall(source))
-    assert declared == {"STR-REG-004", "STR-REG-005"}
+    assert declared == {"LNT-REG-004", "LNT-REG-005"}

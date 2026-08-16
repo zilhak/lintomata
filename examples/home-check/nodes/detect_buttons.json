@@ -1,6 +1,6 @@
 {
   "info": { "name": "detect-buttons", "description": "무엇이 버튼인지 판정한다" },
   "type": "perceive",
-  "script": "${env.STRICTLER_EXAMPLE_ROOT}/scripts/perceive_buttons.py",
-  "libraries": { "buttons": "${env.STRICTLER_EXAMPLE_ROOT}/libraries/buttons.py" }
+  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/perceive_buttons.py",
+  "libraries": { "buttons": "${env.LINTOMATA_EXAMPLE_ROOT}/libraries/buttons.py" }
 }

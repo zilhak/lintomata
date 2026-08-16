@@ -1,4 +1,4 @@
-# strictler
+# lintomata
 
 **기획대로 돌아가는지를 검사하는 도구.** QA 의 프로그램화, lint 의 인간 버전.
 
@@ -12,21 +12,21 @@ Spec (JSON)  →  Pipeline (JSON)  →  Node (JSON)  →  Script (.py)
    기획           DAG 구성           동작 정의        실제 동작
 ```
 
-**strictler 에 내장된 동작은 하나도 없다.** 다섯 노드 타입(Vantage / Sense / Perceive /
-Reckon / Action)의 본체는 전부 사용자가 공급하는 스크립트이고, strictler 가 파는 것은
+**lintomata 에 내장된 동작은 하나도 없다.** 다섯 노드 타입(Vantage / Sense / Perceive /
+Reckon / Action)의 본체는 전부 사용자가 공급하는 스크립트이고, lintomata 가 파는 것은
 **파이프라인 엔진과 스키마**다.
 
 ## 설치와 사용
 
 ```bash
 uv sync
-uv run strictler --help
+uv run lintomata --help
 ```
 
 ```
-strictler <종류> add|list|show|update|remove     # <종류> = script|library|node|pipeline|spec
-strictler node test <id>                         # 노드 단위테스트 (실제 실행)
-strictler check <spec-id>                        # 검사 실행
+lintomata <종류> add|list|show|update|remove     # <종류> = script|library|node|pipeline|spec
+lintomata node test <id>                         # 노드 단위테스트 (실제 실행)
+lintomata check <spec-id>                        # 검사 실행
 ```
 
 ## 문서
@@ -66,7 +66,7 @@ strictler check <spec-id>                        # 검사 실행
 **동작한다.** 다섯 노드 타입과 두 파이프라인 종류(값 검증 / 비교)가 CLI 로 끝까지 돈다.
 
 ```
-src/strictler/
+src/lintomata/
   model/     네 층(Spec/Pipeline/Node/NodeTest)의 pydantic 모델
   typesys/   타입 어휘 + dataclass 집합 정규화 (구조 동일성·부분집합 병합)
   refs.py    ${env.X}/${config.X}/${state.X}/${ref.<id>} 전개, 절대경로 강제

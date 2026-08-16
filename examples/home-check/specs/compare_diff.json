@@ -8,22 +8,22 @@
 
   "plan": [
     {
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/pipelines/buttons_same.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/pipelines/buttons_same.json",
       "description": "같은 파이프라인·같은 노드에 gamma 의 대상 파일만 어긋난 판으로 바꾼 것",
-      "report": "${env.STRICTLER_EXAMPLE_OUT}/compare_diff.json",
+      "report": "${env.LINTOMATA_EXAMPLE_OUT}/compare_diff.json",
       "config": {
         "targets": {
           "alpha": {
-            "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/variant_alpha.html",
-            "buttonScript": "${env.STRICTLER_EXAMPLE_ROOT}/scripts/cmp_buttons_semantic.py"
+            "pagePath": "${env.LINTOMATA_EXAMPLE_ROOT}/targets/variant_alpha.html",
+            "buttonScript": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/cmp_buttons_semantic.py"
           },
           "beta": {
-            "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/variant_beta.html",
-            "buttonScript": "${env.STRICTLER_EXAMPLE_ROOT}/scripts/cmp_buttons_class.py"
+            "pagePath": "${env.LINTOMATA_EXAMPLE_ROOT}/targets/variant_beta.html",
+            "buttonScript": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/cmp_buttons_class.py"
           },
           "gamma": {
-            "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/variant_gamma_bad.html",
-            "buttonScript": "${env.STRICTLER_EXAMPLE_ROOT}/scripts/cmp_buttons_role.py"
+            "pagePath": "${env.LINTOMATA_EXAMPLE_ROOT}/targets/variant_gamma_bad.html",
+            "buttonScript": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/cmp_buttons_role.py"
           }
         }
       }

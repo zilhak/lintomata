@@ -8,11 +8,11 @@
 
   "plan": [
     {
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/pipelines/page_check.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/pipelines/page_check.json",
       "description": "정상 판 — 전부 통과해야 한다",
       "config": {
-        "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/home.html",
-        "auditLog": "${env.STRICTLER_EXAMPLE_OUT}/audit.log",
+        "pagePath": "${env.LINTOMATA_EXAMPLE_ROOT}/targets/home.html",
+        "auditLog": "${env.LINTOMATA_EXAMPLE_OUT}/audit.log",
         "expectedButtonCount": 3,
         "expectedButtonLabels": ["시작하기", "문서 보기", "문의하기"],
         "expectedMenuCount": 4,
@@ -20,11 +20,11 @@
       }
     },
     {
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/pipelines/page_check.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/pipelines/page_check.json",
       "description": "어긋난 판 — 위반이 두 건 나와야 한다",
       "config": {
-        "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/home_broken.html",
-        "auditLog": "${env.STRICTLER_EXAMPLE_OUT}/audit.log",
+        "pagePath": "${env.LINTOMATA_EXAMPLE_ROOT}/targets/home_broken.html",
+        "auditLog": "${env.LINTOMATA_EXAMPLE_OUT}/audit.log",
         "expectedButtonCount": 3,
         "expectedButtonLabels": ["시작하기", "문서 보기", "문의하기"],
         "expectedMenuCount": 4,
@@ -32,11 +32,11 @@
       }
     },
     {
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/pipelines/page_check.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/pipelines/page_check.json",
       "description": "없는 대상 — 오류 1건과 그 여파로 not run",
       "config": {
-        "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/does_not_exist.html",
-        "auditLog": "${env.STRICTLER_EXAMPLE_OUT}/audit.log",
+        "pagePath": "${env.LINTOMATA_EXAMPLE_ROOT}/targets/does_not_exist.html",
+        "auditLog": "${env.LINTOMATA_EXAMPLE_OUT}/audit.log",
         "expectedButtonCount": 3,
         "expectedButtonLabels": ["시작하기", "문서 보기", "문의하기"],
         "expectedMenuCount": 4,
@@ -44,22 +44,22 @@
       }
     },
     {
-      "source": "${env.STRICTLER_EXAMPLE_ROOT}/pipelines/buttons_same.json",
+      "source": "${env.LINTOMATA_EXAMPLE_ROOT}/pipelines/buttons_same.json",
       "description": "비교 파이프라인도 같은 Spec 안에서 함께 돈다",
-      "report": "${env.STRICTLER_EXAMPLE_OUT}/all_in_one_compare.json",
+      "report": "${env.LINTOMATA_EXAMPLE_OUT}/all_in_one_compare.json",
       "config": {
         "targets": {
           "alpha": {
-            "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/variant_alpha.html",
-            "buttonScript": "${env.STRICTLER_EXAMPLE_ROOT}/scripts/cmp_buttons_semantic.py"
+            "pagePath": "${env.LINTOMATA_EXAMPLE_ROOT}/targets/variant_alpha.html",
+            "buttonScript": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/cmp_buttons_semantic.py"
           },
           "beta": {
-            "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/variant_beta.html",
-            "buttonScript": "${env.STRICTLER_EXAMPLE_ROOT}/scripts/cmp_buttons_class.py"
+            "pagePath": "${env.LINTOMATA_EXAMPLE_ROOT}/targets/variant_beta.html",
+            "buttonScript": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/cmp_buttons_class.py"
           },
           "gamma": {
-            "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/variant_gamma_bad.html",
-            "buttonScript": "${env.STRICTLER_EXAMPLE_ROOT}/scripts/cmp_buttons_role.py"
+            "pagePath": "${env.LINTOMATA_EXAMPLE_ROOT}/targets/variant_gamma_bad.html",
+            "buttonScript": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/cmp_buttons_role.py"
           }
         }
       }

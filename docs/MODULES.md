@@ -18,7 +18,7 @@
 > ### R7-1. 등록 종류가 **다섯**이다 — `script` / `library` / `node` / `pipeline` / `spec`
 > `model.EntryKind` 에 `"library"`, `ID_PREFIXES` 에 `"lb_"`, `store.SUBDIRS` 에
 > `libraries/` 가 붙는다. **CRUD 다섯은 다른 종류와 완전히 같다** — 종류마다 다른
-> 명령을 두지 않는다. `strictler library test` 는 **없다**(`schema.md` 6.5절: 라이브러리엔
+> 명령을 두지 않는다. `lintomata library test` 는 **없다**(`schema.md` 6.5절: 라이브러리엔
 > `runNode` 계약이 없어 하네스가 맞지 않는다 — 쓰는 쪽 **노드 단위테스트로 간접 검증**된다).
 >
 > ### R7-2. `checks/library.py` 신설 — **금지 표는 복제하지 않는다** ★
@@ -28,19 +28,19 @@
 > 갈린 쪽이 곧 우회로가 된다 (R4-1 계열 사고가 정확히 그거였다).
 >
 > **시그니처 변경:** `check_bans(source, path, contract: ScriptContract | None)`.
-> `None` 이면 `STR-BAN-004`(미선언 state 참조)를 보지 않는다 — 라이브러리에는
+> `None` 이면 `LNT-BAN-004`(미선언 state 참조)를 보지 않는다 — 라이브러리에는
 > 선언된 state 가 없어 판정할 근거가 아예 없다. 나머지 셋은 그대로 돈다.
 >
 > ```python
-> NAMESPACE = "strictler_lib"
+> NAMESPACE = "lintomata_lib"
 > def check_library(source: str, path: str,
 >                   known_dependencies: tuple[str, ...] | list[str] = ()) -> list[Finding]
-> def check_no_nesting(tree: ast.Module, path: str) -> list[Finding]   # STR-LIB-003
-> def check_no_dataclass(tree: ast.Module, path: str) -> list[Finding] # STR-LIB-004
+> def check_no_nesting(tree: ast.Module, path: str) -> list[Finding]   # LNT-LIB-003
+> def check_no_dataclass(tree: ast.Module, path: str) -> list[Finding] # LNT-LIB-004
 > ```
 >
 > ### R7-3. `list`/`show` 는 **어느 등록소를 보고 있는지**를 낸다 (`--json` 포함)
-> `STRICTLER_HOME` 을 깜빡하고 전역 `~/.strictler` 에 조용히 쓰는 것이 가장 흔한 사고고,
+> `LINTOMATA_HOME` 을 깜빡하고 전역 `~/.lintomata` 에 조용히 쓰는 것이 가장 흔한 사고고,
 > 목록이 비어 있을 때 *"등록이 안 된 것"* 과 *"다른 등록소를 보고 있는 것"* 이 구분되지
 > 않는다. 라이브러리처럼 **공유되는 것**에서 특히 아프다.
 > → `list --json` 은 배열이 아니라 `{home, kind, entries}` 다 (**형태 변경**).
@@ -49,10 +49,10 @@
 > ### R7-4. 배선은 선언/사용 분리 그대로 — 새 개념이 늘지 않는다
 > | | 어디 | 무엇 |
 > |---|---|---|
-> | `from strictler_lib import buttons` | **스크립트** | 능력 선언 — `ScriptContract.library_slots` 로 뽑는다 |
+> | `from lintomata_lib import buttons` | **스크립트** | 능력 선언 — `ScriptContract.library_slots` 로 뽑는다 |
 > | `"libraries": { "buttons": … }` | **노드 JSON** | 사용 선언 — `Node.libraries` |
 >
-> **허용 형태는 모듈 최상단의 `from strictler_lib import <이름>` 하나뿐이다**(`STR-LIB-005`).
+> **허용 형태는 모듈 최상단의 `from lintomata_lib import <이름>` 하나뿐이다**(`LNT-LIB-005`).
 > 정적으로 슬롯을 못 뽑으면 배선 검사가 무의미해지고, **함수 안의 import 는 주입 창을 놓친다**
 > (아래 R7-5). `LIBRARY_NAMESPACE` 의 **정본은 `model`** — 이름이 갈리면 *선언한 슬롯*과
 > *주입되는 이름*이 어긋나 조용히 `ImportError` 가 난다.
@@ -73,7 +73,7 @@
 > ```
 >
 > ### R7-5. 주입은 **로드하는 동안만** — 끝나면 걷는다 ★
-> `sys.modules` 는 프로세스 전역이다. `strictler_lib` 를 남겨두면 **다음 노드가 앞 노드의
+> `sys.modules` 는 프로세스 전역이다. `lintomata_lib` 를 남겨두면 **다음 노드가 앞 노드의
 > 배선을 본다** — 조용히 틀린 판정 로직으로 리포트가 나가는 종류의 사고다.
 > → `engine/exec._installed_libraries` 가 로드 직전에 심고 `finally` 에서 되돌린다.
 > **`sys.path` 는 건드리지 않는다** — 형제 파일 import 를 되게 만드는 것이 아니라,
@@ -83,7 +83,7 @@
 > `library_slots` 는 **스크립트 자신의 바이트에서** 뽑은 것이라 키(경로 + 그 파일 해시)는
 > 여전히 옳다 — 라이브러리의 *내용*은 계약에 들어오지 않는다. 그러나 **payload 모양이
 > 바뀌었으므로** 버전을 안 올리면 옛 캐시가 *슬롯이 하나도 없는 계약*으로 되살아나
-> `STR-LIB-001` 이 영영 안 걸린다. 라이브러리를 고쳤을 때 무효화돼야 하는 것(상위의 검증)은
+> `LNT-LIB-001` 이 영영 안 걸린다. 라이브러리를 고쳤을 때 무효화돼야 하는 것(상위의 검증)은
 > 캐시가 아니라 **등록소의 전이적 재검증**이 맡는다. 자리가 다르다.
 >
 > ### R7-7. 파이프라인 문맥에서 노드를 가리키는 이름은 **노드 id 하나**다 ★
@@ -109,7 +109,7 @@
 > `cli.py` 는 id 로 **테스트 파일 경로만** 찾고, `testing/harness.py` 는 그 파일의 `node` 필드로
 > **노드를 다시 해석**한다. **둘이 일치하는지 아무도 안 본다.** conductor 가 직접 재현:
 > ```
-> $ strictler node test nd_1d371c3e        # 노드 a 를 요청
+> $ lintomata node test nd_1d371c3e        # 노드 a 를 요청
 > pass 1 …
 > [pass] …/b.json > cases[0] c0 > b        # ← 노드 b 가 돌았다
 > ```
@@ -119,7 +119,7 @@
 > 참조는 원본을 가리키므로 **원본을 지우면 죽는다**(재현됨). R5-2 가 없애려던 바로 그 상황이다.
 >
 > → **`node test <id>` 로 부르면 그 id 의 등록소 노드가 정본이다.**
-> `node_test.node` 는 **대조용으로만** 쓰고, 다른 노드를 가리키면 **`STR-TEST-008`**(신설, 슬롯
+> `node_test.node` 는 **대조용으로만** 쓰고, 다른 노드를 가리키면 **`LNT-TEST-008`**(신설, 슬롯
 > `{requested}` `{declared}`). `node` 필드를 경로로 해석하지 않는다 → 원본 삭제와 무관해진다.
 > `node test <경로>` 형태는 지금처럼 `node` 필드를 따른다.
 >
@@ -129,7 +129,7 @@
 > (Step 1 `typesys`, Step 2 `rules`, Step 3 `compare` 에 이어 **네 번째**다)
 > → 대역을 벗겨라. 파일 docstring 의 "Step 4-a 가 아직 stub 이라" 도 낡았다.
 >
-> ### R6-3. `STR-TEST-005`(Action 값 동일성) Finding 에 `node` 가 비어 있다
+> ### R6-3. `LNT-TEST-005`(Action 값 동일성) Finding 에 `node` 가 비어 있다
 > 다른 TEST 규칙은 전부 `node=who` 인데 여기만 `fields={}` 로 나가 **Action 결과만 노드 이름 칸이 빈다.**
 >
 > ### R6-4. `engine/state.py` 의 `_delay_ms` 가 `${env.X}` 를 전개하지 않는다
@@ -149,7 +149,7 @@
 > | 경로 Spec 의 **실행 전 정적 검사** | `cli.py` | 기존 테스트가 모델 검증만 태우고 `check_registration` 을 안 태운다 |
 > | `${env.X}` 를 마지막이 아닌 자리로 옮김 | `refs` 합성 | config 값이 `${state.X}` 를 품는 케이스가 없다 |
 >
-> ### R6-6. `STR-REF-002` 의 guide 를 자리 중립으로 (rules.md 개정 완료)
+> ### R6-6. `LNT-REF-002` 의 guide 를 자리 중립으로 (rules.md 개정 완료)
 > `_resolve_node_file` 이 이 규칙을 재사용하는데 guide 는 *"파이프라인의 `source` 는…"* 이라고 말한다.
 > 고쳐야 할 곳은 **노드 테스트의 `node` 필드**인데 AI 는 파이프라인을 본다 —
 > **R2-6 이 세운 "규칙을 나누는 기준은 증상이 아니라 고치는 방법" 에 걸린다.**
@@ -199,10 +199,10 @@
 >
 > → **params(및 스크립트에 넘기는 모든 값)에도 env 를 전개한다. 합성 순서는 `config` → `state` → `env`**
 > (config·state 값이 `${env.Y}` 를 품을 수 있으므로 env 가 마지막이다).
-> → **전개 후에도 `${` 가 남으면 `STR-REF-007`** 로 잡는다 (`expand_path` 와 같은 논리).
+> → **전개 후에도 `${` 가 남으면 `LNT-REF-007`** 로 잡는다 (`expand_path` 와 같은 논리).
 > 리터럴로 통과시키면 나중에 엉뚱한 오류로 원인이 뭉개진다.
 >
-> ### R5-2. `strictler node test <node-id>` 가 사실상 동작하지 않는다
+> ### R5-2. `lintomata node test <node-id>` 가 사실상 동작하지 않는다
 > `.test.json` 은 등록 대상이 아니고 `node add` 가 옆의 테스트 파일을 복사해 주지도 않는다.
 > → **사용자가 등록소 디렉터리에 손으로 파일을 넣어야만** 성립한다.
 > **등록소는 도구가 관리하는 영역**(해시로 무단 수정을 막는 바로 그 디렉터리)이라 이건 모델과 어긋나고,
@@ -211,12 +211,12 @@
 > → **`node add`/`update` 가 옆의 `<노드파일>.test.json` 을 함께 복사한다.** (결정)
 > 근거: schema.md 14절이 테스트를 **`<노드파일>.test.json`**, 즉 *노드 파일 옆*으로 규정했다 —
 > 노드 정의 묶음의 일부지 **다섯 번째 등록 종류가 아니다**(종류는 넷으로 고정).
-> `strictler node test <경로>` 형태도 그대로 유지한다.
+> `lintomata node test <경로>` 형태도 그대로 유지한다.
 >
-> ### R5-3. `inputs` 가 서로 다른 앞단 둘 이상 → **등록 시점**에 `STR-GRAPH-003` (rules.md **60개**)
+> ### R5-3. `inputs` 가 서로 다른 앞단 둘 이상 → **등록 시점**에 `LNT-GRAPH-003` (rules.md **60개**)
 > 지금은 등록이 통과하고 **실행에서 규칙 id 없는 맨 `Finding`** 으로 터진다.
 > `Args.input` 이 필드 하나인 것은 계약에 이미 있고 **파이프라인 JSON 만 봐도 판정 가능**하다.
-> → `checks/pipeline.py` 로 옮기고 `STR-GRAPH-003`(슬롯 `{nodes}`)을 붙인다.
+> → `checks/pipeline.py` 로 옮기고 `LNT-GRAPH-003`(슬롯 `{nodes}`)을 붙인다.
 >
 > ### R5-4. 참조 대상이 **검증 깨짐**이면 상위도 검증 깨짐이다 (전이적)
 > 실측: `pl_e32a44f2` 가 `✕ 검증 깨짐` 인데 그것을 참조하는 `sp_04eb9f74` 는 `○` 로 나왔다.
@@ -230,7 +230,7 @@
 > `remove`/`list` 의 깨짐 표시를 `1` 로 둔 것과 결이 다른 것은 **성격이 실제로 다르기 때문**이다 —
 > 깨짐 표시는 상태 보고고, 등록 거부는 도구가 진행을 못 한 것이다. **바꾸지 마라.**
 >
-> ### R5-6. (기록만) `script add` 가 `STR-CONTRACT-005/-006/-007` 을 건너뛰는 것은 **설계대로**다
+> ### R5-6. (기록만) `script add` 가 `LNT-CONTRACT-005/-006/-007` 을 건너뛰는 것은 **설계대로**다
 > 스크립트만으로는 노드 타입을 모른다. 판정 필드 없는 Reckon 스크립트는 **스크립트로는 등록되고
 > 노드로 등록할 때 걸린다.** 이게 네 층 분리의 자연스러운 귀결이다.
 
@@ -254,7 +254,7 @@
 > - `ready()` 재스캔 기반 구동 (정적 topo 정렬 금지 — `when` 이 상태에 걸리므로 순서가 동적이다)
 > - **구간 전이 drain** (`steps_after()` + `enter()`, R3-6)
 > - **동시 실행 가능 노드는 파이프라인 선언 순서** (R3-7)
-> - **실행 시점 해시 대조** (`STR-REG-001`) — schema.md 2·13절
+> - **실행 시점 해시 대조** (`LNT-REG-001`) — schema.md 2·13절
 >
 > ⚠ `drive.py` 는 `runtime` 도 `compare` 도 import 하지 않는다 (`engine.result`·`engine.state`·`engine.exec` 까지만).
 >
@@ -269,7 +269,7 @@
 >
 > → **두 층으로 나눈다:**
 > - **등록 시점**(`reachability`): 미해결 `delay` 는 **모름**이다. 그 순서에 의존하는 판정은
->   **`STR-STATE-006/007` 을 내지 않는다.** 알 수 없는 것으로 등록을 막지 않는다 (lint 는 보수적으로)
+>   **`LNT-STATE-006/007` 을 내지 않는다.** 알 수 없는 것으로 등록을 막지 않는다 (lint 는 보수적으로)
 > - **실행 시점**(`drive`): config 가 풀렸으므로 **실제 값으로 판정**한다. 도달 불가로 밝혀지면
 >   **`not_run(state_unreachable)`** 이다 — 등록 실패가 아니다. **config 가 도달성을 바꾸는 것은 정상**이고
 >   (같은 파이프라인에 다른 Spec config), not run 은 애초에 정상 결과다
@@ -277,7 +277,7 @@
 > ### R4-4. Reckon 출력의 판정 필드 = **`passed: bool`** (규칙 신설, rules.md **59개**)
 > 엔진이 Reckon 출력에서 통과/위반을 읽으려면 규약이 필요한데 어느 문서에도 없었다.
 > 구현자가 `passed: bool` 로 정한 것을 **확정한다.**
-> → **`STR-CONTRACT-007` reckon-verdict-missing** 을 신설했다. **등록 시점에 강제한다**
+> → **`LNT-CONTRACT-007` reckon-verdict-missing** 을 신설했다. **등록 시점에 강제한다**
 > (`checks/script.py` 의 `check_node_type_form`) — 지금은 런타임에야 터져서
 > schema.md 6절 *"돌리기 전에 잡아 자기 수정 신호를 준다"* 와 어긋난다.
 >
@@ -289,7 +289,7 @@
 >
 > ### R4-6. `compare` 도 target 무관한 Finding 을 dedupe 한다
 > `_input_for` 를 target 루프 안에서 부르므로 배선 오류가 **target 수만큼 중복**된다.
-> `runtime` 은 `dedupe(result.findings)` 를 거친다. ⚠ `STR-CMP-004` 처럼 **메시지에 target 이 박히는
+> `runtime` 은 `dedupe(result.findings)` 를 거친다. ⚠ `LNT-CMP-004` 처럼 **메시지에 target 이 박히는
 > 것은 target 별로 나오는 게 정상**이다 — 그건 dedupe 대상이 아니다.
 >
 > ### R4-7. 대역이 결함을 가렸다 — **실제 구현으로 태워라**
@@ -306,7 +306,7 @@
 > def run_pipeline(pipeline, config, *, store, env, started_at_ms, path,
 >                  tool: Mapping[str, Any] | None = None) -> RunResult
 > ```
-> `tool` 은 `STR-TOOL-001/002` 가 실행 시점 규칙이라 필요하고, `spec_name` 은 리포트 `path` 첫 조각용이다.
+> `tool` 은 `LNT-TOOL-001/002` 가 실행 시점 규칙이라 필요하고, `spec_name` 은 리포트 `path` 첫 조각용이다.
 >
 > ### R4-9. `engine/result.py` 를 얼린 것은 **conductor 의 계약 실수**였다
 > Step 0 이 `raise NotImplementedError` stub 으로 만든 파일을 구현 없이 "누구도 고치지 않는다" 로 얼렸다 —
@@ -335,11 +335,11 @@
 > ### R3-1. `typesys.primitives.check_allowed` 가 **세 실패 경로 전부 깨져 있다** ★ (main 결함)
 > `rules.finding()` 에 `fields` 를 안 넘긴다. conductor 가 main 에서 직접 재현:
 > ```
-> dict[str,int] → StrictlerError: 규칙 STR-TYPE-001 … 자리표시자 값이 주어지지 않았습니다: file
-> Optional[str] → STR-TYPE-002 … file
-> Button        → STR-TYPE-003 … type, file
+> dict[str,int] → LintomataError: 규칙 LNT-TYPE-001 … 자리표시자 값이 주어지지 않았습니다: file
+> Optional[str] → LNT-TYPE-002 … file
+> Button        → LNT-TYPE-003 … type, file
 > ```
-> **`STR-TYPE-001~003` 을 내는 유일한 자리가 전부 터진다.** Step 1 통합 결함(11건)과 정확히 같은 종류이고,
+> **`LNT-TYPE-001~003` 을 내는 유일한 자리가 전부 터진다.** Step 1 통합 결함(11건)과 정확히 같은 종류이고,
 > 유일한 호출자인 `checks/script.py` 가 stub 이라 지금까지 안 걸렸다.
 > `tests/test_typesys.py` 의 **autouse `rules.finding` 대역이 이 결함을 가렸다** — 대역을 제거한다.
 >
@@ -349,11 +349,11 @@
 >
 > ### R3-2. `checks/script.py` — 통과형 `returnResult(args.input)` 에서 출력 타입을 못 뽑는다 ★
 > `_value_type` 이 `ast.Attribute`(`args.input`)를 처리하지 않아 `output_type=""` 이 되고
-> **교과서적 Action 이 `STR-CONTRACT-006` 으로 오탐된다.** conductor 재현:
+> **교과서적 Action 이 `LNT-CONTRACT-006` 으로 오탐된다.** conductor 재현:
 > ```
 > def runNode(args: Args):          # 반환 어노테이션 없음
 >     return returnResult(args.input)
-> → input_type='Form', output_type='', ['STR-CONTRACT-006']   ← 오탐
+> → input_type='Form', output_type='', ['LNT-CONTRACT-006']   ← 오탐
 > ```
 > Action 만의 문제가 아니다 — **CLAUDE.md 가 조건 분기의 표준 표현으로 못박은
 > "스크립트가 그냥 `input` 을 반환한다" 가 모든 노드 타입에서 깨진다.**
@@ -374,7 +374,7 @@
 > 테스트 단언은 "낀 배선과 안 낀 배선의 **Finding 목록이 완전히 동일**" → **"판정(통과/위반)이 같다"** 로 완화.
 >
 > ### R3-4. 비교 파이프라인의 config 의존 검사는 **Spec 실행 시점**이다
-> `STR-CMP-002` 는 `when: P` 인데 **실제로는 P 에서 못 돈다.** target 별 스크립트를 Spec 의
+> `LNT-CMP-002` 는 `when: P` 인데 **실제로는 P 에서 못 돈다.** target 별 스크립트를 Spec 의
 > `config` 가 채우므로 파이프라인 등록 시점엔 알 수 없기 때문이다. 부수적으로 비교 파이프라인의
 > 노드 스크립트는 등록 시 계약·금지 검사를 **전혀 안 받는다**(`_contracts_by_target` 이 findings 를 버린다).
 >
@@ -389,7 +389,7 @@
 > config 가 풀린 뒤 **Spec 실행 시점에 engine 이 호출한다.** 하는 일:
 > target 별 스크립트 `check_script` + `check_compare`(CMP-002/003) + 계약이 모인 뒤의
 > `check_wiring_types`·`check_state_mapping` 재검.
-> rules.md 의 `STR-CMP-002`/`-003` when 을 **`P R`** 로 개정했다.
+> rules.md 의 `LNT-CMP-002`/`-003` when 을 **`P R`** 로 개정했다.
 > ⚠ 테스트가 쓰던 비정상 형태(`{"type":"str", "default": {…dict…}}`)도 정리한다.
 >
 > ### R3-5. `checks/pipeline.py` 공개 시그니처 정정 (본문 대체)
@@ -397,13 +397,13 @@
 > def check_wiring_types(pipeline, contracts, registry, source_path, *,
 >                        node_types: Mapping[str, NodeType]) -> list[Finding]   # ★ node_types 필수
 > def check_cycle(dag, source_path, *, exempt: Collection[str] = ()) -> list[Finding]
-> def check_config_values(...) -> list[Finding]     # STR-PATH-004 + config default 주입 (R1-6)
+> def check_config_values(...) -> list[Finding]     # LNT-PATH-004 + config default 주입 (R1-6)
 > def build_registry(...) -> TypeRegistry
 > def recheck_resolved(...) -> list[Finding]        # R3-4 신설
 > ```
 > **`node_types` 없이는 Action 투명성 구현이 원리적으로 불가능하다**(노드 타입을 알 방법이 없다).
 > 본문의 `check_wiring_types(pipeline, contracts, registry, source_path)` 는 계약 쪽 결함이었다.
-> `exempt` 는 `transitions.after` 로 상태만 미는 노드가 `STR-GRAPH-002` 오탐이 되는 것을 막는다.
+> `exempt` 는 `transitions.after` 로 상태만 미는 노드가 `LNT-GRAPH-002` 오탐이 되는 것을 막는다.
 >
 > ### R3-6. `checks/reachability.py` — 같은 `after` 를 갖는 transition 이 둘 이상일 때 자기모순 ★
 > `current = to` 로 **마지막 하나만** 반영하면서 `reachable_states` 에는 **전부** 넣는다.
@@ -421,33 +421,33 @@
 > → **계약으로 못 박는다: 동시에 실행 가능한 노드는 파이프라인의 `nodes` 선언 순서로 돈다.**
 > `reachability.simulate().order` 가 **참조 구현**이고 `engine.runtime` 은 이 순서를 따른다.
 >
-> ### R3-8. `STR-STATE-007` 은 **`when` 으로 막힌 노드에만** 낸다
+> ### R3-8. `LNT-STATE-007` 은 **`when` 으로 막힌 노드에만** 낸다
 > 지금은 데이터 의존으로 막힌 노드에도 나가는데, 그 규칙의 guide 는 `when` 을 확인하라고 말한다 —
 > `when` 이 아예 없는 노드에 그 가이드가 나가면 **AI 가 엉뚱한 곳을 고친다**(R2-6 과 같은 문제).
 >
 > **데이터 의존 막힘은 언제나 원인이 따로 보고된다:**
 > | 데이터로 막힌 이유 | 이미 보고하는 규칙 |
 > |---|---|
-> | 존재하지 않는 노드 id 를 가리킴 | `STR-REF-003` |
-> | 의존 대상이 도달 불가 | 그 대상이 `STR-STATE-007` 로 |
-> | 순환 | `STR-GRAPH-001` |
+> | 존재하지 않는 노드 id 를 가리킴 | `LNT-REF-003` |
+> | 의존 대상이 도달 불가 | 그 대상이 `LNT-STATE-007` 로 |
+> | 순환 | `LNT-GRAPH-001` |
 >
 > → **새 규칙이 필요 없다. defer 하면 된다** — 이 모듈이 스스로 세운 "이미 보고된 것은 다시 내지 않는다"
 > 원칙과 일관되고, `-007` 의 guide 가 항상 유효해진다.
 > (`ReachResult.unreachable` 에는 그대로 담는다 — 정보는 남기고 Finding 만 안 낸다)
 >
-> ### R3-9. `STR-STATE-006` 의 슬롯이 둘이 됐다 — `{name}` + `{mapped}` (rules.md 개정 완료)
+> ### R3-9. `LNT-STATE-006` 의 슬롯이 둘이 됐다 — `{name}` + `{mapped}` (rules.md 개정 완료)
 > 노드 어휘와 파이프라인 상태 이름은 **다른 층**인데 하나만 보여서, JSON 의 어느 자리를 고쳐야 하는지가
 > 안 드러났다. `when` 에 적힌 것과 전이를 추가할 자리가 다르다.
 >
 > ### R3-10. `check_tool_calls` 현행 유지 — 미선언 함수 + 미선언 경로는 위반이 아니다
 > schema.md 6절 예시(`run_shell("...")`)와 표면상 어긋나 보이지만 **현행이 맞다.**
-> 전부 잡으면 `open("/etc/hosts")` 가 `STR-TOOL-001` 이 되어 **"파일 IO 자유" 원칙을 깬다.**
+> 전부 잡으면 `open("/etc/hosts")` 가 `LNT-TOOL-001` 이 되어 **"파일 IO 자유" 원칙을 깬다.**
 > 어떤 함수가 외부 도구 호출인지 아는 것은 **내장 도메인 지식**이고 이 도구는 그걸 갖지 않는다.
-> `run_shell` 류는 `STR-BAN-003`(직접 subprocess 호출)이 잡을 자리다.
+> `run_shell` 류는 `LNT-BAN-003`(직접 subprocess 호출)이 잡을 자리다.
 > 실제로 잡히는 것은 **선언된 경로를 미선언 함수로** 또는 **선언된 함수를 미선언 경로로** 부르는 경우다.
 >
-> ### R3-11. 출력 타입이 dataclass 가 아니면 `STR-CONTRACT-003` (rules.md 개정 완료)
+> ### R3-11. 출력 타입이 dataclass 가 아니면 `LNT-CONTRACT-003` (rules.md 개정 완료)
 > `-> str` 같은 primitive 반환에 아무 규칙도 안 났다. guide 는 이미 "반환 타입은 dataclass" 라고
 > 말하는데 **강제하는 규칙이 없었다.** 타입 동일성을 **구조로** 판정하는 이상 primitive 출력은 성립하지 않는다.
 > 규칙을 새로 파지 않는다 — 두 경우 모두 "`returnResult()` 로 dataclass 를 내보내라" 로 고치기 때문이다.
@@ -459,7 +459,7 @@
 >
 > ### R3-13. `ENGINE_STATE_FIELDS` 3중 복제를 없앤다 — 정본은 `model/`
 > `engine/state.py` · `refs.py` · `checks/script.py` 세 곳에 복제돼 있다.
-> 규칙 위반은 아니지만 **엔진 제공 필드가 늘면 `STR-BAN-004` 오탐이 난다.**
+> 규칙 위반은 아니지만 **엔진 제공 필드가 늘면 `LNT-BAN-004` 오탐이 난다.**
 > → **`model/__init__.py` 에 정본을 두고 셋이 import 한다.** `model` 은 최하층이라 순환이 없다.
 > ⚠ `model/__init__.py` 는 확정 파일이지만 **이 항목에 한해 conductor 가 수정을 승인한다.**
 > 상수 추가 외에는 손대지 마라.
@@ -481,7 +481,7 @@
 >
 > | 케이스 | 증상 |
 > |---|---|
-> | `sense.Args(input:str)` + `reckon.Args(input:str, params:P)`, `P(expected:int)` | `build_model(sense.Args)` → `StrictlerError: 타입 P 를 ...` — **이 설계에서 가장 흔한 노드 조합**이 도구 오류로 터진다 |
+> | `sense.Args(input:str)` + `reckon.Args(input:str, params:P)`, `P(expected:int)` | `build_model(sense.Args)` → `LintomataError: 타입 P 를 ...` — **이 설계에서 가장 흔한 노드 조합**이 도구 오류로 터진다 |
 > | `a.py: Btn(label:str), Args(input:Btn)` / `b.py: Widget(label:str), Args(input:Widget)` | `same_definition` 은 `True`(설계대로)인데 `build_model(b.Args)` 만 터진다. schema.md 7절 "이름이 달라도 구조가 같으면 같은 타입" 을 정면으로 못 쓰게 만든다 |
 > | `a.py: Button(icon:str), Small(x:int)` / `b.py: Button(label:str), Big(x:int, b:Button)` | `build_model(a.Small)` 에 `b` 필드가 생기고 **엉뚱한 `Button` 에 바인딩된다 — 예외조차 안 난다(조용한 오답)** |
 >
@@ -519,32 +519,32 @@
 >     def to_value(self, key: TypeKey, raw: Any) -> Any
 > ```
 >
-> **호출 순서 계약: `register()` 전부 → `normalize()` 한 번 → 조회.** 정규화 전 조회는 `StrictlerError` 다.
+> **호출 순서 계약: `register()` 전부 → `normalize()` 한 번 → 조회.** 정규화 전 조회는 `LintomataError` 다.
 >
 > ### R2-3. `DataclassSpec.origin` 에서 기본값 `= ""` 를 없앤다 (필수 인자)
 > 기본값이 있으면 등록 주체(`checks/script.py`, **다른 child**)가 빠뜨렸을 때 모든 dataclass 가 `""`
 > 스코프로 몰리고, **R1-1 이 없애려던 `Args` 충돌이 그대로 되살아난다.**
 > 계약 본문·R1 의 `origin: str = ""` 표기는 이걸로 대체된다.
 >
-> ### R2-4. `STR-TYPE-006` 의 `path` 를 채운다
+> ### R2-4. `LNT-TYPE-006` 의 `path` 를 채운다
 > `-007` 은 `path=key.origin` 을 채우는데 `-006` 은 비어 있다. 병합은 등록기 전역 연산이라 단일 `path` 가
 > 없다는 건 맞지만, 리포트에 위치가 없으면 원인을 못 찾는다.
 > → **성분 멤버를 정렬한 첫 번째의 `origin`** 을 넣는다 (결정적이어야 하므로 정렬).
 >
-> ### R2-5. 등록기의 미지 타입 오류에 `STR-TYPE-003` 을 붙인다
-> `_unknown_type_message` 경로가 맨 `StrictlerError` 로 나간다. `STR-TYPE-003`(unsupported-type, 슬롯 없음)이
+> ### R2-5. 등록기의 미지 타입 오류에 `LNT-TYPE-003` 을 붙인다
+> `_unknown_type_message` 경로가 맨 `LintomataError` 로 나간다. `LNT-TYPE-003`(unsupported-type, 슬롯 없음)이
 > 정확히 그 자리다. `checks/script.py` 가 1차로 잡더라도 **2선 방어에도 id 는 있어야 한다** — R1-7 과 같은 논리.
 >
-> ### R2-6. 새 규칙 `STR-REF-007` unresolved-reference (rules.md **58개**)
-> R1-8 이 "잔여 `${` 를 에러로" 만 정하고 id 를 지정하지 않아 구현자가 `STR-REF-006` 을 골랐다.
+> ### R2-6. 새 규칙 `LNT-REF-007` unresolved-reference (rules.md **58개**)
+> R1-8 이 "잔여 `${` 를 에러로" 만 정하고 id 를 지정하지 않아 구현자가 `LNT-REF-006` 을 골랐다.
 > 그런데 `${config.y}` 는 **문법이 정상**이다 — 잘못된 건 전개 순서다. `-006` 의 guide
 > ("네임스페이스를 반드시 붙입니다")를 받은 AI 는 **엉뚱한 곳을 고친다.**
 >
 > | 입력 | 규칙 |
 > |---|---|
-> | `${X}` / `${vars.X}` / `${env.}` — 네임스페이스 없음·모름·이름 비었음 | **`STR-REF-006`** malformed |
-> | `${env.HOME/x` — 닫히지 않음 | **`STR-REF-006`** malformed |
-> | `/x/${config.y}/z` — 문법은 정상인데 안 풀림 | **`STR-REF-007`** unresolved ← 신설 |
+> | `${X}` / `${vars.X}` / `${env.}` — 네임스페이스 없음·모름·이름 비었음 | **`LNT-REF-006`** malformed |
+> | `${env.HOME/x` — 닫히지 않음 | **`LNT-REF-006`** malformed |
+> | `/x/${config.y}/z` — 문법은 정상인데 안 풀림 | **`LNT-REF-007`** unresolved ← 신설 |
 >
 > **규칙을 나누는 기준은 "증상" 이 아니라 "고치는 방법" 이다.**
 >
@@ -554,14 +554,14 @@
 > **`rules` 는 `errors` 에만 의존하는 최하층이라 순환이 생기지 않는다**(conductor 확인).
 > → `refs` 의 의존에 **`rules` 를 추가**한다. 손복제한 문구를 `rules.render()`/`rules.finding()` 로 바꾼다.
 >
-> ### R2-8. `STR-REG-004` 의 message 에 `{id}` 슬롯을 넣었다 (rules.md 개정 완료)
+> ### R2-8. `LNT-REG-004` 의 message 에 `{id}` 슬롯을 넣었다 (rules.md 개정 완료)
 > 코드가 `fields={"id":…, "ref":…}` 로 **같은 값을 두 이름으로** 넘기는데 규칙에는 슬롯이 없었다.
-> R1-3 대로 미선언 필드를 거부하면 런타임에 터진다. `STR-REG-002` 가 이미 `{id}` 를 쓰는 선례가 있다.
+> R1-3 대로 미선언 필드를 거부하면 런타임에 터진다. `LNT-REG-002` 가 이미 `{id}` 를 쓰는 선례가 있다.
 > → rules.md 를 개정했다. 코드는 **`fields={"id": ref_id}` 하나만** 남긴다.
 >
 > ### R2-9. `store` 의 나머지 raw `UnicodeDecodeError` 도 감싼다
 > R1 이 `_read_source` 만 고쳤는데 같은 논리가 두 자리에 미반영이다.
-> - `Store.read()` — **정적 검사 루트를 피해 등록소 파일을 직접 고치는 것이 바로 `STR-REG-001` 이 상정하는
+> - `Store.read()` — **정적 검사 루트를 피해 등록소 파일을 직접 고치는 것이 바로 `LNT-REG-001` 이 상정하는
 >   시나리오다.** `verify_hash` 호출 순서가 보장되지 않으면 raw 예외가 먼저 난다
 > - `load_index()` — `JSONDecodeError` 는 감쌌지만 `UnicodeDecodeError` 는 안 감쌌다
 
@@ -585,42 +585,42 @@
 >
 > ### R1-2. `rules.finding()` 시그니처 — `**fields` → `fields: dict`
 > `finding(rule_id, *, path, node, **fields)` 는 keyword-only 파라미터가 **동명 슬롯을 잡아먹는다.**
-> `STR-PATH-001`(`{path}`), `STR-TOOL-002`(`{path}`), `STR-CMP-002`(`{node}`) 세 규칙이 렌더 불가능하다.
+> `LNT-PATH-001`(`{path}`), `LNT-TOOL-002`(`{path}`), `LNT-CMP-002`(`{node}`) 세 규칙이 렌더 불가능하다.
 > `{path}` 는 rules.md 원문 슬롯이라 이름을 바꿀 수도 없다.
 >
 > → **`finding(rule_id, *, path: str, node: str, fields: dict[str, object] | None = None)`** 로 개정.
 > 슬롯 값은 `fields` 딕셔너리로만 넘긴다. 이름 충돌이 구조적으로 불가능해진다.
 >
 > ### R1-3. 규칙 엔트리에 `slots` 필드를 추가한다
-> `_fill` 은 슬롯 값이 없으면 `StrictlerError` 를 낸다(옳다 — 리포트에 `{cycle}` 이 새면 검사기 버그다).
+> `_fill` 은 슬롯 값이 없으면 `LintomataError` 를 낸다(옳다 — 리포트에 `{cycle}` 이 새면 검사기 버그다).
 > 그런데 **어떤 규칙에 어떤 슬롯이 필요한지가 어디에도 없다.** 후속 Step 담당자가 런타임에 터뜨린다.
 >
 > → 규칙 엔트리에 **`slots: tuple[str, ...]`** 을 추가한다 (message + guide 양쪽에서 추출).
 > 코드와 문서가 갈라지지 않도록 **표가 아니라 데이터로** 둔다. `finding()` 이 이걸로 누락을 검증한다.
-> ⚠ `STR-TYPE-004` 의 슬롯은 **`{in}`** 이다 — 파이썬 예약어라 `fields={"in": ...}` 형태로만 넘길 수 있다.
+> ⚠ `LNT-TYPE-004` 의 슬롯은 **`{in}`** 이다 — 파이썬 예약어라 `fields={"in": ...}` 형태로만 넘길 수 있다.
 >
 > ### R1-4. `rules.render()` 는 guide 의 슬롯도 채운다 (구현이 옳다)
 > 본문은 `message.format(**fields) + "\n" + guide` 로 적혀 있으나, **rules.md 의 guide 문구 자체가
-> 슬롯을 갖는다** (`STR-GRAPH-001` `{cycle}`, `STR-TOOL-002` `{path}`, `STR-CONFIG-001` `{names}`,
-> `STR-TEST-002/003/004` 등은 슬롯이 guide 에만 있다). 안 채우면 리포트에 `{cycle}` 이 그대로 샌다.
+> 슬롯을 갖는다** (`LNT-GRAPH-001` `{cycle}`, `LNT-TOOL-002` `{path}`, `LNT-CONFIG-001` `{names}`,
+> `LNT-TEST-002/003/004` 등은 슬롯이 guide 에만 있다). 안 채우면 리포트에 `{cycle}` 이 그대로 샌다.
 > 또 `str.format` 은 쓸 수 없다 — guide 안의 `${env.X}` 를 필드 참조로 해석해 터진다. 자체 슬롯 정규식이 맞다.
 >
 > ### R1-5. `refs.parse_ref` 시그니처 (코드가 옳다)
 > `parse_ref(value: str, expected: EntryKind | None = None) -> tuple[EntryKind, str]` 로 개정.
-> `expected` 없이는 STR-REG-003(자리와 접두 불일치)을 낼 수 없다.
+> `expected` 없이는 LNT-REG-003(자리와 접두 불일치)을 낼 수 없다.
 >
 > ### R1-6. 책임 경계 두 건을 못 박는다
-> - **`STR-PATH-004`(path: true config)는 `checks/pipeline.py`(Step 2-b) 가 낸다.** `refs` 는 기제만 제공한다
+> - **`LNT-PATH-004`(path: true config)는 `checks/pipeline.py`(Step 2-b) 가 낸다.** `refs` 는 기제만 제공한다
 > - **`config` 의 `default` 주입은 `checks/pipeline.py` 의 책임이다.** `refs` 가 받는 config 는
 >   이미 default 가 채워진 것이다 → `refs` 에서 미해결 `${config.X}` 는 진짜 required 누락이므로
->   `STR-CONFIG-001` 재사용이 정당해진다
+>   `LNT-CONFIG-001` 재사용이 정당해진다
 >
 > ### R1-7. 새 규칙 3개 (rules.md 57개로 증가)
 > | 규칙 | 무엇 |
 > |---|---|
-> | `STR-TYPE-006` merge-field-conflict | 부분집합 연결 성분 합집합 시 같은 필드명의 타입이 갈림 |
-> | `STR-TYPE-007` dataclass-cycle | dataclass 자기·상호 참조 |
-> | `STR-REF-006` malformed-reference | 네임스페이스 없음/모름/이름 비었음 |
+> | `LNT-TYPE-006` merge-field-conflict | 부분집합 연결 성분 합집합 시 같은 필드명의 타입이 갈림 |
+> | `LNT-TYPE-007` dataclass-cycle | dataclass 자기·상호 참조 |
+> | `LNT-REF-006` malformed-reference | 네임스페이스 없음/모름/이름 비었음 |
 >
 > 셋 다 **규칙 id 없는 raw 오류로 나가던 것에 id 를 붙인 것**이다.
 >
@@ -707,13 +707,13 @@ top-level 양방향 import 를 만들면 실제로 `ImportError` 로 터진다.
 | `errors.py` | 모든 층이 여기 의존한다 |
 | **`engine/result.py`** | **Step 3-a(runtime)·3-b(compare) 가 둘 다 쓴다.** 어느 쪽도 이 파일을 고치지 않는다 — 고치면 두 child 의 파일 교집합이 생긴다 |
 | **`pyproject.toml`** | 전원이 건드릴 유인이 있는 유일한 파일이다. 의존성 추가가 필요하면 conductor 에게 보고한다 (테스트용 `pytest` 는 이미 `[dependency-groups] dev` 에 있다) |
-| **`engine/__init__.py`** | `NodeOutcome`/`RunResult` 재수출이 들어 있다. **재수출은 지금 있는 것이 전부다** — Step 3-a 가 `run_spec` 을, 3-b 가 `run_compare_pipeline` 을 여기 추가하려 들면 두 child 의 파일 교집합이 생긴다. 필요하면 `from strictler.engine.runtime import run_spec` 처럼 모듈에서 직접 import 하라 |
+| **`engine/__init__.py`** | `NodeOutcome`/`RunResult` 재수출이 들어 있다. **재수출은 지금 있는 것이 전부다** — Step 3-a 가 `run_spec` 을, 3-b 가 `run_compare_pipeline` 을 여기 추가하려 들면 두 child 의 파일 교집합이 생긴다. 필요하면 `from lintomata.engine.runtime import run_spec` 처럼 모듈에서 직접 import 하라 |
 
 ---
 
 ## 2. 모듈별 계약
 
-### `src/strictler/model/__init__.py` — ✅ **완성**
+### `src/lintomata/model/__init__.py` — ✅ **완성**
 
 **책임.** 네 층(Spec / Pipeline / Node / Script)의 JSON 구조를 pydantic 모델로 정의한다.
 **JSON 문서의 형태만** 정의하고, 값의 의미 검증은 하지 않는다.
@@ -764,13 +764,13 @@ class NodeTest: node: str; cases: list[TestCase]
 타입 선언**에 적용되는 규칙이지 엔진 구현에 적용되는 규칙이 아니다.
 
 ⚠ **`targets` / `compare` 는 `list = []` 기본값**이다. `kind: verify` 인데 비어 있지 않으면
-파이프라인 검사가 잡는다. `STR-CMP-003`(2개 미만) 판정에도 빈 리스트로 충분하다.
+파이프라인 검사가 잡는다. `LNT-CMP-003`(2개 미만) 판정에도 빈 리스트로 충분하다.
 
 ---
 
-### `src/strictler/errors.py` — ✅ **완성**
+### `src/lintomata/errors.py` — ✅ **완성**
 
-**책임.** 결과 1건(`Finding`)과 도구 자신의 예외(`StrictlerError`).
+**책임.** 결과 1건(`Finding`)과 도구 자신의 예외(`LintomataError`).
 
 **의존.** 없음.
 **근거.** `schema.md` 9·11절.
@@ -787,7 +787,7 @@ class Finding:      status: Status
                     message: str = ""        # 규칙 message + guide 가 이어붙은 것
                     cause: NotRunCause | None = None
 
-class StrictlerError(Exception):
+class LintomataError(Exception):
     def __init__(self, message: str, findings: list[Finding] | None = None)
     .message: str
     .findings: list[Finding]
@@ -798,12 +798,12 @@ class StrictlerError(Exception):
 필요하면 conductor 를 거쳐 `schema.md` 부터 고친다.
 
 **★ 반드시 지킬 것.** 위반(`violation`)과 not run 은 **정상 결과**다 — `Finding` 으로 수집한다.
-`StrictlerError` 는 **도구가 못 돈 것**에만 쓴다. 이 구분이 흐려지면 위반을 오류처럼 다루거나
+`LintomataError` 는 **도구가 못 돈 것**에만 쓴다. 이 구분이 흐려지면 위반을 오류처럼 다루거나
 (불필요한 복구 로직) 오류를 위반처럼 다루게 된다(거짓 리포트).
 
 ---
 
-### `src/strictler/rules.py` — Step 1-b
+### `src/lintomata/rules.py` — Step 1-b
 
 **책임.** 규칙 테이블 54개와 `Finding` 생성 헬퍼. **`guide` 를 메시지 뒤에 이어붙이는 자리.**
 
@@ -828,11 +828,11 @@ def finding(rule_id: str, *, status: Status = "error", path: str = "", node: str
 
 **`finding()` 이 다른 모듈들이 가장 많이 쓰는 진입점**이다. 검사기는 규칙 id 와 자리표시자 값만 준다.
 `rules.md` 2절 표의 `when` 열: N=`node-register`, P=`pipeline-register`, R=`run`, T=`test`.
-`STR-REG-004`/`-005` 는 목록 표시 전용이라 `list`.
+`LNT-REG-004`/`-005` 는 목록 표시 전용이라 `list`.
 
 ---
 
-### `src/strictler/report.py` — Step 1-b
+### `src/lintomata/report.py` — Step 1-b
 
 **책임.** 값 검증 리포트와 비교 리포트. **둘을 섞지 않는다** (필드가 안 겹친다).
 
@@ -877,7 +877,7 @@ def write_compare_report(report: CompareReport, path: Path) -> None
 
 ---
 
-### `src/strictler/refs.py` — Step 1-c
+### `src/lintomata/refs.py` — Step 1-c
 
 **책임.** 참조 문법 4종 전개와 경로 규칙.
 
@@ -901,18 +901,18 @@ def expand_state(value: Any, state: Mapping[str,Any]) -> Any
 ```
 
 **경로 규칙:** `~` 전개 → 환경변수 전개 → 절대경로가 아니면 **무조건 에러**.
-`STR-PATH-001`(상대경로) / `-002`(env 미정의) / `-003`(env 값이 상대경로) / `-004`(`path:true` config).
+`LNT-PATH-001`(상대경로) / `-002`(env 미정의) / `-003`(env 값이 상대경로) / `-004`(`path:true` config).
 
 **`expand_config` 의 `target`:** 주어지면 **`targets.<target>` 에서 먼저 찾고 없으면 공통에서**.
-둘 다 없으면 `STR-CMP-004`. 문자열 전체가 참조 하나면 **타입을 보존해** 값 자체를 준다
+둘 다 없으면 `LNT-CMP-004`. 문자열 전체가 참조 하나면 **타입을 보존해** 값 자체를 준다
 (`"${config.expectedFields}"` → `2`, 문자열 `"2"` 가 아니라).
 
 **`expand_state`:** `__` 접두는 엔진 제공 필드 예약(`__startedAt`, epoch ms 정수).
-사용자 상태 이름에 쓰면 `STR-STATE-001`.
+사용자 상태 이름에 쓰면 `LNT-STATE-001`.
 
 ---
 
-### `src/strictler/deps.py` — 의존성 확인 (추가)
+### `src/lintomata/deps.py` — 의존성 확인 (추가)
 
 **책임.** 스크립트의 PEP 723 헤더를 읽고 **선언한 패키지가 현재 환경에 있는지** 본다.
 **격리를 만들지 않는다** — 확인하고 설치 명령을 안내하는 것이 전부다.
@@ -928,7 +928,7 @@ class Declared:                   # frozen dataclass
     requires_python: str = ""
     dependencies: tuple[str, ...] = ()   # PEP 508 문자열 원문
 
-def read_header(source: str, path: str) -> tuple[Declared, list[Finding]]   # STR-DEP-002
+def read_header(source: str, path: str) -> tuple[Declared, list[Finding]]   # LNT-DEP-002
 def declared_dependencies(source: str) -> tuple[str, ...]   # 관대하게 — 등록소 기록용
 def check_dependencies(source: str, path: str, known: Iterable[str] = ()) -> list[Finding]
 def install_command(requirement: str, known: Iterable[str] = ()) -> str
@@ -948,17 +948,17 @@ def missing_submodule_hint(module: str) -> str              # `a.b` 인데 `a` �
 그때는 **형제 파일 문단을 붙이지 않는다**(원인이 확정된 자리에 다른 방향을 얹지 않는다).
 
 **`uv run --script` 로 격리 프로세스를 띄우지 않는다** — `schema.md` 16절의 폐기된 안이다.
-스크립트는 strictler 와 같은 프로세스에 로드되므로 `import` 가 strictler 환경에서 풀린다.
+스크립트는 lintomata 와 같은 프로세스에 로드되므로 `import` 가 lintomata 환경에서 풀린다.
 
 **등록소 전체를 훑어 충돌 쌍을 찾는 코드를 만들지 마라.** 환경에는 패키지가 한 벌만
-깔리므로 호환 불가 요구가 둘 있으면 반드시 한쪽이 `STR-DEP-003` 에 걸린다.
+깔리므로 호환 불가 요구가 둘 있으면 반드시 한쪽이 `LNT-DEP-003` 에 걸린다.
 
 **설치 여부·버전은 `importlib.metadata`**, 이름 정규화는 **PEP 503**(`My_Pkg == my-pkg`).
 환경 마커가 이 환경에 해당하지 않는 요구는 건너뛴다.
 
 ---
 
-### `src/strictler/typesys/primitives.py` — Step 1-a
+### `src/lintomata/typesys/primitives.py` — Step 1-a
 
 **책임.** 허용 타입 어휘와 타입 표현 파싱.
 
@@ -982,12 +982,12 @@ def check_allowed(t: TypeRef, *, known: frozenset[str], path: str, node: str = "
 ```
 
 `known` = 그 스크립트가 선언한 dataclass 이름들.
-`dict`→`STR-TYPE-001`, `Optional`/`None`→`STR-TYPE-002`, 그 밖→`STR-TYPE-003`.
-**파이프라인 `config` 선언의 `type` 도 같은 어휘**를 쓴다(`STR-TYPE-005`) — 어휘를 두 벌 두지 않는다.
+`dict`→`LNT-TYPE-001`, `Optional`/`None`→`LNT-TYPE-002`, 그 밖→`LNT-TYPE-003`.
+**파이프라인 `config` 선언의 `type` 도 같은 어휘**를 쓴다(`LNT-TYPE-005`) — 어휘를 두 벌 두지 않는다.
 
 ---
 
-### `src/strictler/typesys/registry.py` — Step 1-a
+### `src/lintomata/typesys/registry.py` — Step 1-a
 
 **책임.** dataclass 등록기 — 집합 정규화, 부분집합 병합, 그래프 검사용 동일성 판정.
 ⚠ 이름이 `registry` 지만 **등록소(`store`)와 무관하다.** 이건 *타입 등록기*다.
@@ -1022,7 +1022,7 @@ class TypeRegistry:
 
 ---
 
-### `src/strictler/store/entries.py` — Step 1-d
+### `src/lintomata/store/entries.py` — Step 1-d
 
 **책임.** 등록소 인덱스와 CRUD. **저장만 책임진다** — 정적 검사는 `checks` 가 하고 순서는 CLI 가 잡는다.
 
@@ -1040,7 +1040,7 @@ class RegistryEntry:  id: str; kind: EntryKind; name: str; hash: str; registered
                       broken_detail: str = ""
 class RegistryIndex:  version: int = 1; entries: dict[str, RegistryEntry] = {}
 
-def default_home() -> Path            # $STRICTLER_HOME 또는 ~/.strictler
+def default_home() -> Path            # $LINTOMATA_HOME 또는 ~/.lintomata
 def hash_file(path: Path) -> str
 def new_id(kind: EntryKind) -> str    # "nd_e5f6a7b8"
 
@@ -1055,7 +1055,7 @@ class Store:
     def remove(self, entry_id: str) -> None                          # ★ 참조 있어도 막지 않는다
     def path_of(self, entry_id: str) -> Path
     def read(self, entry_id: str) -> str
-    def verify_hash(self, entry_id: str) -> bool                     # STR-REG-001
+    def verify_hash(self, entry_id: str) -> bool                     # LNT-REG-001
     def declared_dependencies(self) -> list[str]     # 전 스크립트 PEP 723 선언의 합집합
 ```
 
@@ -1067,12 +1067,12 @@ class Store:
 
 ---
 
-### `src/strictler/store/graph.py` — Step 1-d
+### `src/lintomata/store/graph.py` — Step 1-d
 
 **책임.** 참조 그래프, 역방향 추적, 깨짐 두 종류 판정.
 
 **의존.** `store.entries`, `errors`, `rules`.
-**근거.** `schema.md` 2절, `rules.md` `STR-REG-004`/`-005`.
+**근거.** `schema.md` 2절, `rules.md` `LNT-REG-004`/`-005`.
 
 ```python
 class RefGraph:
@@ -1082,8 +1082,8 @@ class RefGraph:
     def dependencies(self, entry_id: str) -> list[str]           # 아래쪽
     def dependents(self, entry_id: str) -> list[str]             # 위쪽 1단계
     def transitive_dependents(self, entry_id: str) -> list[str]  # 위쪽 전이적
-    def broken_refs(self) -> list[Finding]                       # STR-REG-004
-    def revalidate(self, store: Store, entry_id: str) -> list[Finding]   # STR-REG-005
+    def broken_refs(self) -> list[Finding]                       # LNT-REG-004
+    def revalidate(self, store: Store, entry_id: str) -> list[Finding]   # LNT-REG-005
 ```
 
 | 깨짐 | 원인 | 참조는 |
@@ -1096,7 +1096,7 @@ class RefGraph:
 
 ---
 
-### `src/strictler/checks/__init__.py` — Step 2-b
+### `src/lintomata/checks/__init__.py` — Step 2-b
 
 **책임.** 등록/수정 시점 정적 검사의 진입점. 종류별 검사기로 넘기는 디스패처.
 
@@ -1111,7 +1111,7 @@ def check_registration(kind: EntryKind, source: Path, store: Store) -> list[Find
 
 ---
 
-### `src/strictler/checks/script.py` — Step 2-a
+### `src/lintomata/checks/script.py` — Step 2-a
 
 **책임.** 스크립트 AST 검사. **스크립트를 돌리지 않는다** — `ast` 로 선언과 형식만 본다.
 
@@ -1141,7 +1141,7 @@ def check_node_type_form(contract, node_type: NodeType) -> list[Finding]   # CON
 def check_tool_calls(contract, tool: dict[str, object]) -> list[Finding]   # TOOL-001/002 (실행 시점)
 ```
 
-**`check_script` 는 `deps.check_dependencies` 도 함께 돌린다** (`STR-DEP-001/002/003`).
+**`check_script` 는 `deps.check_dependencies` 도 함께 돌린다** (`LNT-DEP-001/002/003`).
 헤더를 읽어 지금 환경에 있는지 `importlib.metadata` 로 보기만 하므로
 *"스크립트를 돌리지 않는다"* 는 그대로다.
 
@@ -1150,8 +1150,8 @@ def check_tool_calls(contract, tool: dict[str, object]) -> list[Finding]   # TOO
 필드를 추가해야 하면 conductor 에게 보고하고 이 문서를 먼저 고칠 것.
 
 **노드 타입별로 갈리는 유일한 검사가 `check_node_type_form` 이다:**
-- Reckon → `Args.params` 에 기댓값 필드 필수 (`STR-CONTRACT-005`)
-- Action → `Args.input` 타입 == 반환 타입 (`STR-CONTRACT-006`)
+- Reckon → `Args.params` 에 기댓값 필드 필수 (`LNT-CONTRACT-005`)
+- Action → `Args.input` 타입 == 반환 타입 (`LNT-CONTRACT-006`)
 
 **완벽한 정적 검사는 목표가 아니다.** `__import__("ti"+"me")` 는 못 막는다.
 사전에 추측할 수 있는 행위만 막고 **에러 메시지의 자연어 가이드로 메운다** —
@@ -1159,7 +1159,7 @@ def check_tool_calls(contract, tool: dict[str, object]) -> list[Finding]   # TOO
 
 ---
 
-### `src/strictler/checks/node.py` — Step 2-b
+### `src/lintomata/checks/node.py` — Step 2-b
 
 **책임.** 노드 JSON 로드와 등록 시 검증. = 노드 JSON 검사 + **그 스크립트를 노드 타입과 함께 검사**.
 
@@ -1182,7 +1182,7 @@ def check_node(node: Node, source_path: str, *, store: Store,
 
 ---
 
-### `src/strictler/checks/pipeline.py` — Step 2-b
+### `src/lintomata/checks/pipeline.py` — Step 2-b
 
 **책임.** 파이프라인 JSON 로드와 등록 시 검증.
 
@@ -1210,16 +1210,16 @@ def check_compare(pipeline, contracts_by_target: dict[str, dict[str, ScriptContr
 `X ──▶ Action ──▶ Y` 는 실은 `X ──▶ Y` 이므로 **Action 을 건너뛰고** 상·하단 계약을 대조한다.
 
 **`check_compare` 주의:** target 별로 갈려도 되는 것은 **`script` 경로와 `Args.params` 뿐**이다.
-input/output/state 타입은 노드에 귀속되어 공통이어야 비교가 성립한다 (`STR-CMP-002`).
+input/output/state 타입은 노드에 귀속되어 공통이어야 비교가 성립한다 (`LNT-CMP-002`).
 
 ---
 
-### `src/strictler/checks/reachability.py` — Step 2-c
+### `src/lintomata/checks/reachability.py` — Step 2-c
 
 **책임.** 도달 가능성 판정기. **파이프라인 등록 시의 핵심 검사.**
 
 **의존.** `model`, `errors`, `rules`.
-**근거.** `schema.md` 13절, `rules.md` `STR-STATE-006`/`-007`.
+**근거.** `schema.md` 13절, `rules.md` `LNT-STATE-006`/`-007`.
 
 ```python
 class ReachResult:
@@ -1246,7 +1246,7 @@ def check_reachability(pipeline: Pipeline, node_states: dict[str, dict[str,str]]
 
 ---
 
-### `src/strictler/engine/state.py` — Step 3-a
+### `src/lintomata/engine/state.py` — Step 3-a
 
 **책임.** 파이프라인 상태머신. **전이는 런타임이 수행하고 노드는 읽기만 한다.**
 
@@ -1274,7 +1274,7 @@ class StateMachine:
 
 ---
 
-### `src/strictler/engine/exec.py` — Step 3-a
+### `src/lintomata/engine/exec.py` — Step 3-a
 
 **책임.** 스크립트 하나를 로드·실행하고 input/output 을 검증한다.
 
@@ -1294,8 +1294,8 @@ def validate_output(contract, value, registry: TypeRegistry, *, path: str, node:
 **샌드박싱은 하지 않는다.** ESLint·vite·jest 전부 사용자 코드를 그냥 로드해 실행한다 —
 lint 계열의 표준 신뢰 모델을 그대로 따른다.
 
-**의존성 격리도 없다** (`schema.md` 6절). 스크립트는 strictler 와 **같은 프로세스**에
-로드되므로 `import` 가 strictler 환경에서 풀린다 — `uv run` 이 바깥에서 격리해 준다는
+**의존성 격리도 없다** (`schema.md` 6절). 스크립트는 lintomata 와 **같은 프로세스**에
+로드되므로 `import` 가 lintomata 환경에서 풀린다 — `uv run` 이 바깥에서 격리해 준다는
 것은 **사실이 아니다**(`uv tool install` 로 전역 설치하면 그 "바깥" 이 없다).
 `load_script`/`invoke` 는 `ModuleNotFoundError` 가 났을 때 그 모듈이 PEP 723 헤더에
 선언돼 있으면 **설치 명령을 에러 메시지에 붙인다**(`deps.missing_module_hint`).
@@ -1307,7 +1307,7 @@ lint 계열의 표준 신뢰 모델을 그대로 따른다.
 
 ---
 
-### `src/strictler/engine/result.py` — ✅ **확정 (Step 3 시작 전)**
+### `src/lintomata/engine/result.py` — ✅ **확정 (Step 3 시작 전)**
 
 **책임.** `runtime` 과 `compare` 가 **둘 다** 쓰는 실행 결과 자료구조. 이게 전부다 —
 로직은 없다.
@@ -1334,7 +1334,7 @@ class RunResult:
 
 ---
 
-### `src/strictler/engine/runtime.py` — Step 3-a
+### `src/lintomata/engine/runtime.py` — Step 3-a
 
 **책임.** 값 검증 파이프라인 구동, `not_run` 전파, Spec 단위 실행.
 
@@ -1344,12 +1344,12 @@ class RunResult:
 **★ `engine.compare` 를 top-level 로 import 하지 마라.** `RunResult`/`NodeOutcome` 은
 `engine.result` 에서 가져온다. `kind` 디스패치 구조는 그대로 두되, `run_plan_item` **안에서**
 ```python
-from strictler.engine.compare import run_compare_pipeline
+from lintomata.engine.compare import run_compare_pipeline
 ```
 로 부른다. top-level 로 올리면 `compare` 와 양방향이 되어 `ImportError` 다.
 
 ```python
-from strictler.engine.result import NodeOutcome, RunResult   # ← 여기서 온다
+from lintomata.engine.result import NodeOutcome, RunResult   # ← 여기서 온다
 
 def run_spec(spec: Spec, *, store: Store, env: Mapping[str,str],
              started_at_ms: int) -> Report
@@ -1381,7 +1381,7 @@ def topo_order(dag: dict[str, list[str]]) -> list[str]
 
 ---
 
-### `src/strictler/engine/compare.py` — Step 3-b
+### `src/lintomata/engine/compare.py` — Step 3-b
 
 **책임.** 비교 파이프라인 구동 — target 별 실행·취합·동등 비교.
 
@@ -1392,7 +1392,7 @@ def topo_order(dag: dict[str, list[str]]) -> list[str]
 디스패치하므로 반대 방향 import 는 순환이다. 공용 타입은 `engine.result` 에서 가져온다.
 
 ```python
-from strictler.engine.result import RunResult                # ← 여기서 온다
+from lintomata.engine.result import RunResult                # ← 여기서 온다
 
 def resolve_target_config(config: Mapping[str,Any], target: str) -> dict[str,Any]
 def run_compare_pipeline(pipeline: Pipeline, config: Mapping[str,Any], *, store: Store,
@@ -1415,7 +1415,7 @@ def all_same(values: Mapping[str,Any]) -> bool
 
 ---
 
-### `src/strictler/testing/harness.py` — Step 4-a
+### `src/lintomata/testing/harness.py` — Step 4-a
 
 **책임.** 노드 단위테스트 실행. **등록 검사와 달리 스크립트를 실제로 돌린다.**
 
@@ -1433,7 +1433,7 @@ def check_action_transparency(case: TestCase, input_value: Any, output_value: An
 def check_reckon_contrast(cases: list[TestCase], outputs: list[Any]) -> list[Finding]
 ```
 
-**케이스마다 순서대로 3단계:** ① `args` 가 `Args` 선언에 맞나(`STR-TEST-001` — **테스트 쪽이
+**케이스마다 순서대로 3단계:** ① `args` 가 `Args` 선언에 맞나(`LNT-TEST-001` — **테스트 쪽이
 틀린 경우**라 메시지가 달라야 한다) → ② `runNode` 가 예외 없이 끝나나(`-002`) →
 ③ 반환값이 선언된 출력 타입에 맞나(`-003`).
 
@@ -1448,7 +1448,7 @@ def check_reckon_contrast(cases: list[TestCase], outputs: list[Any]) -> list[Fin
 
 ---
 
-### `src/strictler/cli.py` — Step 4-b (골격은 Step 0 완성)
+### `src/lintomata/cli.py` — Step 4-b (골격은 Step 0 완성)
 
 **책임.** argparse 표면과 핸들러 배선.
 
@@ -1465,7 +1465,7 @@ def cmd_add(args)  / cmd_list(args)  / cmd_show(args)
 def cmd_update(args) / cmd_remove(args) / cmd_node_test(args) / cmd_check(args)
 ```
 
-**파싱 구조는 Step 0 에서 완성됐다** (`strictler --help`, `strictler node --help` 동작 확인).
+**파싱 구조는 Step 0 에서 완성됐다** (`lintomata --help`, `lintomata node --help` 동작 확인).
 Step 4-b 는 **핸들러 본체만** 채운다 — 서브커맨드 구조를 바꿔야 하면 conductor 를 거친다.
 
 **종료 코드 규약** (`schema.md` 9절의 4상태와 맞춘다):
@@ -1483,7 +1483,7 @@ Step 4-b 는 **핸들러 본체만** 채운다 — 서브커맨드 구조를 바
 
 ## 3. 전 모듈 공통 — 반드시 지킬 것
 
-1. **위반 ≠ 오류.** 위반과 not run 은 `Finding` 으로 수집하고, `StrictlerError` 는 도구가 못 돈 것에만.
+1. **위반 ≠ 오류.** 위반과 not run 은 `Finding` 으로 수집하고, `LintomataError` 는 도구가 못 돈 것에만.
 2. **복구 로직을 만들지 마라.** 재시도·대체 경로·`skipWhen`·전이 조건 표현식 — 전부 폐기된 안이다.
 3. **`schema.md` 16절의 폐기된 안을 다시 제안하지 마라.**
 4. **에러 메시지에 자연어 가이드를 넣어라.** 읽는 주체가 AI 이고, 그 문구가 곧 자기 수정 루프의 성능이다.

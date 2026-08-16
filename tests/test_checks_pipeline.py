@@ -15,11 +15,11 @@ import json
 
 import pytest
 
-from strictler import rules
-from strictler.checks import pipeline as pipe
-from strictler.errors import Finding
-from strictler.model import Pipeline
-from strictler.store.entries import Store
+from lintomata import rules
+from lintomata.checks import pipeline as pipe
+from lintomata.errors import Finding
+from lintomata.model import Pipeline
+from lintomata.store.entries import Store
 from tests._fakes import ScriptStub, contract, stub_reachability
 
 
@@ -91,24 +91,24 @@ def test_build_dag_takes_edges_from_inputs_only():
 
 def test_check_cycle_reports_the_loop_path():
     findings = pipe.check_cycle({"a": ["b"], "b": ["a"]}, "p.json")
-    assert ids(findings) == ["STR-GRAPH-001"]
+    assert ids(findings) == ["LNT-GRAPH-001"]
     assert "→" in findings[0].message
 
 
 def test_check_cycle_reports_self_loop():
     findings = pipe.check_cycle({"a": ["a"]}, "p.json")
-    assert ids(findings) == ["STR-GRAPH-001"]
+    assert ids(findings) == ["LNT-GRAPH-001"]
 
 
 def test_check_cycle_reports_each_loop_once():
     """같은 순환을 진입점마다 다시 내면 리포트가 부풀어 원인이 묻힌다."""
     findings = pipe.check_cycle({"a": ["b"], "b": ["c"], "c": ["a"]}, "p.json")
-    assert ids(findings) == ["STR-GRAPH-001"]
+    assert ids(findings) == ["LNT-GRAPH-001"]
 
 
 def test_orphan_node_is_reported():
     findings = pipe.check_cycle({"a": [], "b": ["a"], "lonely": []}, "p.json")
-    assert ids(findings) == ["STR-GRAPH-002"]
+    assert ids(findings) == ["LNT-GRAPH-002"]
     assert findings[0].node == "lonely"
 
 
@@ -137,7 +137,7 @@ def test_서로_다른_앞단_둘은_등록_시점에_걸린다():
     findings = pipe.check_ambiguous_input(
         make(nodes=[n("a"), n("b"), n("c", inputs={"x": "a", "y": "b"})]), "p.json"
     )
-    assert ids(findings) == ["STR-GRAPH-003"]
+    assert ids(findings) == ["LNT-GRAPH-003"]
     assert findings[0].node == "c"
     assert "a, b" in findings[0].message
 
@@ -196,7 +196,7 @@ def test_wiring_is_strict_equality_not_subset():
         "y": contract("y.py", input_fields={"count": "int", "label": "str"}),
     }
     findings = wired([n("x"), n("y", inputs={"v": "x"})], contracts)
-    assert ids(findings) == ["STR-TYPE-004"]
+    assert ids(findings) == ["LNT-TYPE-004"]
     assert findings[0].node == "y"
 
 
@@ -206,7 +206,7 @@ def test_wiring_reports_missing_declaration():
         "y": contract("y.py", input_fields={"count": "int"}),
     }
     findings = wired([n("x"), n("y", inputs={"v": "x"})], contracts)
-    assert ids(findings) == ["STR-TYPE-004"]
+    assert ids(findings) == ["LNT-TYPE-004"]
     assert "선언 없음" in findings[0].message
 
 
@@ -258,7 +258,7 @@ def test_action_transparency_does_not_hide_a_real_mismatch():
         node_types={"x": "sense", "click": "action", "y": "reckon"},
     )
     assert bool(direct) == bool(through) is True
-    assert set(ids(direct)) == set(ids(through)) == {"STR-TYPE-004"}
+    assert set(ids(direct)) == set(ids(through)) == {"LNT-TYPE-004"}
     assert "y" in {item.node for item in through}
 
 
@@ -278,14 +278,14 @@ def test_action_contract_itself_is_checked_against_its_producer():
         {"x": x, "click": click, "y": y},
         node_types={"x": "sense", "click": "action", "y": "reckon"},
     )
-    assert ids(findings) == ["STR-TYPE-004"]
+    assert ids(findings) == ["LNT-TYPE-004"]
     assert findings[0].node == "click"
 
 
 def test_action_transparency_holds_with_an_empty_node_types_map():
     """어느 노드가 Action 인지 모르는 채로 대조해도 판정이 달라지면 안 된다.
 
-    올바른 Action 은 `input == output`(`STR-CONTRACT-006`)이므로 건너뛰든
+    올바른 Action 은 `input == output`(`LNT-CONTRACT-006`)이므로 건너뛰든
     엣지를 그대로 대조하든 결론이 같다.
     """
     x = contract("x.py", output_fields={"count": "int"})
@@ -338,7 +338,7 @@ def test_action_chain_still_carries_the_upstream_definition_to_the_far_end():
         {"x": x, "a1": a1, "a2": a2, "y": y},
         node_types={"x": "sense", "a1": "action", "a2": "action", "y": "reckon"},
     )
-    assert ids(findings) == ["STR-TYPE-004"]
+    assert ids(findings) == ["LNT-TYPE-004"]
     assert findings[0].node == "y"
 
 
@@ -355,7 +355,7 @@ def test_state_mapping_missing_is_state_002():
         contracts,
         "p.json",
     )
-    assert ids(findings) == ["STR-STATE-002"]
+    assert ids(findings) == ["LNT-STATE-002"]
     assert "stop" in findings[0].message
 
 
@@ -369,7 +369,7 @@ def test_mapped_state_not_in_values_is_state_003():
         contracts,
         "p.json",
     )
-    assert ids(findings) == ["STR-STATE-003"]
+    assert ids(findings) == ["LNT-STATE-003"]
 
 
 def test_when_referencing_undeclared_state_is_state_004():
@@ -383,14 +383,14 @@ def test_when_referencing_undeclared_state_is_state_004():
         contracts,
         "p.json",
     )
-    assert ids(findings) == ["STR-STATE-004"]
+    assert ids(findings) == ["LNT-STATE-004"]
 
 
 def test_reserved_prefix_in_state_values_is_state_001():
     findings = pipe.check_state_mapping(
         make(states={"values": ["idle", "__startedAt"], "initial": "idle"}), {}, "p.json"
     )
-    assert ids(findings) == ["STR-STATE-001"]
+    assert ids(findings) == ["LNT-STATE-001"]
 
 
 def test_initial_state_outside_values_is_reported():
@@ -426,7 +426,7 @@ def test_transitions_check_both_names():
         ),
         "p.json",
     )
-    assert ids(findings) == ["STR-REF-004", "STR-STATE-005"]
+    assert ids(findings) == ["LNT-REF-004", "LNT-STATE-005"]
 
 
 def test_transitions_only_carry_time():
@@ -456,7 +456,7 @@ def test_config_decl_type_must_be_primitive_vocabulary():
         ),
         "p.json",
     )
-    assert ids(findings) == ["STR-TYPE-005", "STR-TYPE-005"]
+    assert ids(findings) == ["LNT-TYPE-005", "LNT-TYPE-005"]
     assert {item.node for item in findings} == {"bad", "alsoBad"}
 
 
@@ -499,7 +499,7 @@ def test_config_default_is_checked_against_its_own_declaration():
         "p.json",
         env={},
     )
-    assert ids(findings) == ["STR-CONFIG-002"]
+    assert ids(findings) == ["LNT-CONFIG-002"]
     assert findings[0].node == "default"
     assert resolved == {"buttonScript": {"legacy": "/abs/l.py"}}
 
@@ -528,14 +528,14 @@ def test_config_default_also_obeys_the_path_flag():
         "p.json",
         env={},
     )
-    assert ids(with_flag) == ["STR-PATH-004"]
+    assert ids(with_flag) == ["LNT-PATH-004"]
 
 
 def test_config_required_missing_is_config_001():
     _, findings = pipe.check_config_values(
         make(config={"url": {"type": "str", "required": True}}), {}, "p.json", env={}
     )
-    assert ids(findings) == ["STR-CONFIG-001"]
+    assert ids(findings) == ["LNT-CONFIG-001"]
     assert "url" in findings[0].message
 
 
@@ -551,7 +551,7 @@ def test_config_type_mismatch_is_config_002_and_bool_is_not_int():
         "p.json",
         env={},
     )
-    assert ids(findings) == ["STR-CONFIG-002", "STR-CONFIG-002"]
+    assert ids(findings) == ["LNT-CONFIG-002", "LNT-CONFIG-002"]
 
 
 def test_config_unknown_key_is_config_003():
@@ -561,11 +561,11 @@ def test_config_unknown_key_is_config_003():
         "p.json",
         env={},
     )
-    assert ids(findings) == ["STR-CONFIG-003"]
+    assert ids(findings) == ["LNT-CONFIG-003"]
 
 
 def test_config_path_true_enforces_path_rule(tmp_path):
-    """★ R1-6 — `STR-PATH-004` 는 여기서 낸다. `refs` 는 기제만 제공한다."""
+    """★ R1-6 — `LNT-PATH-004` 는 여기서 낸다. `refs` 는 기제만 제공한다."""
     decls = {"script": {"type": "str", "required": True, "path": True}}
     _, bad = pipe.check_config_values(
         make(config=decls), {"script": "./rel.py"}, "p.json", env={}
@@ -573,7 +573,7 @@ def test_config_path_true_enforces_path_rule(tmp_path):
     _, good = pipe.check_config_values(
         make(config=decls), {"script": str(tmp_path / "a.py")}, "p.json", env={}
     )
-    assert ids(bad) == ["STR-PATH-004"]
+    assert ids(bad) == ["LNT-PATH-004"]
     assert "절대경로" in bad[0].message
     assert good == []
 
@@ -609,7 +609,7 @@ def test_config_required_may_live_only_in_every_target_scope():
         env={},
     )
     assert filled == []
-    assert ids(hole) == ["STR-CONFIG-001"]
+    assert ids(hole) == ["LNT-CONFIG-001"]
 
 
 # ── 비교 파이프라인 ──────────────────────────────────────────────────────────
@@ -688,7 +688,7 @@ def test_compare_flags_output_type_divergence_in_the_third_target():
         "v3": {"detectButtons": contract("v3.py", input_fields={"html": "str"}, output_fields={"count": "str"})},
     }
     findings = pipe.check_compare(compare_pipeline(), by_target, "p.json")
-    assert ids(findings) == ["STR-CMP-002"]
+    assert ids(findings) == ["LNT-CMP-002"]
     assert findings[0].node == "detectButtons"
 
 
@@ -699,7 +699,7 @@ def test_compare_flags_state_divergence():
         "v3": {"detectButtons": contract("v3.py", output_fields={"c": "int"}, state_fields={"halt": "bool"})},
     }
     findings = pipe.check_compare(compare_pipeline(), by_target, "p.json")
-    assert ids(findings) == ["STR-CMP-002"]
+    assert ids(findings) == ["LNT-CMP-002"]
 
 
 def test_compare_reports_one_finding_per_node_not_per_pair():
@@ -709,19 +709,19 @@ def test_compare_reports_one_finding_per_node_not_per_pair():
         for i, t in enumerate(("legacy", "v2", "v3"))
     }
     findings = pipe.check_compare(compare_pipeline(), diverging, "p.json")
-    assert ids(findings) == ["STR-CMP-002"]
+    assert ids(findings) == ["LNT-CMP-002"]
 
 
 def test_compare_needs_at_least_two_targets():
     findings = pipe.check_compare(compare_pipeline(targets=["legacy"]), {}, "p.json")
-    assert ids(findings) == ["STR-CMP-003"]
+    assert ids(findings) == ["LNT-CMP-003"]
 
 
 def test_compare_node_must_exist():
     findings = pipe.check_compare(
         compare_pipeline(compare=["detectButtons", "ghost"]), {}, "p.json"
     )
-    assert ids(findings) == ["STR-REF-005"]
+    assert ids(findings) == ["LNT-REF-005"]
 
 
 def test_verify_pipeline_must_not_carry_compare_sections():
@@ -795,7 +795,7 @@ def test_check_pipeline_catches_wiring_mismatch_end_to_end(tmp_path, monkeypatch
         ]
     )
     _, findings = pipe.check_pipeline(pipeline, "p.json", store=store, env={})
-    assert ids(findings) == ["STR-TYPE-004"]
+    assert ids(findings) == ["LNT-TYPE-004"]
 
 
 def test_check_pipeline_reports_unknown_input_node(tmp_path, monkeypatch, store):
@@ -807,21 +807,21 @@ def test_check_pipeline_reports_unknown_input_node(tmp_path, monkeypatch, store)
         ]
     )
     _, findings = pipe.check_pipeline(pipeline, "p.json", store=store, env={})
-    assert "STR-REF-003" in ids(findings)
+    assert "LNT-REF-003" in ids(findings)
 
 
 def test_check_pipeline_reports_missing_node_file(tmp_path, monkeypatch, store):
     build_project(tmp_path, monkeypatch)
     pipeline = make(nodes=[n("ghost", source=str(tmp_path / "nope.json"))])
     _, findings = pipe.check_pipeline(pipeline, "p.json", store=store, env={})
-    assert ids(findings) == ["STR-REF-002"]
+    assert ids(findings) == ["LNT-REF-002"]
 
 
 def test_check_pipeline_reports_unregistered_node_ref(tmp_path, monkeypatch, store):
     build_project(tmp_path, monkeypatch)
     pipeline = make(nodes=[n("x", source="${ref.nd_deadbeef}")])
     _, findings = pipe.check_pipeline(pipeline, "p.json", store=store, env={})
-    assert ids(findings) == ["STR-REG-002"]
+    assert ids(findings) == ["LNT-REG-002"]
 
 
 def test_check_pipeline_keeps_checking_after_one_node_breaks(tmp_path, monkeypatch, store):
@@ -836,8 +836,8 @@ def test_check_pipeline_keeps_checking_after_one_node_breaks(tmp_path, monkeypat
         transitions=[{"after": "ghost", "to": "idle"}],
     )
     _, findings = pipe.check_pipeline(pipeline, "p.json", store=store, env={})
-    assert "STR-REF-002" in ids(findings)
-    assert "STR-REF-004" in ids(findings)
+    assert "LNT-REF-002" in ids(findings)
+    assert "LNT-REF-004" in ids(findings)
 
 
 def test_check_pipeline_duplicate_node_id_is_reported(tmp_path, monkeypatch, store):
@@ -933,7 +933,7 @@ def compare_project(tmp_path, monkeypatch, outs):
 
 
 def test_recheck_resolved_flags_target_type_divergence(tmp_path, monkeypatch, store):
-    """★ R3-4 — `STR-CMP-002` 는 **Spec 실행 시점**에 난다.
+    """★ R3-4 — `LNT-CMP-002` 는 **Spec 실행 시점**에 난다.
 
     등록 시점에는 어느 스크립트가 도는지 알 수 없어 판정 자체가 불가능하다.
     셋 중 **하나만** 어긋나도 위반이다 — 짝지어 비교하는 것이 아니다.
@@ -946,7 +946,7 @@ def test_recheck_resolved_flags_target_type_divergence(tmp_path, monkeypatch, st
     findings = pipe.recheck_resolved(
         pipeline, config, store=store, env={}, source_path="p.json"
     )
-    assert ids(findings) == ["STR-CMP-002"]
+    assert ids(findings) == ["LNT-CMP-002"]
     assert findings[0].node == "detectButtons"
 
 
@@ -971,13 +971,13 @@ def test_recheck_resolved_runs_script_checks_on_target_scripts(
         tmp_path, monkeypatch, {"legacy": "int", "v2": "int"}
     )
     stub.findings[str(scripts["v2"])] = [
-        Finding(status="violation", rule_id="STR-BAN-002", message="랜덤을 썼습니다.")
+        Finding(status="violation", rule_id="LNT-BAN-002", message="랜덤을 썼습니다.")
     ]
 
     findings = pipe.recheck_resolved(
         pipeline, config, store=store, env={}, source_path="p.json"
     )
-    assert ids(findings) == ["STR-BAN-002"]
+    assert ids(findings) == ["LNT-BAN-002"]
     assert findings[0].node == "detectButtons"
     # 노드 타입을 같이 넘겨야 Reckon·Action 형식 검사가 성립한다.
     assert set(stub.seen_types) == {(str(p), "perceive") for p in scripts.values()}
@@ -1002,7 +1002,7 @@ def test_recheck_resolved_는_target_스크립트의_라이브러리_배선도_�
     findings = pipe.recheck_resolved(
         pipeline, config, store=store, env={}, source_path="p.json"
     )
-    assert ids(findings) == ["STR-LIB-001"]
+    assert ids(findings) == ["LNT-LIB-001"]
     # 노드의 `info.name` 은 `detect` 다. **파이프라인 문맥의 이름은 노드 id 하나다.**
     assert findings[0].node == "detectButtons"
 
@@ -1016,7 +1016,7 @@ def test_recheck_resolved_는_라이브러리_결과에_노드_id_를_덮어쓴�
     (`detect` / `detectButtons`), `not run` 전파는 노드 id 로 대조하므로 여파가
     통째로 어긋난다. 그래서 **발신처가 뭘 달고 오든** 여기서 노드 id 로 통일한다.
     """
-    from strictler.checks import node as node_checks
+    from lintomata.checks import node as node_checks
 
     pipeline, config, _, _ = compare_project(
         tmp_path, monkeypatch, {"legacy": "int", "v2": "int"}
@@ -1041,7 +1041,7 @@ def test_recheck_resolved_reports_config_that_no_target_fills(
     findings = pipe.recheck_resolved(
         pipeline, {}, store=store, env={}, source_path="p.json"
     )
-    assert ids(findings) == ["STR-CMP-004", "STR-CMP-004"]
+    assert ids(findings) == ["LNT-CMP-004", "LNT-CMP-004"]
 
 
 def verify_project(tmp_path, monkeypatch, *, detect_input, state_fields=None):
@@ -1108,7 +1108,7 @@ def test_recheck_resolved_rechecks_wiring_with_the_script_spec_chose(
     findings = pipe.recheck_resolved(
         bad, bad_config, store=store, env={}, source_path="p.json"
     )
-    assert ids(findings) == ["STR-TYPE-004"]
+    assert ids(findings) == ["LNT-TYPE-004"]
 
 
 def test_recheck_resolved_rechecks_state_mapping(tmp_path, monkeypatch, store):
@@ -1119,7 +1119,7 @@ def test_recheck_resolved_rechecks_state_mapping(tmp_path, monkeypatch, store):
     findings = pipe.recheck_resolved(
         pipeline, config, store=store, env={}, source_path="p.json"
     )
-    assert ids(findings) == ["STR-STATE-002"]
+    assert ids(findings) == ["LNT-STATE-002"]
 
 
 def test_recheck_resolved_does_not_silently_pass_an_unfilled_script(
@@ -1144,33 +1144,33 @@ def test_recheck_resolved_does_not_silently_pass_an_unfilled_script(
 @pytest.mark.parametrize(
     "rule_id, fields",
     [
-        ("STR-REF-002", {"source": "s"}),
-        ("STR-REF-003", {"name": "x"}),
-        ("STR-REF-004", {"name": "x"}),
-        ("STR-REF-005", {"name": "x"}),
-        ("STR-GRAPH-001", {"cycle": "a → a"}),
-        ("STR-GRAPH-002", {"name": "x"}),
-        ("STR-GRAPH-003", {"nodes": "a, b"}),
-        ("STR-TYPE-004", {"out": "a", "in": "b"}),
-        ("STR-TYPE-005", {"type": "dict"}),
-        ("STR-STATE-001", {"name": "__x"}),
-        ("STR-STATE-002", {"names": "stop"}),
-        ("STR-STATE-003", {"name": "s"}),
-        ("STR-STATE-004", {"name": "s"}),
-        ("STR-STATE-005", {"name": "s"}),
-        ("STR-CONFIG-001", {"names": "url"}),
-        ("STR-CONFIG-002", {"name": "n", "declared": "int", "given": "'x'"}),
-        ("STR-CONFIG-003", {"name": "typo"}),
-        ("STR-CMP-002", {"node": "detect"}),
-        ("STR-CMP-003", {"count": 1}),
-        ("STR-PATH-004", {"name": "s", "value": "'./x'"}),
-        ("STR-REG-002", {"id": "nd_x"}),
+        ("LNT-REF-002", {"source": "s"}),
+        ("LNT-REF-003", {"name": "x"}),
+        ("LNT-REF-004", {"name": "x"}),
+        ("LNT-REF-005", {"name": "x"}),
+        ("LNT-GRAPH-001", {"cycle": "a → a"}),
+        ("LNT-GRAPH-002", {"name": "x"}),
+        ("LNT-GRAPH-003", {"nodes": "a, b"}),
+        ("LNT-TYPE-004", {"out": "a", "in": "b"}),
+        ("LNT-TYPE-005", {"type": "dict"}),
+        ("LNT-STATE-001", {"name": "__x"}),
+        ("LNT-STATE-002", {"names": "stop"}),
+        ("LNT-STATE-003", {"name": "s"}),
+        ("LNT-STATE-004", {"name": "s"}),
+        ("LNT-STATE-005", {"name": "s"}),
+        ("LNT-CONFIG-001", {"names": "url"}),
+        ("LNT-CONFIG-002", {"name": "n", "declared": "int", "given": "'x'"}),
+        ("LNT-CONFIG-003", {"name": "typo"}),
+        ("LNT-CMP-002", {"node": "detect"}),
+        ("LNT-CMP-003", {"count": 1}),
+        ("LNT-PATH-004", {"name": "s", "value": "'./x'"}),
+        ("LNT-REG-002", {"id": "nd_x"}),
     ],
 )
 def test_this_module_supplies_every_slot_each_rule_declares(rule_id, fields):
     """★ 이 모듈이 쓰는 규칙마다 `Rule.slots` 를 하나도 안 빠뜨렸는지.
 
-    슬롯이 비면 `rules.finding()` 이 `StrictlerError` 를 내면서 **원래 나와야 할
+    슬롯이 비면 `rules.finding()` 이 `LintomataError` 를 내면서 **원래 나와야 할
     규칙 id 가 사라진다** — 리포트가 원인을 못 짚게 된다. 위 테스트들이 실제
     오류 경로를 태워 `rule_id` 를 단언하고, 여기서는 슬롯 집합 자체를 못 박는다.
     """

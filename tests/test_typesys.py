@@ -2,7 +2,7 @@
 
 `check_allowed` 와 등록기는 **진짜 `rules.finding()`** 으로 `Finding` 을 만든다.
 여기에 대역을 끼우면 **슬롯 누락이 통째로 가려진다** — 실제로 그랬고, 그 탓에
-`STR-TYPE-001~003` 을 내는 유일한 자리가 셋 다 `StrictlerError` 로 터지는 것을
+`LNT-TYPE-001~003` 을 내는 유일한 자리가 셋 다 `LintomataError` 로 터지는 것을
 Step 2 까지 아무도 못 봤다. 대역을 두지 않는 것이 이 파일의 계약이다.
 """
 
@@ -13,8 +13,8 @@ import re
 import pytest
 from pydantic import ValidationError
 
-from strictler.errors import Finding, StrictlerError
-from strictler.typesys.primitives import (
+from lintomata.errors import Finding, LintomataError
+from lintomata.typesys.primitives import (
     FORBIDDEN,
     TypeRef,
     check_allowed,
@@ -23,7 +23,7 @@ from strictler.typesys.primitives import (
     is_primitive,
     parse_type,
 )
-from strictler.typesys.registry import DataclassSpec, FieldSpec, TypeKey, TypeRegistry
+from lintomata.typesys.registry import DataclassSpec, FieldSpec, TypeKey, TypeRegistry
 
 
 def dc(name: str, origin: str = "a.py", **fields: str) -> DataclassSpec:
@@ -71,7 +71,7 @@ def test_parse_type_reads_union_so_optional_gets_a_proper_rule() -> None:
 
 @pytest.mark.parametrize("expr", ["", "   ", "list[str", "list[]", "list[str] junk", "[str]"])
 def test_parse_type_rejects_garbage(expr: str) -> None:
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         parse_type(expr)
 
 
@@ -84,7 +84,7 @@ def test_primitive_and_list_predicates() -> None:
 
 
 def test_element_type_of_non_list_is_a_tool_error() -> None:
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         element_type(parse_type("int"))
 
 
@@ -102,20 +102,20 @@ def test_check_allowed_accepts_vocabulary(expr: str) -> None:
 
 @pytest.mark.parametrize("expr", ["dict", "dict[str, int]", "Dict[str, int]", "list[dict]"])
 def test_dict_is_rejected(expr: str) -> None:
-    assert ids(check_allowed(parse_type(expr), known=KNOWN, path="p")) == ["STR-TYPE-001"]
+    assert ids(check_allowed(parse_type(expr), known=KNOWN, path="p")) == ["LNT-TYPE-001"]
 
 
 @pytest.mark.parametrize(
     "expr", ["Optional[str]", "typing.Optional[str]", "None", "NoneType", "str | None"]
 )
 def test_optional_is_rejected(expr: str) -> None:
-    assert ids(check_allowed(parse_type(expr), known=KNOWN, path="p")) == ["STR-TYPE-002"]
+    assert ids(check_allowed(parse_type(expr), known=KNOWN, path="p")) == ["LNT-TYPE-002"]
 
 
 @pytest.mark.parametrize("expr", ["Any", "set[str]", "Unknown", "list[Unknown]", "list",
                                   "Button[int]", "str | int"])
 def test_unsupported_types_are_rejected(expr: str) -> None:
-    assert ids(check_allowed(parse_type(expr), known=KNOWN, path="p")) == ["STR-TYPE-003"]
+    assert ids(check_allowed(parse_type(expr), known=KNOWN, path="p")) == ["LNT-TYPE-003"]
 
 
 def test_every_forbidden_name_is_actually_rejected() -> None:
@@ -134,12 +134,12 @@ def test_finding_carries_location() -> None:
 def test_every_rejection_path_fills_its_slots(expr: str) -> None:
     """★ 세 규칙(`-001`/`-002`/`-003`) 전부 **실제 `rules.finding()`** 을 태운다.
 
-    슬롯을 빠뜨리면 `StrictlerError` 가 나면서 규칙 id 가 통째로 사라진다 —
+    슬롯을 빠뜨리면 `LintomataError` 가 나면서 규칙 id 가 통째로 사라진다 —
     `known=frozenset()` 으로 dataclass 도 없는 최악 조건에서 확인한다.
     """
     found = check_allowed(parse_type(expr), known=frozenset(), path="/abs/n.py")
     assert len(found) == 1
-    assert found[0].rule_id.startswith("STR-TYPE-")
+    assert found[0].rule_id.startswith("LNT-TYPE-")
     leftover = re.compile(r"(?<!\$)\{[A-Za-z_][A-Za-z0-9_]*\}")
     assert not leftover.search(found[0].message), found[0].message
     assert "/abs/n.py" in found[0].message
@@ -179,7 +179,7 @@ def test_same_name_same_origin_two_definitions_is_a_tool_error() -> None:
     reg = TypeRegistry()
     reg.register(dc("A", origin="a.py", x="int"))
     reg.register(dc("A", origin="a.py", x="int"))  # 같은 정의는 그냥 통과
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         reg.register(dc("A", origin="a.py", x="str"))
 
 
@@ -200,20 +200,20 @@ def test_a_dataclass_from_another_script_is_not_visible() -> None:
     reg = TypeRegistry()
     reg.register(dc("Button", origin="a.py", label="str"))
     reg.register(dc("Args", origin="b.py", input="Button"))
-    with pytest.raises(StrictlerError, match="같은 스크립트") as excinfo:
+    with pytest.raises(LintomataError, match="같은 스크립트") as excinfo:
         reg.normalize()
     # 2선 방어에도 규칙 id 는 있어야 한다 — 맨 예외로 나가면 리포트가 무엇이 걸렸는지 모른다
     found = excinfo.value.findings[0]
-    assert found.rule_id == "STR-TYPE-003"
+    assert found.rule_id == "LNT-TYPE-003"
     assert (found.path, found.node) == ("b.py", "Args")
 
 
 def test_an_unknown_field_type_carries_str_type_003() -> None:
     reg = TypeRegistry()
     reg.register(dc("A", origin="a.py", x="Nope"))
-    with pytest.raises(StrictlerError) as excinfo:
+    with pytest.raises(LintomataError) as excinfo:
         reg.normalize()
-    assert ids(excinfo.value.findings) == ["STR-TYPE-003"]
+    assert ids(excinfo.value.findings) == ["LNT-TYPE-003"]
 
 
 def test_dataclass_spec_requires_an_origin() -> None:
@@ -224,7 +224,7 @@ def test_dataclass_spec_requires_an_origin() -> None:
 
 def test_lookup_with_an_unregistered_key_is_a_tool_error() -> None:
     reg = normalized(dc("A", origin="a.py", x="int"))
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         reg.field_set(k("A", "b.py"))
 
 
@@ -285,9 +285,9 @@ def test_mutual_cycle_is_str_type_007() -> None:
     reg = TypeRegistry()
     reg.register(dc("A", b="B"))
     reg.register(dc("B", a="A"))
-    with pytest.raises(StrictlerError) as excinfo:
+    with pytest.raises(LintomataError) as excinfo:
         reg.normalize()
-    assert ids(excinfo.value.findings) == ["STR-TYPE-007"]
+    assert ids(excinfo.value.findings) == ["LNT-TYPE-007"]
     assert excinfo.value.findings[0].path == "a.py"
 
 
@@ -295,31 +295,31 @@ def test_self_recursive_type_is_str_type_007() -> None:
     """`N(kids: list[N])` — 바닥부터 정규화하는 이상 재귀 타입은 거절이 필연이다."""
     reg = TypeRegistry()
     reg.register(dc("N", kids="list[N]"))
-    with pytest.raises(StrictlerError) as excinfo:
+    with pytest.raises(LintomataError) as excinfo:
         reg.normalize()
     found = excinfo.value.findings[0]
-    assert found.rule_id == "STR-TYPE-007"
+    assert found.rule_id == "LNT-TYPE-007"
     assert "N → N" in found.message  # `{cycle}` 슬롯이 실제 순환으로 채워진다
 
 
 def test_unknown_field_type_is_a_tool_error() -> None:
     reg = TypeRegistry()
     reg.register(dc("A", x="Nope"))
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         reg.normalize()
 
 
 def test_query_before_normalize_is_a_tool_error() -> None:
     reg = TypeRegistry()
     reg.register(dc("A", x="int"))
-    with pytest.raises(StrictlerError, match="normalize"):
+    with pytest.raises(LintomataError, match="normalize"):
         reg.field_set(k("A"))
 
 
 def test_register_after_normalize_invalidates() -> None:
     reg = normalized(dc("A", x="int"))
     reg.register(dc("B", x="int", y="str"))
-    with pytest.raises(StrictlerError, match="normalize"):
+    with pytest.raises(LintomataError, match="normalize"):
         reg.field_set(k("A"))
     reg.normalize()
     assert reg.is_subset(k("A"), k("B"))
@@ -372,7 +372,7 @@ def test_merging_does_not_loosen_the_graph_check() -> None:
     """병합은 표현 층에서만 일어난다 — 그래프 검사는 여전히 엄격한 동일성이다."""
     reg = normalized(dc("A", count="int"), dc("B", count="int", label="str"))
     assert reg.merge_components()[k("A")] == reg.merge_components()[k("B")]
-    assert not reg.same_definition(k("A"), k("B"))  # STR-TYPE-004 는 여전히 잡힌다
+    assert not reg.same_definition(k("A"), k("B"))  # LNT-TYPE-004 는 여전히 잡힌다
 
 
 def test_merge_field_conflict_is_str_type_006() -> None:
@@ -382,10 +382,10 @@ def test_merge_field_conflict_is_str_type_006() -> None:
         dc("B", x="int", y="int"),
         dc("C", x="str", y="int"),
     )
-    with pytest.raises(StrictlerError) as excinfo:
+    with pytest.raises(LintomataError) as excinfo:
         reg.merge_components()
     found = excinfo.value.findings[0]
-    assert found.rule_id == "STR-TYPE-006"
+    assert found.rule_id == "LNT-TYPE-006"
     assert "필드 `x`" in found.message  # `{field}` 슬롯이 실제 필드명으로 채워진다
     assert "`A`(a.py)" in found.message  # names 슬롯에 성분 전체가 들어간다
 
@@ -396,9 +396,9 @@ def test_merge_field_conflict_also_blocks_model_building() -> None:
         dc("B", x="int", y="int"),
         dc("C", x="str", y="int"),
     )
-    with pytest.raises(StrictlerError) as excinfo:
+    with pytest.raises(LintomataError) as excinfo:
         reg.build_model(k("A"))
-    assert excinfo.value.findings[0].rule_id == "STR-TYPE-006"
+    assert excinfo.value.findings[0].rule_id == "LNT-TYPE-006"
 
 
 def test_merge_field_conflict_reports_a_deterministic_location() -> None:
@@ -408,7 +408,7 @@ def test_merge_field_conflict_reports_a_deterministic_location() -> None:
         dc("B", origin="a.py", x="int", y="int"),
         dc("C", origin="b.py", x="str", y="int"),
     )
-    with pytest.raises(StrictlerError) as excinfo:
+    with pytest.raises(LintomataError) as excinfo:
         reg.merge_components()
     assert excinfo.value.findings[0].path == "a.py"  # 등록 순서(z.py 가 먼저)와 무관해야 한다
 

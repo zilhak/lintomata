@@ -1,11 +1,11 @@
 {
-  "node": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/audit.json",
+  "node": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/audit.json",
   "cases": [
     {
       "name": "Action 은 값을 그대로 통과시킨다 — 기대값을 안 써도 값 동일성이 검사된다",
       "args": {
         "input": { "source": "/tmp/fixture-a.html", "html": "<main><button>확인</button></main>" },
-        "params": { "logPath": "/tmp/strictler-example/audit-node-test.log", "startedAt": 1700000000000 }
+        "params": { "logPath": "/tmp/lintomata-example/audit-node-test.log", "startedAt": 1700000000000 }
       }
     }
   ]

@@ -11,10 +11,10 @@ from textwrap import dedent
 
 import pytest
 
-from strictler.checks.script import extract_contract
-from strictler.engine import exec as node_exec
-from strictler.errors import StrictlerError
-from strictler.typesys.registry import TypeRegistry
+from lintomata.checks.script import extract_contract
+from lintomata.engine import exec as node_exec
+from lintomata.errors import LintomataError
+from lintomata.typesys.registry import TypeRegistry
 
 VANTAGE = """
     from dataclasses import dataclass
@@ -124,13 +124,13 @@ def test_같은_이름의_스크립트가_충돌하지_않는다(tmp_path: Path)
 
 
 def test_로드_중_예외는_오류다(tmp_path: Path) -> None:
-    with pytest.raises(StrictlerError) as caught:
+    with pytest.raises(LintomataError) as caught:
         node_exec.load_script(script(tmp_path, "boom", BOOM_AT_IMPORT))
     assert "import 시점에 터진다" in caught.value.message
 
 
 def test_없는_파일은_오류다(tmp_path: Path) -> None:
-    with pytest.raises((StrictlerError, FileNotFoundError)):
+    with pytest.raises((LintomataError, FileNotFoundError)):
         node_exec.load_script(tmp_path / "없다.py")
 
 
@@ -182,14 +182,14 @@ def test_앞단_노드의_출력을_그대로_받는다(tmp_path: Path) -> None:
 
 def test_input_을_선언했는데_앞단이_없으면_오류다(tmp_path: Path) -> None:
     module, contract = loaded(tmp_path, "n", NESTED)
-    with pytest.raises(StrictlerError) as caught:
+    with pytest.raises(LintomataError) as caught:
         node_exec.build_args(module, contract, state={"ready": True})
     assert "Args.input" in caught.value.message
 
 
 def test_필드가_모자라면_오류다(tmp_path: Path) -> None:
     module, contract = loaded(tmp_path, "n", NESTED)
-    with pytest.raises(StrictlerError) as caught:
+    with pytest.raises(LintomataError) as caught:
         node_exec.build_args(
             module, contract, input_value={"buttons": []}, state={"ready": True}
         )
@@ -198,7 +198,7 @@ def test_필드가_모자라면_오류다(tmp_path: Path) -> None:
 
 def test_리스트_자리에_리스트가_아닌_값이_오면_오류다(tmp_path: Path) -> None:
     module, contract = loaded(tmp_path, "n", NESTED)
-    with pytest.raises(StrictlerError):
+    with pytest.raises(LintomataError):
         node_exec.build_args(
             module,
             contract,
@@ -208,7 +208,7 @@ def test_리스트_자리에_리스트가_아닌_값이_오면_오류다(tmp_pat
 
 
 def test_as_mapping_은_dataclass_가_아닌_값을_거부한다() -> None:
-    with pytest.raises(StrictlerError) as caught:
+    with pytest.raises(LintomataError) as caught:
         node_exec.as_mapping(3)
     assert "dataclass" in caught.value.message
 
@@ -226,7 +226,7 @@ def test_스크립트_예외는_위반이_아니라_오류다(tmp_path: Path) ->
     module, contract = loaded(tmp_path, "b", BOOM_AT_RUN)
     args = node_exec.build_args(module, contract, params={"n": 1})
 
-    with pytest.raises(StrictlerError) as caught:
+    with pytest.raises(LintomataError) as caught:
         node_exec.invoke(module, args)
     assert "돌다가 터진다" in caught.value.message
     assert "오류" in caught.value.message
@@ -234,7 +234,7 @@ def test_스크립트_예외는_위반이_아니라_오류다(tmp_path: Path) ->
 
 def test_진입점이_없으면_오류다(tmp_path: Path) -> None:
     module = node_exec.load_script(script(tmp_path, "e", "x = 1\n"))
-    with pytest.raises(StrictlerError) as caught:
+    with pytest.raises(LintomataError) as caught:
         node_exec.invoke(module, None)
     assert node_exec.ENTRYPOINT in caught.value.message
 
@@ -292,7 +292,7 @@ LIBRARY = """
 """
 
 USES_LIBRARY = """
-    from strictler_lib import shared
+    from lintomata_lib import shared
 
     LENGTH = shared.measure("abcd")
 
@@ -302,7 +302,7 @@ USES_LIBRARY = """
 
 
 def test_배선된_라이브러리는_로드_시점에_이미_있다(tmp_path: Path) -> None:
-    """`from strictler_lib import shared` 는 **모듈 최상단**에서 풀린다 —
+    """`from lintomata_lib import shared` 는 **모듈 최상단**에서 풀린다 —
     주입이 `exec_module` 보다 늦으면 그 자리에서 `ImportError` 다."""
     library = script(tmp_path, "shared", LIBRARY)
     module = node_exec.load_script(
@@ -314,7 +314,7 @@ def test_배선된_라이브러리는_로드_시점에_이미_있다(tmp_path: P
 
 def test_배선이_없으면_그냥_ImportError_다(tmp_path: Path) -> None:
     """**틀린 값보다 오류가 낫다.** 안내는 배선을 넣으라고 말한다."""
-    with pytest.raises(StrictlerError) as caught:
+    with pytest.raises(LintomataError) as caught:
         node_exec.load_script(script(tmp_path, "user", USES_LIBRARY))
     assert "libraries" in caught.value.message
 
@@ -326,8 +326,8 @@ def test_로드가_끝나면_네임스페이스를_걷는다(tmp_path: Path) -> 
     library = script(tmp_path, "shared", LIBRARY)
     node_exec.load_script(script(tmp_path, "user", USES_LIBRARY), {"shared": library})
 
-    assert "strictler_lib" not in sys.modules
-    assert "strictler_lib.shared" not in sys.modules
+    assert "lintomata_lib" not in sys.modules
+    assert "lintomata_lib.shared" not in sys.modules
 
 
 def test_라이브러리_모듈은_경로로_구분된다(tmp_path: Path) -> None:
@@ -342,6 +342,6 @@ def test_라이브러리_모듈은_경로로_구분된다(tmp_path: Path) -> Non
 
 def test_라이브러리_로드_중_예외는_오류다(tmp_path: Path) -> None:
     boom = script(tmp_path, "boom", "raise RuntimeError('여기서 터진다')\n")
-    with pytest.raises(StrictlerError) as caught:
+    with pytest.raises(LintomataError) as caught:
         node_exec.load_script(script(tmp_path, "user", USES_LIBRARY), {"shared": boom})
     assert "라이브러리" in caught.value.message

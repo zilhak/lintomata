@@ -1,6 +1,6 @@
 """`node test` 도 등록소 무결성을 본다 — 해시 대조 (`schema.md` 2·13절).
 
-`check` 는 실행 직전에 `STR-REG-001` 로 잡는데 `node test` 는 안 봤다. 그래서
+`check` 는 실행 직전에 `LNT-REG-001` 로 잡는데 `node test` 는 안 봤다. 그래서
 **등록소 파일을 정적 검사 루트 밖에서 고친 뒤에도 `[pass]` 가 나왔다.**
 통과했다고 보고하는데 검사한 것이 검증을 통과한 그 내용이 아니면 거짓 리포트다.
 
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from strictler import cli
+from lintomata import cli
 
 EXAMPLE_ROOT = Path(__file__).resolve().parent.parent / "examples" / "home-check"
 
@@ -36,9 +36,9 @@ def registered(
     home = tmp_path / "home"
     work = tmp_path / "work"
     shutil.copytree(EXAMPLE_ROOT, work)
-    monkeypatch.setenv("STRICTLER_HOME", str(home))
-    monkeypatch.setenv("STRICTLER_EXAMPLE_ROOT", str(work))
-    monkeypatch.setenv("STRICTLER_EXAMPLE_OUT", str(tmp_path / "out"))
+    monkeypatch.setenv("LINTOMATA_HOME", str(home))
+    monkeypatch.setenv("LINTOMATA_EXAMPLE_ROOT", str(work))
+    monkeypatch.setenv("LINTOMATA_EXAMPLE_OUT", str(tmp_path / "out"))
 
     def add(kind: str, path: Path) -> str:
         code = cli.main([kind, "add", str(path)])
@@ -52,11 +52,11 @@ def registered(
     node_file.write_text(
         node_file.read_text("utf-8")
         .replace(
-            "${env.STRICTLER_EXAMPLE_ROOT}/scripts/perceive_buttons.py",
+            "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/perceive_buttons.py",
             "${ref." + script_id + "}",
         )
         .replace(
-            "${env.STRICTLER_EXAMPLE_ROOT}/libraries/buttons.py",
+            "${env.LINTOMATA_EXAMPLE_ROOT}/libraries/buttons.py",
             "${ref." + library_id + "}",
         ),
         encoding="utf-8",
@@ -81,7 +81,7 @@ def rules_of(report: dict) -> set[str]:
 
 
 def tamper(path: Path) -> None:
-    """정적 검사 루트를 피해 등록소 파일을 직접 고친다 — `STR-REG-001` 이 상정하는 그것."""
+    """정적 검사 루트를 피해 등록소 파일을 직접 고친다 — `LNT-REG-001` 이 상정하는 그것."""
     path.write_text(path.read_text("utf-8") + "\n", encoding="utf-8")
 
 
@@ -104,20 +104,20 @@ def test_등록소_스크립트를_고치면_STR_REG_001(
     code, report = run(capsys, "node", "test", registered["node"])
 
     assert code == 2
-    assert rules_of(report) == {"STR-REG-001"}
+    assert rules_of(report) == {"LNT-REG-001"}
     assert report["summary"]["pass"] == 0
 
 
 def test_등록소_노드_파일을_고치면_STR_REG_001(
     registered: dict[str, str], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """노드 쪽도 같다. **`STR-TEST-008` 이 아니다** — 대조할 정본 자체가 흔들렸다."""
+    """노드 쪽도 같다. **`LNT-TEST-008` 이 아니다** — 대조할 정본 자체가 흔들렸다."""
     tamper(Path(registered["home"]) / "nodes" / f"{registered['node']}.json")
 
     code, report = run(capsys, "node", "test", registered["node"])
 
     assert code == 2
-    assert rules_of(report) == {"STR-REG-001"}
+    assert rules_of(report) == {"LNT-REG-001"}
 
 
 def test_등록소_라이브러리를_고치면_STR_REG_001(
@@ -135,7 +135,7 @@ def test_등록소_라이브러리를_고치면_STR_REG_001(
     code, report = run(capsys, "node", "test", registered["node"])
 
     assert code == 2
-    assert rules_of(report) == {"STR-REG-001"}
+    assert rules_of(report) == {"LNT-REG-001"}
     assert report["summary"]["pass"] == 0
 
 
@@ -149,7 +149,7 @@ def test_라이브러리_등록을_지우면_STR_REG_002(
     code, report = run(capsys, "node", "test", registered["node"])
 
     assert code == 2
-    assert "STR-REG-002" in rules_of(report)
+    assert "LNT-REG-002" in rules_of(report)
 
 
 def test_스크립트_등록을_지우면_STR_REG_002(
@@ -162,7 +162,7 @@ def test_스크립트_등록을_지우면_STR_REG_002(
     code, report = run(capsys, "node", "test", registered["node"])
 
     assert code == 2
-    assert "STR-REG-002" in rules_of(report)
+    assert "LNT-REG-002" in rules_of(report)
 
 
 def test_경로로_부르면_해시_대조가_없다(

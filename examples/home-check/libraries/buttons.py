@@ -9,9 +9,9 @@
 **형제 파일 `import` 는 되지 않는다.** 등록하면 스크립트 파일 하나만 복사되므로
 옆 파일은 따라오지 않는다. 그래서 공유는 **등록소를 통해서** 한다:
 
-    strictler library add libraries/buttons.py       # 본체를 등록하고
+    lintomata library add libraries/buttons.py       # 본체를 등록하고
     노드 JSON 의 "libraries" 에 그 id 를 적고                # 노드가 배선하고
-    from strictler_lib import buttons                 # 스크립트가 쓴다
+    from lintomata_lib import buttons                 # 스크립트가 쓴다
 
 (여기 참조 문법을 예시로 그대로 적지 않는 이유가 있다 — 등록소는 **파일 내용에서**
 참조 문법을 긁어 참조 그래프를 만들므로, 설명으로 적은 것도 참조로 잡힌다.)

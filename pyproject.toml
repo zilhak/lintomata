@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "strictler"
+name = "lintomata"
 version = "0.1.0"
 description = "기획대로 돌아가는지를 검사하는 도구 — QA 의 프로그램화, lint 의 인간 버전"
 readme = "README.md"
@@ -18,10 +18,10 @@ dependencies = [
 dev = ["pytest>=8"]
 
 [project.scripts]
-strictler = "strictler.cli:main"
+lintomata = "lintomata.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/strictler"]
+packages = ["src/lintomata"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/strictler", "README.md"]
+include = ["src/lintomata", "README.md"]

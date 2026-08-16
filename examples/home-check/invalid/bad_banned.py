@@ -1,11 +1,11 @@
 """★ 일부러 규칙을 어긴 스크립트 — 등록이 **실패해야 정상**이다.
 
 담긴 위반:
-  - `import time` / `import random`      시간 의존·랜덤 (STR-BAN-001 / -002)
-  - `subprocess.run(...)`                직접 subprocess (STR-BAN-003)
-  - `args.state.nowhere`                 미선언 state 참조 (STR-BAN-004)
-  - `notes: dict`                        dict 금지 (STR-TYPE-001)
-  - `hint: Optional[str]`                Optional 금지 (STR-TYPE-002)
+  - `import time` / `import random`      시간 의존·랜덤 (LNT-BAN-001 / -002)
+  - `subprocess.run(...)`                직접 subprocess (LNT-BAN-003)
+  - `args.state.nowhere`                 미선언 state 참조 (LNT-BAN-004)
+  - `notes: dict`                        dict 금지 (LNT-TYPE-001)
+  - `hint: Optional[str]`                Optional 금지 (LNT-TYPE-002)
 """
 
 import random
