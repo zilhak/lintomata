@@ -1,4 +1,4 @@
-"""`rules.py` — 규칙 테이블 54개와 `Finding` 생성 헬퍼."""
+"""`rules.py` — 규칙 테이블 57개와 `Finding` 생성 헬퍼."""
 
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ ID_RE = re.compile(r"^STR-[A-Z]+-\d{3}$")
 # `rules.md` 3절 "규칙 수 요약" 그대로.
 EXPECTED_COUNTS = {
     "PATH": 4,
-    "REF": 5,
+    "REF": 6,
     "GRAPH": 2,
-    "TYPE": 5,
+    "TYPE": 7,
     "CONTRACT": 6,
     "STATE": 7,
     "BAN": 4,
@@ -28,9 +28,9 @@ EXPECTED_COUNTS = {
 }
 
 
-def test_rule_count_is_54() -> None:
-    assert len(RULES) == 54
-    assert sum(EXPECTED_COUNTS.values()) == 54
+def test_rule_count_is_57() -> None:
+    assert len(RULES) == 57
+    assert sum(EXPECTED_COUNTS.values()) == 57
 
 
 def test_category_counts_match_rules_md() -> None:
@@ -71,6 +71,7 @@ def test_every_rule_has_name_since_status_when() -> None:
         assert rule.when
         assert rule.message
         assert rule.guide
+        assert isinstance(rule.slots, tuple)
 
 
 def test_rule_is_frozen() -> None:
@@ -150,7 +151,7 @@ def test_render_unknown_rule_raises() -> None:
 
 
 def test_finding_defaults_to_error() -> None:
-    f = finding("STR-CONTRACT-001", file="/abs/x.py")
+    f = finding("STR-CONTRACT-001", fields={"file": "/abs/x.py"})
     assert f.status == "error"
     assert f.rule_id == "STR-CONTRACT-001"
     assert "/abs/x.py" in f.message
@@ -165,7 +166,7 @@ def test_finding_carries_path_node_cause() -> None:
         path="login.json > plan[0] > login-flow",
         node="checkToken",
         cause=cause,
-        name="checkToken",
+        fields={"name": "checkToken"},
     )
     assert f.status == "not_run"
     assert f.path == "login.json > plan[0] > login-flow"
@@ -175,6 +176,142 @@ def test_finding_carries_path_node_cause() -> None:
 
 def test_guide_is_not_a_separate_field_on_finding() -> None:
     """guide 는 메시지에 이어붙을 뿐 `Finding` 의 필드가 아니다 (schema.md 11절)."""
-    f = finding("STR-CONTRACT-001", file="/abs/x.py")
+    f = finding("STR-CONTRACT-001", fields={"file": "/abs/x.py"})
     assert "guide" not in f.model_dump(by_alias=True)
     assert get_rule("STR-CONTRACT-001").guide in f.message
+
+
+def test_finding_takes_no_fields_when_rule_has_no_slots() -> None:
+    rule = get_rule("STR-TEST-005")
+    assert rule.slots == ()
+    f = finding("STR-TEST-005", status="violation")
+    assert f.message.endswith(rule.guide)
+
+
+def test_finding_missing_slot_lists_what_the_rule_needs() -> None:
+    """에러 메시지가 자기 수정 신호가 되어야 한다 (읽는 주체가 AI)."""
+    with pytest.raises(StrictlerError) as exc:
+        finding("STR-TYPE-006", fields={"field": "x"})
+    text = str(exc.value)
+    assert "names" in text
+    assert "types" in text
+    assert "STR-TYPE-006" in text
+
+
+# ── 슬롯 ↔ 파라미터 충돌 — R1-2 가 고친 실제 버그 ─────────────────────
+
+
+def test_finding_slot_named_path_is_not_eaten_by_the_path_parameter() -> None:
+    """`{path}` 슬롯과 `Finding.path` 는 서로 다른 것이다.
+
+    `**fields` 였을 때는 keyword-only `path` 가 슬롯을 가로채
+    `STR-PATH-001` 을 렌더할 방법이 아예 없었다.
+    """
+    f = finding(
+        "STR-PATH-001",
+        status="violation",
+        path="login.json > plan[0] > login-flow",
+        node="captureHtml",
+        fields={"path": "./relative/script.py"},
+    )
+    assert f.path == "login.json > plan[0] > login-flow"
+    assert "./relative/script.py" in f.message
+    assert "{path}" not in f.message
+
+
+def test_finding_slot_named_path_inside_guide_only() -> None:
+    """`STR-TOOL-002` 는 `{path}` 가 **guide 에만** 있다 — 이름 변경 불가한 원문."""
+    f = finding(
+        "STR-TOOL-002",
+        status="violation",
+        path="login.json > plan[0] > login-flow",
+        fields={"path": "/usr/local/bin/node"},
+    )
+    assert "/usr/local/bin/node" in f.message
+    assert "{path}" not in f.message
+
+
+def test_finding_slot_named_node_is_not_eaten_by_the_node_parameter() -> None:
+    f = finding(
+        "STR-CMP-002",
+        status="violation",
+        node="detectButtons",
+        fields={"node": "detectButtons"},
+    )
+    assert f.node == "detectButtons"
+    assert "{node}" not in f.message
+
+
+def test_finding_accepts_python_keyword_slot() -> None:
+    """`STR-TYPE-004` 의 `{in}` 은 예약어라 딕셔너리로만 넘길 수 있다."""
+    f = finding("STR-TYPE-004", fields={"out": "Percept", "in": "Sensum"})
+    assert "Percept" in f.message
+    assert "Sensum" in f.message
+    assert "{in}" not in f.message
+
+
+# ── 전수 라운드트립 — 모든 규칙이 실제로 렌더된다 ─────────────────────
+
+
+def _dummy_fields(rule_id: str) -> dict[str, object]:
+    return {name: f"<{name}>" for name in get_rule(rule_id).slots}
+
+
+@pytest.mark.parametrize("rule_id", sorted(RULES))
+def test_every_rule_renders_with_its_declared_slots(rule_id: str) -> None:
+    """`slots` 만으로 `render()`/`finding()` 이 예외 없이 돌아야 한다.
+
+    규칙 두어 개만 찔러보면 슬롯↔파라미터 충돌 같은 경계를 지나친다 —
+    실제로 `STR-PATH-001`/`STR-TOOL-002`/`STR-CMP-002` 가 무조건 터지고 있었다.
+    """
+    rule = get_rule(rule_id)
+    fields = _dummy_fields(rule_id)
+
+    text = render(rule_id, **fields)
+    f = finding(rule_id, path="p", node="n", fields=fields)
+
+    assert f.message == text
+    assert f.rule_id == rule_id
+    for name in rule.slots:
+        assert f"<{name}>" in text
+        # 채워지지 않고 그대로 샌 자리표시자가 없어야 한다.
+        assert f"{{{name}}}" not in text
+
+
+def test_declared_slots_cover_every_placeholder_in_message_and_guide() -> None:
+    """`slots` 는 손으로 적는 필드가 아니라 문구에서 뽑은 것이다."""
+    slot_re = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+    for rule in RULES.values():
+        found = list(
+            dict.fromkeys(slot_re.findall(rule.message) + slot_re.findall(rule.guide))
+        )
+        assert list(rule.slots) == found, rule.id
+
+
+def test_reference_syntax_is_never_mistaken_for_a_slot() -> None:
+    """guide 의 `${env.X}` `${ref.<id>}` 는 점이 있어 슬롯이 아니다."""
+    for rule in RULES.values():
+        assert "env" not in rule.slots, rule.id
+        assert "config" not in rule.slots, rule.id
+        assert "state" not in rule.slots, rule.id
+
+
+# ── 신설 규칙 3개 (rules.md 4절 증가 이력) ────────────────────────────
+
+
+def test_new_rules_exist_with_declared_when_and_slots() -> None:
+    assert get_rule("STR-TYPE-006").when == ("node-register", "pipeline-register")
+    assert set(get_rule("STR-TYPE-006").slots) == {"names", "field", "types"}
+
+    assert get_rule("STR-TYPE-007").when == ("node-register",)
+    assert get_rule("STR-TYPE-007").slots == ("cycle",)
+
+    assert get_rule("STR-REF-006").when == ("node-register", "pipeline-register", "run")
+    assert get_rule("STR-REF-006").slots == ("ref",)
+
+
+def test_malformed_reference_guide_keeps_namespace_examples() -> None:
+    text = render("STR-REF-006", ref="${vars.X}")
+    assert "${env.X}" in text
+    assert "${ref.<id>}" in text
+    assert "${vars.X}" in text

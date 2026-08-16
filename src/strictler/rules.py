@@ -1,6 +1,6 @@
 """검사 규칙 테이블 — `STR-<CATEGORY>-<NNN>`.
 
-`rules.md` 전체가 근거다. 초기 규칙 54개 (PATH 4 / REF 5 / GRAPH 2 / TYPE 5 /
+`rules.md` 전체가 근거다. 규칙 57개 (PATH 4 / REF 6 / GRAPH 2 / TYPE 7 /
 CONTRACT 6 / STATE 7 / BAN 4 / TOOL 2 / CONFIG 3 / CMP 4 / TEST 7 / REG 5).
 **늘어나는 것이 전제다** — 카테고리별 독립 번호 공간, 번호 재사용 금지,
 폐기해도 `status: deprecated` 로 남긴다.
@@ -13,6 +13,11 @@ CONTRACT 6 / STATE 7 / BAN 4 / TOOL 2 / CONFIG 3 / CMP 4 / TEST 7 / REG 5).
 자체가 `{cycle}` `{names}` `{exc}` 같은 슬롯을 갖고 있으므로 둘 다 채운다.
 치환은 `str.format` 이 아니라 **`{식별자}` 형태만 골라 바꾸는 자체 치환기**다 —
 guide 문구에 그대로 들어 있는 `${env.X}` `${ref.sc_...}` 같은 참조 문법을 건드리면 안 되기 때문.
+
+**어떤 규칙이 어떤 슬롯을 요구하는지는 `Rule.slots` 에 데이터로 들어 있다.**
+표로 따로 적어두면 코드와 문서가 갈라지므로 `message`+`guide` 에서 그대로 뽑는다.
+`finding()`/`render()` 가 이걸로 누락을 검증한다 —
+슬롯 값을 안 주면 조용히 넘어가지 않고 `StrictlerError` 다.
 """
 
 from __future__ import annotations
@@ -66,6 +71,31 @@ class Rule(BaseModel):
     guide: str
     """자연어 수정 가이드. 메시지 뒤에 이어붙어 나간다. 여기에도 자리표시자가 올 수 있다."""
 
+    slots: tuple[str, ...]
+    """이 규칙이 요구하는 자리표시자 이름들 — `message`+`guide` 등장 순서.
+
+    **손으로 적는 필드가 아니라 `_rule()` 이 문구에서 뽑는다.** 표로 따로 두면
+    코드와 문서가 갈라진다. 검사기는 이걸 보고 무엇을 채워야 하는지 알 수 있고,
+    `render()`/`finding()` 은 이걸로 누락을 잡는다.
+
+    ⚠ `STR-TYPE-004` 의 `in` 처럼 **파이썬 예약어인 슬롯**이 있다 —
+    그래서 `finding()` 이 슬롯 값을 `fields` **딕셔너리**로 받는다.
+    """
+
+
+# `{name}` 처럼 **점 없는 식별자 하나**만 자리표시자로 본다.
+# guide 문구에 그대로 들어 있는 `${env.X}` `${ref.sc_...}` 는 점이 있어 걸리지 않는다.
+_SLOT_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _slots_of(*templates: str) -> tuple[str, ...]:
+    """문구들에서 자리표시자 이름을 등장 순서대로 뽑는다 (중복 제거)."""
+    found: dict[str, None] = {}
+    for template in templates:
+        for name in _SLOT_RE.findall(template):
+            found[name] = None
+    return tuple(found)
+
 
 # 시점 약어 — `rules.md` 2절 표의 `when` 열 그대로.
 _N: RuleWhen = "node-register"
@@ -92,6 +122,7 @@ def _rule(
         when=when,
         message=message,
         guide=guide,
+        slots=_slots_of(message, guide),
     )
 
 
@@ -167,6 +198,17 @@ _TABLE: tuple[Rule, ...] = (
         "`compare` 가 이 파이프라인에 없는 노드 id 를 가리킵니다: {name}",
         "`compare` 에는 이 파이프라인의 노드 `id` 만 적을 수 있습니다",
     ),
+    _rule(
+        "STR-REF-006",
+        "malformed-reference",
+        (_N, _P, _R),
+        "참조 문법이 깨졌습니다 — 네임스페이스가 없거나, 모르는 네임스페이스거나, "
+        "이름이 비었습니다: {ref}",
+        "참조는 네임스페이스를 반드시 붙입니다 — `${env.X}` / `${config.X}` / "
+        "`${state.X}` / `${ref.<id>}` 넷뿐입니다. 네임스페이스가 없으면 "
+        '"미정의 환경변수인지 config 오타인지" 구분할 수 없어 에러가 뭉개집니다. '
+        "문제의 참조: {ref}",
+    ),
     # ── GRAPH — DAG 구조 ───────────────────────────────────────────────
     _rule(
         "STR-GRAPH-001",
@@ -224,6 +266,24 @@ _TABLE: tuple[Rule, ...] = (
         "`config` 의 `type` 이 허용 집합에 없습니다: {type}",
         "`config` 의 `type` 은 스크립트와 같은 어휘를 씁니다 — "
         "`str` `int` `float` `bool` `bytes` `list[T]`",
+    ),
+    _rule(
+        "STR-TYPE-006",
+        "merge-field-conflict",
+        (_N, _P),
+        "부분집합 연결 성분을 합집합 낼 때 같은 필드명의 타입이 갈립니다: {field}",
+        "병합 대상 {names} 에서 필드 `{field}` 의 타입이 갈립니다 ({types}). "
+        "부분집합 관계인 dataclass 들은 하나의 큰 dataclass 로 합쳐지므로, "
+        "같은 필드명은 같은 타입이어야 합니다. 개념이 다르면 필드명을 다르게 하세요",
+    ),
+    _rule(
+        "STR-TYPE-007",
+        "dataclass-cycle",
+        (_N,),
+        "dataclass 가 자기 자신을 (직접·간접으로) 참조합니다.",
+        "`{cycle}` 이 순환 참조입니다. 타입은 중첩을 바닥부터 정규화하므로 "
+        "재귀 타입을 선언할 수 없습니다. 트리 구조가 필요하면 `list[T]` 를 "
+        "평평하게 펴서 부모 id 를 필드로 갖는 형태로 바꾸세요",
     ),
     # ── CONTRACT — 노드 계약 ───────────────────────────────────────────
     _rule(
@@ -523,15 +583,10 @@ _TABLE: tuple[Rule, ...] = (
 
 
 RULES: dict[str, Rule] = {rule.id: rule for rule in _TABLE}
-"""규칙 id → 규칙. `rules.md` 2절의 54개."""
+"""규칙 id → 규칙. `rules.md` 2절의 57개."""
 
 if len(RULES) != len(_TABLE):  # pragma: no cover - 테이블 오타 방지용 자기 검증
     raise StrictlerError("규칙 테이블에 중복 id 가 있습니다")
-
-
-# `{name}` 처럼 **점 없는 식별자 하나**만 자리표시자로 본다.
-# guide 문구에 그대로 들어 있는 `${env.X}` `${ref.sc_...}` 는 점이 있어 걸리지 않는다.
-_SLOT_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def get_rule(rule_id: str) -> Rule:
@@ -554,34 +609,45 @@ def rules_for(when: RuleWhen) -> list[Rule]:
     ]
 
 
-def _fill(template: str, rule_id: str, fields: dict[str, object]) -> str:
-    """`{식별자}` 자리표시자를 `fields` 로 치환한다.
+def _fill(template: str, fields: dict[str, object]) -> str:
+    """`{식별자}` 자리표시자를 `fields` 로 치환한다. 누락 검증은 호출자가 이미 했다."""
+    return _SLOT_RE.sub(lambda m: str(fields[m.group(1)]), template)
 
-    자리에 줄 값이 없으면 **조용히 넘어가지 않고 오류**다 — 리포트에 `{cycle}` 이
+
+def _render(rule_id: str, fields: dict[str, object]) -> str:
+    """`message` 를 채우고 뒤에 채워진 `guide` 를 이어붙인다.
+
+    슬롯 값이 없으면 **조용히 넘어가지 않고 오류**다 — 리포트에 `{cycle}` 이
     그대로 새어나가면 그건 검사기의 버그이지 위반이 아니다.
+    필요한 슬롯 전부를 `Rule.slots` 에서 알려준다.
     """
-    missing = sorted(
-        {name for name in _SLOT_RE.findall(template) if name not in fields}
-    )
+    rule = get_rule(rule_id)
+    missing = [name for name in rule.slots if name not in fields]
     if missing:
         raise StrictlerError(
             f"규칙 {rule_id} 의 자리표시자 값이 주어지지 않았습니다: "
-            f"{', '.join(missing)}"
+            f"{', '.join(missing)}. "
+            f"이 규칙이 요구하는 자리표시자는 {', '.join(rule.slots)} 입니다 "
+            "(`rules.Rule.slots`). 값은 `fields` 딕셔너리로 넘깁니다."
         )
-    return _SLOT_RE.sub(lambda m: str(fields[m.group(1)]), template)
+    return f"{_fill(rule.message, fields)}\n{_fill(rule.guide, fields)}"
 
 
 def render(rule_id: str, **fields: object) -> str:
     """규칙의 `message` 를 `fields` 로 채우고 **뒤에 `guide` 를 이어붙여** 준다.
 
     이것이 `Finding.message` 에 들어가는 최종 문자열이다 (`schema.md` 11절).
-    `guide` 쪽 자리표시자도 같은 `fields` 로 채운다 — `rules.md` 2절의 guide 문구가
-    `{cycle}` `{names}` 같은 슬롯을 직접 갖고 있기 때문.
+
+    **`guide` 의 슬롯도 같은 `fields` 로 채운다.** `rules.md` 2절의 guide 문구
+    자체가 `{cycle}` `{names}` `{path}` 같은 슬롯을 직접 갖고 있고
+    (`STR-GRAPH-001`·`STR-TOOL-002`·`STR-CONFIG-001`·`STR-TEST-002/003/004` 등은
+    슬롯이 **guide 에만** 있다), 안 채우면 리포트에 `{cycle}` 이 그대로 샌다.
+    `message` 와 `guide` 는 하나의 슬롯 공간을 공유한다 — 그것이 `Rule.slots` 다.
+
+    `{in}` 처럼 파이썬 예약어인 슬롯은 `render(rule_id, **{"in": ...})` 로 넘긴다.
+    `Finding` 을 만들 때는 `finding(..., fields={...})` 를 쓴다.
     """
-    rule = get_rule(rule_id)
-    message = _fill(rule.message, rule_id, fields)
-    guide = _fill(rule.guide, rule_id, fields)
-    return f"{message}\n{guide}"
+    return _render(rule_id, dict(fields))
 
 
 def finding(
@@ -591,17 +657,26 @@ def finding(
     path: str = "",
     node: str = "",
     cause: NotRunCause | None = None,
-    **fields: object,
+    fields: dict[str, object] | None = None,
 ) -> Finding:
-    """규칙 id 로 `Finding` 하나를 만든다. `render()` 를 태워 메시지를 채운다.
+    """규칙 id 로 `Finding` 하나를 만든다. 메시지는 규칙 문구에서 채워진다.
 
     검사기들이 가장 많이 쓰는 진입점이다.
+
+    **슬롯 값은 `fields` 딕셔너리로만 넘긴다.** `**fields` 였을 때는 keyword-only
+    파라미터 `path`/`node` 가 **동명 슬롯을 잡아먹어** `STR-PATH-001`(`{path}`)·
+    `STR-TOOL-002`(`{path}`)·`STR-CMP-002`(`{node}`) 를 렌더할 방법이 아예 없었다.
+    딕셔너리로 받으면 이름 충돌이 구조적으로 불가능하다.
+    `{in}` 같은 파이썬 예약어 슬롯도 이 형태로만 넘길 수 있다.
+
+    여기서 `path`/`node` 는 **`Finding` 이 가리키는 위치**이고,
+    `fields["path"]`/`fields["node"]` 는 **규칙 문구의 슬롯**이다. 서로 다른 것이다.
     """
     return Finding(
         status=status,
         path=path,
         node=node,
         rule_id=rule_id,
-        message=render(rule_id, **fields),
+        message=_render(rule_id, dict(fields or {})),
         cause=cause,
     )
