@@ -33,6 +33,7 @@ from strictler.refs import PLACEHOLDER_RE
 
 __all__ = [
     "SUBDIRS",
+    "CACHE_SUBDIR",
     "TEST_SUFFIX",
     "RegistryEntry",
     "RegistryIndex",
@@ -52,6 +53,14 @@ SUBDIRS: dict[str, str] = {
 """종류 → 등록소 하위 폴더 이름."""
 
 
+CACHE_SUBDIR = "cache"
+"""등록 시점 검증 결과를 재사용하려고 쌓아 두는 자리 (`schema.md` 2절).
+
+**등록소 파일 옆이 아니라 따로 둔다** — `scripts/` 안에 부속 파일을 흘리면
+"등록소 폴더에는 등록된 것만 있다"가 깨진다. 무엇을 담는지는 등록소가 모른다.
+**언제 버려도 되는 파생물**이다: 지워도 다음 실행이 다시 만든다.
+"""
+
 _EXTENSIONS: dict[str, str] = {
     "script": ".py",
     "node": ".json",
@@ -62,6 +71,9 @@ _EXTENSIONS: dict[str, str] = {
 
 _PREFIX_OF: dict[str, str] = {kind: prefix for prefix, kind in ID_PREFIXES.items()}
 """종류 → id 접두. `model.ID_PREFIXES` 의 역방향."""
+
+_KIND_OF_DIR: dict[str, EntryKind] = {sub: kind for kind, sub in SUBDIRS.items()}  # type: ignore[misc]
+"""하위 폴더 이름 → 종류. `SUBDIRS` 의 역방향 — 경로를 보고 항목을 되짚는 데 쓴다."""
 
 _INDEX_NAME = "registry.json"
 
@@ -359,6 +371,9 @@ class Store:
 
         shutil.copyfile(path, self._file_path(entry.kind, entry_id))
         entry.test_hash = self._sync_test(entry.kind, entry_id, path)
+        # 내용이 바뀌었으므로 옛 캐시는 키(해시)가 안 맞아 어차피 안 쓰인다.
+        # 그래도 걷어낸다 — 등록소에 못 쓰는 파일을 남겨 두지 않는다.
+        self.cache_path(entry_id).unlink(missing_ok=True)
         entry.hash = hash_file(path)
         entry.registered_at = _now_iso()
         entry.refs = _collect_refs(text)
@@ -387,6 +402,7 @@ class Store:
         test_path = self.test_path(entry.kind, entry_id)
         if test_path is not None:
             test_path.unlink(missing_ok=True)
+        self.cache_path(entry_id).unlink(missing_ok=True)
         self.save_index(index)
 
     # ── 조회 ────────────────────────────────────────────────────────────────
@@ -432,6 +448,36 @@ class Store:
             return hash_file(target)
         target.unlink(missing_ok=True)
         return ""
+
+    def entry_id_at(self, path: Path) -> str:
+        """등록소가 관리하는 파일이면 그 항목의 id, 아니면 `""`.
+
+        **인덱스를 읽지 않는다** — 폴더 배치와 이름만 보는 순수 함수다. 그 id 가
+        실재하는지·해시가 맞는지는 부르는 쪽이 본다. 경로 참조로 들어온 등록소
+        **밖의** 파일은 여기서 걸러진다: 등록되지 않은 것에는 재사용할 검증 결과가
+        없으므로 매번 전수 검사가 맞다 (`schema.md` 2절).
+        """
+        candidate = Path(path)
+        kind = _KIND_OF_DIR.get(candidate.parent.name)
+        if kind is None or candidate.parent != self.home / SUBDIRS[kind]:
+            return ""
+        name = candidate.name
+        suffix = _EXTENSIONS[kind]
+        # `nd_x.test.json` 은 노드가 아니라 그 노드의 단위테스트다.
+        if not name.endswith(suffix) or name.endswith(TEST_SUFFIX):
+            return ""
+        entry_id = name[: -len(suffix)]
+        if ID_PREFIXES.get(entry_id[:3]) != kind:
+            return ""
+        return entry_id
+
+    def cache_path(self, entry_id: str) -> Path:
+        """항목 하나에 딸린 캐시 파일 자리 (`CACHE_SUBDIR`).
+
+        **등록소는 내용을 모른다** — 무엇을 담을지는 쓰는 쪽(`checks.contracts`)이
+        정하고, 등록소는 자리와 수명만 관리한다. 항목이 사라지면 함께 사라진다.
+        """
+        return self.home / CACHE_SUBDIR / f"{entry_id}.json"
 
     def path_of(self, entry_id: str) -> Path:
         """등록소 안의 실제 파일 경로."""

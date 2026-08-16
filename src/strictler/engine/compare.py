@@ -117,7 +117,7 @@ def run_compare_pipeline(
     `cache` 는 값 검증과 **같은 것**이다 (`checks.contracts`). 한쪽에만 붙이면
     두 파이프라인 종류의 동작이 갈린다 — R4-1 이 실제로 겪은 자리다.
     """
-    cache = cache if cache is not None else ScriptCache()
+    cache = cache if cache is not None else ScriptCache(store)
     result = RunResult()
 
     if pipeline.info.kind != "compare":
@@ -234,7 +234,7 @@ def _prepare(
     cache: ScriptCache | None = None,
 ) -> tuple[_Prepared | None, list[Finding]]:
     """노드를 한 벌 로드하고 target 별로 실제 도는 스크립트를 푼다."""
-    cache = cache if cache is not None else ScriptCache()
+    cache = cache if cache is not None else ScriptCache(store)
     findings: list[Finding] = []
     prepared = _Prepared()
     contracts: list[ScriptContract] = []

@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from strictler.checks import script as script_checks
-from strictler.checks.contracts import ScriptCache
+from strictler.checks.contracts import ContractPayload, ScriptCache
 from strictler.errors import Finding, StrictlerError
 
 SOURCE = '''\
@@ -138,10 +138,83 @@ def test_캐시를_써도_타입별_형식_판정이_같다(node_type: str) -> N
     assert [item.rule_id for item in plain] != []
 
 
-# ── 한 번의 `check` 안에서 몇 번 파싱하는가 ──────────────────────────────────
+# ── 직렬화 — 캐시가 계약을 온전히 되살리는가 ─────────────────────────────────
 
 
 EXAMPLE_ROOT = Path(__file__).resolve().parent.parent / "examples" / "home-check"
+
+SERIALIZED_ATTRS = {
+    "path",
+    "dataclasses",
+    "input_type",
+    "params_type",
+    "state_type",
+    "state_names",
+    "output_type",
+    "tool_calls",
+    "_has_args",
+    "_args_fields",
+    "_has_entrypoint",
+    "_entrypoint_ok",
+    "_param_name",
+    "_returns_result",
+    "_type_uses",
+}
+"""`ContractPayload` 가 담는 속성 전부. **`_` 로 시작하는 내부 기록도 검사기가 읽는다.**"""
+
+
+def test_직렬화가_ScriptContract_의_모든_속성을_덮는다() -> None:
+    """★ 속성이 하나 늘었는데 여기 안 담기면 **캐시를 탄 실행만 판정이 달라진다.**
+
+    `ScriptContract` 를 고치는 사람이 이 테스트로 캐시를 떠올리게 하는 자리다.
+    이 목록을 고칠 때는 `checks.contracts.CACHE_VERSION` 도 올려야 한다.
+    """
+    contract, _ = script_checks.extract_contract(SOURCE, PATH)
+
+    assert set(vars(contract)) == SERIALIZED_ATTRS
+
+
+def _shape(contract) -> dict:  # type: ignore[no-untyped-def]
+    """비교용으로 편 모습 — dataclass 선언까지 값으로 내린다."""
+    plain = {
+        name: value
+        for name, value in vars(contract).items()
+        if name != "dataclasses"
+    }
+    plain["dataclasses"] = {
+        name: (spec.name, spec.origin, tuple((f.name, str(f.type)) for f in spec.fields))
+        for name, spec in contract.dataclasses.items()
+    }
+    plain["_type_uses"] = tuple(str(used) for used in contract._type_uses)
+    return plain
+
+
+@pytest.mark.parametrize(
+    "script", sorted((EXAMPLE_ROOT / "scripts").glob("*.py")), ids=lambda p: p.stem
+)
+def test_예제_스크립트가_직렬화를_왕복해도_같다(script: Path) -> None:
+    """다섯 노드 타입 전부를 태운다 — `list[T]`·중첩 dataclass·`Args.state` 까지."""
+    source = script.read_text(encoding="utf-8")
+    original, _ = script_checks.extract_contract(source, str(script))
+
+    restored = ContractPayload.of(original).to_contract()
+
+    assert _shape(restored) == _shape(original)
+
+
+def test_해석_안_되는_타입도_그대로_되살아난다() -> None:
+    """`_type_of` 는 못 읽은 어노테이션을 **원문 그대로의 미지 타입**으로 남긴다.
+
+    문자열로 접었다 펴면 되돌아온다는 보장이 없어서 구조 그대로 담는다 —
+    여기서 뭉개지면 `STR-TYPE-003` 의 문구가 달라진다.
+    """
+    weird = SOURCE.replace("count: int", "count: Callable[[int], str]")
+    original, _ = script_checks.extract_contract(weird, PATH)
+
+    restored = ContractPayload.of(original).to_contract()
+
+    assert str(restored.dataclasses["Buttons"].fields[0].type) == "Callable[[int], str]"
+    assert _shape(restored) == _shape(original)
 
 
 def test_한_번의_check_는_스크립트마다_한_번만_파싱한다(

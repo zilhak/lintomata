@@ -969,7 +969,7 @@ def recheck_resolved(
     안에서만도 `check_script` 와 계약 추출이 같은 파일을 두 번 읽기 때문이다.
     **검사는 어느 쪽이든 전부 돈다.**
     """
-    cache = cache if cache is not None else ScriptCache()
+    cache = cache if cache is not None else ScriptCache(store)
     findings: list[Finding] = []
     loaded: dict[str, Node] = {}
     node_types: dict[str, NodeType] = {}

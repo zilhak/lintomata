@@ -117,7 +117,7 @@ def run_spec(
         # 통째로 무의미해지므로 그 지점에서 진행하지 않는다.
         return build_report(tool_findings)
 
-    cache = ScriptCache()
+    cache = ScriptCache(store)
     findings: list[Finding] = []
     for index in range(len(spec.plan)):
         try:
@@ -187,7 +187,7 @@ def run_plan_item(
     `cache` 를 안 주면 이 항목 동안만 사는 것을 만든다 — **두 파이프라인 종류가
     같은 것을 쓴다** (R4-1: 한쪽만 다르게 두면 실제로 갈린다).
     """
-    cache = cache if cache is not None else ScriptCache()
+    cache = cache if cache is not None else ScriptCache(store)
     item = spec.plan[index]
     where = _plan_path(spec_name, index, "")
 
@@ -273,7 +273,7 @@ def _run_compare(
     except StrictlerError as exc:
         return findings_of(exc, path=path)
 
-    cache = cache if cache is not None else ScriptCache()
+    cache = cache if cache is not None else ScriptCache(store)
     findings = pipeline_checks.recheck_resolved(
         pipeline, config, store=store, env=env, source_path=path, cache=cache
     )
@@ -333,7 +333,7 @@ def run_pipeline(
 
     `cache` 는 재검(①)과 로드(②)가 **같은 파일을 두 번 파싱하지 않게** 한다.
     """
-    cache = cache if cache is not None else ScriptCache()
+    cache = cache if cache is not None else ScriptCache(store)
     result = RunResult()
 
     # ① config 가 풀린 뒤의 재검 (MODULES.md R3-4). 비교 파이프라인의 target 별
@@ -583,7 +583,7 @@ def _load_nodes(
     정적 검사 루트를 피해 등록소 파일을 직접 고친 경우가 그것이다.
     계약·금지 검사는 `recheck_resolved` 가 이미 했으므로 여기서 다시 하지 않는다.
     """
-    cache = cache if cache is not None else ScriptCache()
+    cache = cache if cache is not None else ScriptCache(store)
     loaded: dict[str, _NodeRun] = {}
     findings: list[Finding] = []
 
