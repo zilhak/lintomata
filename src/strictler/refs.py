@@ -275,7 +275,7 @@ def expand_env(value: str, env: Mapping[str, str]) -> str:
 
 def _env_lookup(name: str, env: Mapping[str, str]) -> str:
     if name not in env:
-        _fail("STR-PATH-002", detail=f"문제의 참조: ${{env.{name}}}")
+        _fail("STR-PATH-002", fields={"name": name})
     return env[name]
 
 
@@ -301,7 +301,7 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
     `refs` 는 그 검사에 쓸 기제(`expand_path`)만 제공한다.
     """
     if not value:
-        _fail("STR-PATH-001", detail="경로가 비어 있습니다.")
+        _fail("STR-PATH-001", detail="경로가 비어 있습니다.", fields={"path": repr(value)})
 
     # ① `~` 전개 — `~` 와 `~user` 를 `os.path.expanduser` 가 처리한다.
     tilde = os.path.expanduser(value)
@@ -314,7 +314,7 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
         raw = _env_lookup(name, env)
         resolved = os.path.expanduser(raw)
         if _is_relative_marker(resolved) or (at_start and not os.path.isabs(resolved)):
-            _fail("STR-PATH-003", detail=f"${{env.{name}}} = {raw!r}")
+            _fail("STR-PATH-003", fields={"name": name, "value": repr(raw)})
         return resolved
 
     expanded = _substitute(
@@ -332,7 +332,8 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
     if not os.path.isabs(expanded):
         _fail(
             "STR-PATH-001",
-            detail=f"전개 결과: {expanded!r} (원본: {value!r})",
+            detail=f"원본: {value!r}",
+            fields={"path": repr(expanded)},
         )
     return Path(expanded)
 
@@ -420,7 +421,8 @@ def _state_lookup(name: str, state: Mapping[str, Any]) -> Any:
         known = ", ".join(sorted(_ENGINE_STATE_FIELDS))
         _fail(
             "STR-STATE-001",
-            detail=f"문제의 참조: ${{state.{name}}} (엔진이 주는 것은 {known} 뿐)",
+            detail=f"엔진이 주는 것은 {known} 뿐입니다.",
+            fields={"name": name},
         )
     if name not in state:
         _fail("STR-STATE-002", fields={"names": name})

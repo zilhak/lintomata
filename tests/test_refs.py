@@ -8,13 +8,13 @@ from __future__ import annotations
 import getpass
 import os
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from strictler import rules
-from strictler.errors import Finding, StrictlerError
+from strictler import refs, rules
+from strictler.errors import StrictlerError
 from strictler.refs import (
     NAMESPACES,
     Placeholder,
@@ -30,115 +30,6 @@ from strictler.refs import (
 
 def _rule_ids(exc: pytest.ExceptionInfo[StrictlerError]) -> list[str]:
     return [f.rule_id for f in exc.value.findings]
-
-
-# ── `rules` 대역 ─────────────────────────────────────────────────────────────
-#
-# `refs` 는 규칙 문구를 손으로 복제하지 않고 `rules.finding()` 에서 받는다
-# (MODULES.md R2-7). 그런데 `rules.py` 는 Step 1-b 담당이라 이 worktree 에서는
-# 아직 stub 이다 → **`RULES` 가 비어 있을 때만** 최소 대역을 끼운다.
-# merge 후 실제 구현이 들어오면 아래는 통째로 비활성이 되고 테스트는 진짜
-# `rules.finding()` 을 상대로 돈다.
-
-_STUB_RULES: dict[str, tuple[str, str]] = {
-    # id: (message, guide) — `rules.md` 2절 원문 그대로
-    "STR-PATH-001": (
-        "전개 후 절대경로가 아니다",
-        "모든 경로는 절대경로여야 합니다. `~` 또는 `${env.X}` 를 쓰세요. "
-        "cwd 에 의존하는 경로는 쓸 수 없습니다",
-    ),
-    "STR-PATH-002": (
-        "참조한 환경변수가 정의돼 있지 않다",
-        "`${env.X}` 가 가리키는 환경변수를 실행 환경에 정의하세요. "
-        "머신·CI 마다 값이 달라도 되도록 경로를 환경변수로 뺀 것입니다",
-    ),
-    "STR-PATH-003": (
-        "환경변수 값 자체가 상대경로다",
-        "환경변수 값이 절대경로여야 합니다. `PROJECT_ROOT=./foo` 같은 값은 cwd 의존을 되살립니다",
-    ),
-    "STR-REF-006": (
-        "참조 문법이 깨졌다 — 네임스페이스가 없거나(`${X}`), "
-        "모르는 네임스페이스거나(`${vars.X}`), 이름이 비었다(`${env.}`)",
-        "참조는 네임스페이스를 반드시 붙입니다 — "
-        "`${env.X}` / `${config.X}` / `${state.X}` / `${ref.<id>}` 넷뿐입니다. "
-        '네임스페이스가 없으면 "미정의 환경변수인지 config 오타인지" 구분할 수 없어 '
-        "에러가 뭉개집니다. 문제의 참조: {ref}",
-    ),
-    "STR-REF-007": (
-        "참조 문법은 정상인데 이 자리에 도달하기 전에 전개되지 않았다 "
-        "(`${config.y}` 가 경로 해석까지 살아남음)",
-        "이 자리에서는 모든 참조가 이미 풀려 있어야 합니다. 전개되지 않은 참조를 "
-        '리터럴로 통과시키면 나중에 "파일 없음" 으로 원인이 뭉개집니다. '
-        "`config` 선언에 빠진 값이 없는지, 전개 순서가 맞는지 확인하세요. 문제의 참조: {ref}",
-    ),
-    "STR-STATE-001": (
-        "사용자 상태 이름에 `__` 접두를 썼다",
-        "`__` 접두는 엔진 제공 필드 전용입니다 (`__startedAt` 등). 다른 이름을 쓰세요",
-    ),
-    "STR-STATE-002": (
-        "노드가 요구하는 상태가 `states` 에 매핑되지 않았다",
-        "노드의 `Args.state` 필드마다 파이프라인 상태 이름을 매핑해야 합니다. 누락: {names}",
-    ),
-    "STR-CONFIG-001": (
-        "`required: true` 인 config 를 Spec 이 안 채웠다",
-        "파이프라인이 요구하는 config 를 Spec 의 `plan` 항목에서 채우세요. 누락: {names}",
-    ),
-    "STR-CMP-004": (
-        "target 이 요구하는 config 가 `targets.<name>` 에도 공통에도 없다",
-        "`${config.X}` 는 `targets.<현재target>` 에서 먼저 찾고 없으면 공통에서 찾습니다. "
-        "둘 다 없습니다: {name}",
-    ),
-    "STR-REG-003": (
-        "`${ref.<id>}` 의 접두가 그 자리가 요구하는 종류와 다르다",
-        "이 자리에는 {expected} 가 와야 합니다. 준 것: {given} "
-        "(접두 `sc_`=스크립트 `nd_`=노드 `pl_`=파이프라인 `sp_`=Spec)",
-    ),
-}
-
-_SLOT_C = re.compile(r"(?<!\$)\{(\w+)\}")
-"""`{ref}` 는 슬롯, `${env.X}` 는 슬롯이 아니다 (R1-4 — `str.format` 을 쓸 수 없는 이유)."""
-
-
-def _stub_render(rule_id: str, **fields: object) -> str:
-    message, guide = _STUB_RULES[rule_id]
-    text = f"{message}\n{guide}"
-    declared = set(_SLOT_C.findall(text))
-    missing = declared - set(fields)
-    extra = set(fields) - declared
-    assert not missing, f"{rule_id}: 슬롯 값 누락 {sorted(missing)}"
-    assert not extra, f"{rule_id}: 선언되지 않은 필드 {sorted(extra)}"
-    return _SLOT_C.sub(lambda m: str(fields[m.group(1)]), text)
-
-
-def _stub_finding(
-    rule_id: str,
-    *,
-    status: str = "error",
-    path: str = "",
-    node: str = "",
-    cause: Any = None,
-    fields: dict[str, object] | None = None,
-) -> Finding:
-    return Finding(
-        status=status,  # type: ignore[arg-type]
-        path=path,
-        node=node,
-        rule_id=rule_id,
-        message=_stub_render(rule_id, **(fields or {})),
-        cause=cause,
-    )
-
-
-@pytest.fixture(autouse=True, scope="module")
-def _rules_backend() -> Any:
-    if rules.RULES:  # Step 1-b 의 실제 구현이 merge 됐다 — 대역이 필요 없다
-        yield
-        return
-    patch = pytest.MonkeyPatch()
-    patch.setattr(rules, "render", _stub_render)
-    patch.setattr(rules, "finding", _stub_finding)
-    yield
-    patch.undo()
 
 
 # ── 네임스페이스 ─────────────────────────────────────────────────────────────
@@ -629,3 +520,78 @@ def test_expand_state_leaves_unresolved_others_without_error(value: str) -> None
 def test_expand_env_leaves_unresolved_others_without_error() -> None:
     """`expand_env` 도 마찬가지다 — 경로 검증은 `expand_path` 의 몫이다."""
     assert expand_env("${env.R}/${config.y}", {"R": "/srv"}) == "/srv/${config.y}"
+
+
+# ── 슬롯 누락 회귀 방지 — 오류 경로 전수 ─────────────────────────────────────
+#
+# `rules.Rule.slots` 가 요구하는 값을 `fields` 로 안 넘기면 `_render` 가 거절하고,
+# **원래 나와야 할 규칙 id 가 사라진다** (findings 가 비고 슬롯 누락 오류로 바뀐다).
+# 그래서 "오류 경로를 실제로 태워 `rule_id` 를 확인" 하는 것이 곧 슬롯 검증이다.
+#
+# 표가 낡지 않도록 `refs.py` 의 `_fail("STR-...")` 호출부를 소스에서 뽑아
+# **전수 대조**한다 — 새 규칙을 내면서 여기 예제를 안 넣으면 테스트가 깨진다.
+
+_ERROR_PATHS: list[tuple[str, Callable[[], object]]] = [
+    ("STR-PATH-001", lambda: expand_path("nodes/a.json", {})),
+    ("STR-PATH-001", lambda: expand_path("", {})),
+    ("STR-PATH-002", lambda: expand_path("${env.NOPE}/x.json", {})),
+    ("STR-PATH-003", lambda: expand_path("${env.R}/x.json", {"R": "./foo"})),
+    ("STR-REF-006", lambda: collect_placeholders("${vars.HOME}")),
+    ("STR-REF-006", lambda: expand_path("/opt/${env.HOME/x", {"HOME": "/home/u"})),
+    ("STR-REF-007", lambda: expand_path("/x/${config.y}/z", {})),
+    ("STR-REG-003", lambda: parse_ref("${ref.xx_deadbeef}")),
+    ("STR-REG-003", lambda: parse_ref("${ref.pl_c9d0e1f2}", expected="node")),
+    ("STR-CONFIG-001", lambda: expand_config("${config.nope}", {})),
+    (
+        "STR-CMP-004",
+        lambda: expand_config("${config.nope}", {"targets": {"v2": {}}}, target="v2"),
+    ),
+    ("STR-STATE-001", lambda: expand_state("${state.__mine}", {"__mine": "x"})),
+    ("STR-STATE-002", lambda: expand_state("${state.phase}", {})),
+]
+
+_UNFILLED_SLOT_C = re.compile(r"(?<!\$)\{(\w+)\}")
+"""`{name}` 은 안 채워진 슬롯, `${env.X}` 는 가이드 본문이다 (R1-4)."""
+
+_FAIL_SITE_C = re.compile(r'_fail\(\s*\n?\s*"(STR-[A-Z]+-\d+)"')
+"""`refs.py` 안의 `_fail("STR-...")` 호출부."""
+
+
+@pytest.mark.parametrize(
+    "rule_id, trigger",
+    _ERROR_PATHS,
+    ids=[f"{rule_id}-{i}" for i, (rule_id, _) in enumerate(_ERROR_PATHS)],
+)
+def test_error_path_carries_its_rule_id(
+    rule_id: str, trigger: Callable[[], object]
+) -> None:
+    """오류 경로마다 규칙 id 가 살아 나온다 — 슬롯을 안 채우면 여기서 사라진다."""
+    with pytest.raises(StrictlerError) as exc:
+        trigger()
+    assert _rule_ids(exc) == [rule_id]
+
+
+@pytest.mark.parametrize(
+    "rule_id, trigger",
+    _ERROR_PATHS,
+    ids=[f"{rule_id}-{i}" for i, (rule_id, _) in enumerate(_ERROR_PATHS)],
+)
+def test_error_path_leaves_no_unfilled_slot(
+    rule_id: str, trigger: Callable[[], object]
+) -> None:
+    """리포트에 `{path}` 가 그대로 새면 그건 검사기의 버그다."""
+    with pytest.raises(StrictlerError) as exc:
+        trigger()
+    assert _UNFILLED_SLOT_C.findall(exc.value.message) == []
+
+
+def test_every_fail_site_in_refs_is_exercised() -> None:
+    """`refs.py` 가 내는 규칙 전부가 위 표에 있다.
+
+    새 `_fail` 을 추가하면서 예제를 안 넣으면 여기서 걸린다 — 슬롯 누락이
+    "언젠가 실행됐을 때" 가 아니라 **이 자리에서** 드러난다.
+    """
+    source = Path(refs.__file__).read_text(encoding="utf-8")
+    declared = set(_FAIL_SITE_C.findall(source))
+    assert declared, "`_fail` 호출부를 하나도 못 찾았다 — 정규식이 낡았다"
+    assert declared == {rule_id for rule_id, _ in _ERROR_PATHS}

@@ -117,7 +117,13 @@ class RefGraph:
                 entry.broken = "validation"
                 entry.broken_detail = failed
                 findings.append(
-                    rules.finding("STR-REG-005", path=dep_id, fields={"rule": failed})
+                    # `path` 와 슬롯 `{id}` 는 별개 채널이다 (계약 개정 R1-2) —
+                    # 값이 같아도 둘 다 넘긴다.
+                    rules.finding(
+                        "STR-REG-005",
+                        path=dep_id,
+                        fields={"id": dep_id, "rule": failed},
+                    )
                 )
             elif entry.broken == "validation":
                 # 다시 통과했으면 표시를 걷는다. 참조 깨짐은 여기서 손대지 않는다.

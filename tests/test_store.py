@@ -7,12 +7,14 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from strictler import rules
 from strictler.errors import Finding, StrictlerError
+from strictler.store import entries, graph
 from strictler.store.entries import (
     RegistryIndex,
     Store,
@@ -21,39 +23,6 @@ from strictler.store.entries import (
     new_id,
 )
 from strictler.store.graph import RefGraph
-
-
-# ── rules.py 대역 ─────────────────────────────────────────────────────────────
-#
-# `rules.finding` 은 Step 1-b 담당이라 아직 stub 일 수 있다. 그때만 최소 대역을
-# 끼운다 — 구현이 들어오면 이 fixture 는 아무것도 하지 않고 진짜 메시지가 돈다.
-
-
-def _fallback_finding(
-    rule_id: str,
-    *,
-    status: str = "error",
-    path: str = "",
-    node: str = "",
-    cause: object = None,
-    fields: dict[str, object] | None = None,
-) -> Finding:
-    detail = " ".join(f"{k}={v}" for k, v in sorted((fields or {}).items()))
-    return Finding(
-        status=status,  # type: ignore[arg-type]
-        path=path,
-        node=node,
-        rule_id=rule_id,
-        message=detail,
-    )
-
-
-@pytest.fixture(autouse=True)
-def _rules_available(monkeypatch: pytest.MonkeyPatch) -> None:
-    try:
-        rules.finding("STR-REG-004", path="x", fields={"id": "y"})
-    except NotImplementedError:
-        monkeypatch.setattr(rules, "finding", _fallback_finding)
 
 
 # ── 공통 fixture ─────────────────────────────────────────────────────────────
@@ -500,7 +469,9 @@ def test_revalidate_calls_finding_with_the_fields_dict(
     monkeypatch.setattr(rules, "finding", spy)
 
     RefGraph.build(store).revalidate(store, sc_id)
-    assert calls == [("STR-REG-005", {"rule": "STR-TYPE-004"})]
+    # `STR-REG-005` 의 슬롯은 `{id}`·`{rule}` 둘이다. `path` 와 `{id}` 는 값이 같아도
+    # 별개 채널이라 둘 다 넘겨야 한다 (계약 개정 R1-2).
+    assert calls == [("STR-REG-005", {"id": _pl_id, "rule": "STR-TYPE-004"})]
 
 
 def test_revalidate_clears_a_stale_validation_mark(
@@ -570,3 +541,59 @@ def test_load_index_rejects_non_utf8_index(store: Store, home: Path) -> None:
         store.load_index()
     assert "UTF-8" in excinfo.value.message
     assert "registry.json" in excinfo.value.message
+
+
+# ── 슬롯 누락 회귀 방지 — 등록소가 내는 오류 경로 전수 ───────────────────────
+#
+# `rules.Rule.slots` 를 `fields` 로 안 채우면 `_render` 가 거절하고 **규칙 id 가
+# 사라진다**. 그래서 "오류 경로를 실제로 태워 `rule_id` 를 확인" 하는 것이 곧
+# 슬롯 검증이다. 여기서는 `rules.finding` 을 대역으로 바꾸지 않는다 —
+# 진짜 슬롯 강제를 통과해야 의미가 있다.
+
+_UNFILLED_SLOT_C = re.compile(r"(?<!\$)\{(\w+)\}")
+"""`{id}` 는 안 채워진 슬롯, `${env.X}` 는 가이드 본문이다."""
+
+_FINDING_SITE_C = re.compile(r'rules\.finding\(\s*\n?\s*"(STR-[A-Z]+-\d+)"')
+"""`store` 안의 `rules.finding("STR-...")` 호출부."""
+
+
+def _broken_ref_findings(store: Store, tmp_path: Path) -> list[Finding]:
+    sc_id, _nd_id, _pl_id, _sp_id = _chain(store, tmp_path)
+    store.remove(sc_id)
+    return RefGraph.build(store).broken_refs()
+
+
+def _revalidate_findings(
+    store: Store, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> list[Finding]:
+    sc_id, _nd_id, _pl_id, _sp_id = _chain(store, tmp_path)
+    _mock_checks(monkeypatch, {"pipeline": "STR-TYPE-004"})
+    store.update(sc_id, write(tmp_path / "detect2.py", SCRIPT_SRC + "# v2\n"))
+    return RefGraph.build(store).revalidate(store, sc_id)
+
+
+def test_broken_ref_finding_carries_its_rule_id(store: Store, tmp_path: Path) -> None:
+    findings = _broken_ref_findings(store, tmp_path)
+    assert [f.rule_id for f in findings] == ["STR-REG-004"]
+    assert _UNFILLED_SLOT_C.findall(findings[0].message) == []
+
+
+def test_revalidate_finding_carries_its_rule_id(
+    store: Store, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    findings = _revalidate_findings(store, tmp_path, monkeypatch)
+    assert [f.rule_id for f in findings] == ["STR-REG-005"]
+    assert _UNFILLED_SLOT_C.findall(findings[0].message) == []
+
+
+def test_every_finding_site_in_store_is_exercised() -> None:
+    """`store` 가 내는 규칙 전부가 위 둘로 실제 실행된다.
+
+    새 `rules.finding` 을 추가하면서 오류 경로를 안 태우면 여기서 걸린다 —
+    슬롯 누락이 "언젠가 실행됐을 때" 가 아니라 **이 자리에서** 드러난다.
+    """
+    declared: set[str] = set()
+    for module in (entries, graph):
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        declared |= set(_FINDING_SITE_C.findall(source))
+    assert declared == {"STR-REG-004", "STR-REG-005"}
