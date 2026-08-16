@@ -281,6 +281,27 @@ from selectolax.lexbor import LexborHTMLParser
 uv tool install strictler --with 'selectolax>=0.3'
 ```
 
+> ### ⚠ `--with` 는 **선언적**이다 — 전부 함께 적어야 한다
+>
+> `uv tool install --with` 는 이전에 넣은 `--with` 를 **유지하지 않는다.** 적은 것만 남고
+> 나머지는 **지워진다.**
+>
+> ```
+> $ uv tool install strictler --with 'typing-extensions>=4'
+> Uninstalled 1 package in 1ms
+>  - myproject-perceive-lib==0.1.0        ← 다른 스크립트가 쓰던 것이 사라졌다
+> ```
+>
+> 그래서 하나를 추가할 때도 **이미 쓰는 것을 전부 나열**한다:
+>
+> ```
+> uv tool install strictler --with 'selectolax>=0.3' --with 'typing-extensions>=4'
+> ```
+>
+> **`STR-DEP-001` / `-003` 의 메시지는 이 완전한 명령을 만들어 준다** — 등록소에 선언된
+> 것을 전부 모아 넣으므로 **그대로 복사해 쓰면 된다.** 직접 만들 때는
+> `strictler script list` / `show <id>` 의 **선언 의존성**으로 확인하라.
+
 **★ 헤더는 선언일 뿐 환경을 만들어 주지 않는다.** 노드 스크립트는 strictler 와 **같은
 프로세스**에 로드되므로 `import` 는 strictler 가 설치된 환경에서 풀린다 — 격리 환경도,
 스크립트별 가상환경도 없다. ESLint 플러그인이 ESLint 와 같은 `node_modules` 를 쓰는 것과
@@ -320,8 +341,10 @@ from button_lib import is_button      # ✕ ModuleNotFoundError — 파일이 �
 *"무엇이 버튼인가"* 를 판정하는 로직은 같다. 그때는 **작은 패키지로 만들어 설치한다.**
 
 ```
-uv tool install strictler --with /path/to/myproject-perceive-lib
+uv tool install strictler --with /path/to/myproject-perceive-lib --with 'selectolax>=0.3'
 ```
+
+(`--with` 는 선언적이므로 **이미 쓰는 것을 함께 적는다** — 위 경고 참조.)
 
 ```python
 # /// script

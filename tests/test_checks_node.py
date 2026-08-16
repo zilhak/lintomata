@@ -211,7 +211,9 @@ def test_check_node_deduplicates_findings_from_both_script_entrypoints(
     import strictler.checks.script as script_module
 
     monkeypatch.setattr(
-        script_module, "check_script", lambda source, path, node_type=None: [duplicated]
+        script_module,
+        "check_script",
+        lambda source, path, node_type=None, known_dependencies=(): [duplicated],
     )
     monkeypatch.setattr(
         script_module,

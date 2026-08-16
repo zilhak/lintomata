@@ -180,6 +180,66 @@ def test_name_normalization_pep503() -> None:
     assert deps.check_dependencies(source, PATH) == []
 
 
+# --- 설치 명령 — `--with` 는 선언적이다 -------------------------------------
+
+
+def test_install_command_falls_back_to_the_simple_form() -> None:
+    """등록소가 비었으면(또는 못 읽으면) 단순 형태. **여기서 예외를 내지 않는다.**"""
+    assert deps.install_command("selectolax>=0.3") == (
+        "uv tool install strictler --with 'selectolax>=0.3'"
+    )
+
+
+def test_install_command_keeps_every_known_requirement() -> None:
+    """★ `uv tool install --with` 는 **선언적**이라 적은 것만 남는다 —
+    문제가 된 것 하나만 안내하면 그대로 따른 AI 가 **다른 스크립트의 의존성을 지운다.**"""
+    command = deps.install_command(
+        "typing-extensions>=4", ["myproject-perceive-lib==0.1.0", "selectolax>=0.3"]
+    )
+    assert command == (
+        "uv tool install strictler "
+        "--with 'myproject-perceive-lib==0.1.0' "
+        "--with 'selectolax>=0.3' "
+        "--with 'typing-extensions>=4'"
+    )
+
+
+def test_install_command_dedupes_by_normalized_name() -> None:
+    """같은 요구는 하나로. 정규화 이름이 기준이다 (PEP 503)."""
+    command = deps.install_command("selectolax>=0.3", ["selectolax>=0.3"])
+    assert command.count("--with") == 1
+
+
+def test_install_command_keeps_conflicting_requirements_both() -> None:
+    """요구가 서로 다르면 **둘 다 적는다** — 우리가 임의로 하나를 고르면 안 된다.
+    uv 가 해결하거나 실패하는 것이 맞다."""
+    command = deps.install_command("selectolax>=0.5", ["selectolax<0.4"])
+    assert "--with 'selectolax<0.4'" in command
+    assert "--with 'selectolax>=0.5'" in command
+
+
+def test_install_command_is_deterministic() -> None:
+    """같은 등록소면 언제나 같은 명령이 나와야 한다."""
+    known = ["b-pkg", "a-pkg", "c-pkg"]
+    assert deps.install_command("d-pkg", known) == deps.install_command(
+        "d-pkg", list(reversed(known))
+    )
+
+
+def test_finding_carries_the_complete_command() -> None:
+    source = header('dependencies = ["definitely-not-installed-xyz"]') + NO_HEADER
+    findings = deps.check_dependencies(source, PATH, known=["selectolax>=0.3"])
+    assert ids(findings) == ["STR-DEP-001"]
+    assert "--with 'selectolax>=0.3'" in findings[0].message
+    assert "--with 'definitely-not-installed-xyz'" in findings[0].message
+    assert "`--with` 는 **선언적**" in findings[0].message
+
+
+def test_unreadable_requirement_in_known_is_not_dropped() -> None:
+    """안내에서 사라지는 것이 더 나쁘다 — 못 읽는 것도 그대로 얹는다."""
+    assert "--with '=='" in deps.install_command("selectolax", ["=="])
+
+
 # --- 검사 배선 -------------------------------------------------------------
 
 
@@ -204,6 +264,41 @@ def test_missing_module_hint_only_for_declared() -> None:
     assert deps.missing_module_hint(NO_HEADER, "selectolax") == ""
     source = header('dependencies = ["pydantic>=2"]') + NO_HEADER
     assert deps.missing_module_hint(source, "selectolax") == ""
+
+
+def test_missing_submodule_is_not_reported_as_missing_package() -> None:
+    """★ **pydantic 은 설치돼 있다.** 없는 것은 서브모듈이다 — 사실이 아닌 문장을 내지 않는다."""
+    hint = deps.missing_submodule_hint("pydantic.nope_this_submodule_does_not_exist")
+    assert "설치돼 있으나" in hint
+    assert "없습니다" in hint
+    assert "설치" in hint and "uv tool install" not in hint  # 설치 문제가 아니다
+
+
+def test_missing_submodule_hint_is_empty_when_root_is_absent() -> None:
+    """최상위가 없으면 그냥 못 찾은 것이다 — 이 안내의 자리가 아니다."""
+    assert deps.missing_submodule_hint("definitely_not_installed_xyz.sub") == ""
+    assert deps.missing_submodule_hint("pydantic") == ""  # 점이 없다
+    assert deps.missing_submodule_hint("") == ""
+
+
+def test_load_script_submodule_error_drops_the_sibling_paragraph(tmp_path: Path) -> None:
+    """원인이 확정된 자리에 **다른 방향을 얹지 않는다.**"""
+    from strictler.engine import exec as engine_exec
+    from strictler.errors import StrictlerError
+
+    path = tmp_path / "node.py"
+    path.write_text(
+        header('dependencies = ["pydantic>=2"]')
+        + "import pydantic.nope_this_submodule_does_not_exist\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(StrictlerError) as exc:
+        engine_exec.load_script(path)
+    message = exc.value.message
+    assert "설치돼 있으나" in message
+    assert "형제 파일" not in message
+    # 헤더에 선언돼 있어도 "환경에 없습니다" 라고 말하지 않는다 — 설치돼 있다.
+    assert "지금 환경에 없습니다" not in message
 
 
 def test_load_script_appends_install_command(tmp_path: Path) -> None:

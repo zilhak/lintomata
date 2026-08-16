@@ -40,6 +40,7 @@ CLAUDE.md 의 3구분(위반 / not run / 오류) 중 세 번째다.
 from __future__ import annotations
 
 import ast
+from typing import Iterable
 
 from strictler import deps, rules
 from strictler.errors import Finding, StrictlerError
@@ -197,7 +198,12 @@ def extract_contract(source: str, path: str) -> tuple[ScriptContract, list[Findi
     return contract, findings
 
 
-def check_script(source: str, path: str, node_type: NodeType | None = None) -> list[Finding]:
+def check_script(
+    source: str,
+    path: str,
+    node_type: NodeType | None = None,
+    known_dependencies: Iterable[str] = (),
+) -> list[Finding]:
     """스크립트 하나의 전체 정적 검사. 아래 검사들을 전부 돌려 합친다.
 
     `node_type` 이 없으면(스크립트 단독 등록) 타입별 형식 요구는 건너뛴다 —
@@ -207,6 +213,12 @@ def check_script(source: str, path: str, node_type: NodeType | None = None) -> l
     스크립트를 돌리지 않는다는 원칙은 그대로다 — 헤더를 읽어 선언된 패키지가
     지금 환경에 있는지 `importlib.metadata` 로 보기만 한다.
 
+    `known_dependencies` 는 **등록소가 이미 아는 다른 스크립트들의 선언**이다
+    (`Store.declared_dependencies()`). 안내 명령을 완전하게 만드는 데만 쓴다 —
+    `uv tool install --with` 는 선언적이라 문제가 된 것 하나만 안내하면 그대로 따른
+    AI 가 **다른 스크립트의 의존성을 지운다.** 판정에는 관여하지 않으므로 비어 있어도
+    결과는 같다.
+
     **실패를 최대한 수집한다** — 하나 걸렸다고 나머지를 멈추지 않는다.
     """
     contract, findings = extract_contract(source, path)
@@ -214,7 +226,7 @@ def check_script(source: str, path: str, node_type: NodeType | None = None) -> l
     findings.extend(check_args_shape(contract))
     findings.extend(check_types(contract))
     findings.extend(check_bans(source, path, contract))
-    findings.extend(deps.check_dependencies(source, path))
+    findings.extend(deps.check_dependencies(source, path, known_dependencies))
     if node_type is not None:
         findings.extend(check_node_type_form(contract, node_type))
     return findings

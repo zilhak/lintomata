@@ -103,6 +103,8 @@ class ScriptStub:
         self.by_path: dict[str, FakeContract] = {}
         self.findings: dict[str, list[Any]] = {}
         self.seen_types: list[tuple[str, Any]] = []
+        self.seen_known: list[tuple[str, list[str]]] = []
+        """`known_dependencies` 로 받은 것 — 등록소의 선언이 실제로 흘러오는지 본다."""
 
     def put(self, path: str, made: FakeContract) -> FakeContract:
         self.by_path[str(path)] = made
@@ -111,8 +113,14 @@ class ScriptStub:
     def install(self, monkeypatch: Any) -> None:
         import strictler.checks.script as script_module
 
-        def check_script(source: str, path: str, node_type: Any = None) -> list[Any]:
+        def check_script(
+            source: str,
+            path: str,
+            node_type: Any = None,
+            known_dependencies: Any = (),
+        ) -> list[Any]:
             self.seen_types.append((path, node_type))
+            self.seen_known.append((path, list(known_dependencies)))
             return list(self.findings.get(path, []))
 
         def extract_contract(source: str, path: str) -> tuple[Any, list[Any]]:

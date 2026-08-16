@@ -385,6 +385,22 @@ def test_update_refreshes_declared_dependencies(store: Store, tmp_path: Path) ->
     assert store.update(entry.id, plain).dependencies == []
 
 
+def test_declared_dependencies_unions_every_script(store: Store, tmp_path: Path) -> None:
+    """안내 명령을 완전하게 만드는 재료 — `--with` 는 선언적이라 전부 필요하다."""
+    assert store.declared_dependencies() == []  # 빈 등록소는 빈 목록 (폴백)
+
+    store.add("script", write(tmp_path / "a.py", PEP723_SRC))
+    other = (
+        "# /// script\n"
+        '# dependencies = ["selectolax>=0.3"]\n'
+        "# ///\n" + SCRIPT_SRC
+    )
+    store.add("script", write(tmp_path / "b.py", other))
+    store.add("script", write(tmp_path / "c.py", SCRIPT_SRC))  # 헤더 없음
+
+    assert sorted(store.declared_dependencies()) == ["pydantic>=2", "selectolax>=0.3"]
+
+
 def test_dependencies_and_dependents(store: Store, tmp_path: Path) -> None:
     sc_id, nd_id, pl_id, _sp_id = _chain(store, tmp_path)
     graph = RefGraph.build(store)

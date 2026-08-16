@@ -56,7 +56,11 @@ def check_registration(kind: EntryKind, source: Path, store: Store) -> list[Find
     env = os.environ
 
     if kind == "script":
-        return script_checks.check_script(text, str(path))
+        # 등록소가 아는 선언을 함께 넘긴다 — `uv tool install --with` 는 선언적이라
+        # 안내 명령이 완전하지 않으면 **다른 스크립트의 의존성을 지운다**.
+        return script_checks.check_script(
+            text, str(path), known_dependencies=store.declared_dependencies()
+        )
 
     raw = _parse_json(text, path)
 

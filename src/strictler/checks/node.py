@@ -257,7 +257,14 @@ def check_node(
     script_path = resolved
 
     source = _read_script(script_path)
-    findings.extend(script_checks.check_script(source, str(script_path), node.type))
+    findings.extend(
+        script_checks.check_script(
+            source,
+            str(script_path),
+            node.type,
+            known_dependencies=store.declared_dependencies(),
+        )
+    )
 
     contract, extracted = script_checks.extract_contract(source, str(script_path))
     findings.extend(extracted)

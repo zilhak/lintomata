@@ -134,11 +134,20 @@ def _missing_module_guide(path: Path, exc: BaseException) -> str:
     (`deps.missing_module_hint`) — 선언은 했는데 환경에 없는 것이므로 고칠 곳이
     다르고, 요구 원문 그대로의 설치 명령을 줄 수 있다.
 
+    **원인이 확정된 자리에는 다른 방향을 얹지 않는다.** 못 찾은 것이 **설치된
+    패키지의 서브모듈**이면(`pydantic.없는것`) 형제 파일 이야기는 잡음이다 —
+    그 문단은 **원인을 모르는 경우**(헤더에 선언도 없는 경우)에만 붙는다.
+    거기가 이 안내가 가장 쓸모 있는 자리다.
+
     **소스를 못 읽는 것은 여기서 문제 삼지 않는다.** 이미 실패한 예외에 문장을
     덧붙이는 자리라서, 여기서 새 예외를 내면 원인이 뭉개진다.
     """
     if not isinstance(exc, ModuleNotFoundError) or not exc.name:
         return ""
+
+    submodule = deps.missing_submodule_hint(exc.name)
+    if submodule:
+        return submodule
 
     declared = ""
     try:

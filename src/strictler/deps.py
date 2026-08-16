@@ -31,10 +31,12 @@
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import tomllib
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version as installed_version
+from typing import Iterable
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
@@ -50,6 +52,7 @@ __all__ = [
     "check_dependencies",
     "install_command",
     "missing_module_hint",
+    "missing_submodule_hint",
 ]
 
 
@@ -132,7 +135,9 @@ def declared_dependencies(source: str) -> tuple[str, ...]:
     return () if findings else declared.dependencies
 
 
-def check_dependencies(source: str, path: str) -> list[Finding]:
+def check_dependencies(
+    source: str, path: str, known: Iterable[str] = ()
+) -> list[Finding]:
     """`STR-DEP-001` / `-002` / `-003`. **헤더가 없으면 빈 목록이다.**
 
     설치 여부와 버전은 `importlib.metadata` 로 본다 — 지금 이 프로세스가 실제로
@@ -141,11 +146,15 @@ def check_dependencies(source: str, path: str) -> list[Finding]:
     **환경 마커가 이 환경에 해당하지 않는 요구는 건너뛴다** (`; sys_platform == ...`).
     지금 여기서 쓰이지 않을 패키지를 요구하면 리눅스 전용 의존성을 적은 스크립트가
     맥에서 등록되지 않는다.
+
+    `known` 은 **등록소가 이미 알고 있는 다른 스크립트들의 선언**이다. 안내 명령을
+    완전하게 만드는 데만 쓴다 (`install_command`) — 판정에는 관여하지 않는다.
     """
     declared, findings = read_header(source, path)
     if findings or not declared.present:
         return findings
 
+    known = tuple(known)
     for raw in declared.dependencies:
         try:
             requirement = Requirement(raw)
@@ -156,17 +165,48 @@ def check_dependencies(source: str, path: str) -> list[Finding]:
             continue
         if requirement.marker is not None and not requirement.marker.evaluate():
             continue
-        findings.extend(_check_one(requirement, raw, path))
+        findings.extend(_check_one(requirement, raw, path, known))
     return findings
 
 
-def install_command(requirement: str) -> str:
-    """이 요구를 strictler 환경에 까는 명령. **에러 메시지의 핵심이다.**
+def install_command(requirement: str, known: Iterable[str] = ()) -> str:
+    """이 요구를 strictler 환경에 까는 **완전한** 명령. 에러 메시지의 핵심이다.
 
-    `uv tool install` 이 정본인 이유는 격리를 만들지 않기로 한 결정 그 자체다 —
-    스크립트는 strictler 와 같은 환경에서 `import` 되므로 그쪽에 함께 깔아야 한다.
+    ★ **`uv tool install --with` 는 선언적이다** — 이전에 넣은 `--with` 를 유지하지
+    않고 **적힌 것만 남긴다**. 그래서 문제가 된 것 하나만 적어 안내하면, 그대로 따른
+    AI 가 **다른 스크립트의 의존성을 지워버린다.** 안내가 정반대로 작동하는 자리라
+    등록소가 아는 선언을 전부 합쳐 완전한 명령을 만든다.
+
+    `known` 이 비어 있으면(등록소가 비었거나 못 읽음) **단순 형태로 폴백**한다 —
+    여기서 예외를 내지 않는다. 안내 문자열을 만드는 자리이므로, 실패하더라도
+    원래의 `Finding` 이 사라지면 안 된다.
+
+    같은 패키지의 **요구가 서로 다르면 둘 다 적는다.** 우리가 임의로 하나를 고르면
+    안 된다 — uv 가 해결하거나 실패하는 것이 맞다 (`schema.md` 6절: 격리를 뒤집을
+    조건은 *"호환되지 않는 버전을 요구하는 스크립트가 둘 이상"* 이다).
     """
-    return f"uv tool install strictler --with '{requirement}'"
+    parts = " ".join(f"--with '{item}'" for item in _merge_requirements(known, requirement))
+    return f"uv tool install strictler {parts}"
+
+
+def _merge_requirements(known: Iterable[str], requirement: str) -> list[str]:
+    """`known` + 문제의 요구를 합집합으로. **정규화 이름 기준으로 중복을 없앤다.**
+
+    같은 요구 문자열은 하나로 합치고(`PyDantic` 과 `pydantic` 은 같은 것),
+    같은 패키지라도 요구가 다르면 둘 다 남긴다. 순서는 `(정규화 이름, 원문)` 정렬 —
+    같은 등록소면 언제나 같은 명령이 나와야 한다.
+    """
+    collected: dict[tuple[str, str], None] = {}
+    for item in (*known, requirement):
+        text = str(item).strip()
+        if not text:
+            continue
+        try:
+            key = canonicalize_name(Requirement(text).name)
+        except InvalidRequirement:
+            key = text.lower()  # 읽을 수 없는 것도 버리지 않는다 — 안내에서 사라지면 더 나쁘다
+        collected[(key, text)] = None
+    return [text for _key, text in sorted(collected)]
 
 
 def missing_module_hint(source: str, module: str) -> str:
@@ -179,6 +219,11 @@ def missing_module_hint(source: str, module: str) -> str:
     선언에 없으면 아무것도 붙이지 않는다. 그건 헤더에 적는 것을 빠뜨린 것이고
     (`STR-DEP-001` 이 잡을 수 없는 자리), 여기서 추측으로 설치 명령을 만들면
     엉뚱한 패키지 이름을 안내하게 된다.
+
+    ⚠ **여기서는 완전한 명령을 만들 수 없다.** 등록소를 모르는 자리이기 때문이다
+    (실행 엔진은 `--home` 이 어디인지 이 함수에 알려주지 않는다). 그래서 단순 형태로
+    폴백하되 **`--with` 가 선언적이라는 경고를 함께 낸다** — 등록 시점의
+    `STR-DEP-001` 은 등록소를 알고 있으므로 거기서 완전한 명령이 나간다.
     """
     if not module:
         return ""
@@ -195,9 +240,46 @@ def missing_module_hint(source: str, module: str) -> str:
             return (
                 f"이 모듈은 스크립트의 PEP 723 헤더에 `{raw}` 로 선언돼 있지만 "
                 "지금 환경에 없습니다. 노드 스크립트는 strictler 와 같은 환경에서 "
-                f"`import` 가 풀립니다 — 그쪽에 함께 설치하세요: {install_command(raw)}"
+                f"`import` 가 풀립니다 — 그쪽에 함께 설치하세요: {install_command(raw)}\n"
+                "⚠ `--with` 는 **선언적**이라 적은 것만 남습니다. 다른 스크립트가 "
+                "요구하는 것이 있으면 **전부 함께** 적으세요 "
+                "(`strictler script list` / `show <id>` 의 선언 의존성)."
             )
     return ""
+
+
+def missing_submodule_hint(module: str) -> str:
+    """`a.b` 를 못 찾았는데 **`a` 는 설치돼 있는** 경우의 안내. 아니면 `""`.
+
+    ★ **없는 것은 패키지가 아니라 그 안의 모듈이다.** 이 구분을 안 하면
+    *"`pydantic>=2` 로 선언돼 있지만 지금 환경에 없습니다"* 같은 **사실이 아닌 문장**이
+    나간다 — pydantic 은 설치돼 있고, 없는 것은 서브모듈이다. lint 도구에서 잘못된
+    안내는 잘못된 리포트에 준한다.
+
+    **설치돼 있는지는 `find_spec` 으로 본다.** 배포판 이름(`importlib.metadata`)이
+    아니라 **import 이름**이 기준이어야 한다 — 여기서 실패한 것이 `import` 이기 때문이다
+    (`beautifulsoup4` 를 깔아도 import 이름은 `bs4` 다).
+    """
+    root = module.split(".", 1)[0]
+    if not root or root == module or not _is_importable(root):
+        return ""
+    return (
+        f"`{root}` 패키지는 설치돼 있으나 그 안에 `{module}` 이 없습니다. "
+        "설치 문제가 아니라 **모듈 경로가 틀린 것**입니다 — 이름을 확인하거나, "
+        "그 패키지 버전에 그 모듈이 있는지 확인하세요."
+    )
+
+
+def _is_importable(root: str) -> bool:
+    """최상위 모듈을 지금 import 할 수 있는가. **부모를 실제로 import 하지 않는다.**
+
+    `find_spec` 이 무엇이든 던지면 `False` 로 본다 — 안내 문자열을 만드는 자리라서
+    여기서 예외를 내면 원래 오류가 뭉개진다.
+    """
+    try:
+        return importlib.util.find_spec(root) is not None
+    except BaseException:  # noqa: BLE001 - 남의 패키지가 무엇을 던질지 모른다
+        return False
 
 
 # --- 내부 ----------------------------------------------------------------
@@ -209,7 +291,9 @@ def _malformed(path: str, reason: str) -> Finding:
     )
 
 
-def _check_one(requirement: Requirement, raw: str, path: str) -> list[Finding]:
+def _check_one(
+    requirement: Requirement, raw: str, path: str, known: Iterable[str] = ()
+) -> list[Finding]:
     """요구 하나 — 없으면 `-001`, 있는데 버전이 안 맞으면 `-003`."""
     try:
         found = installed_version(requirement.name)
@@ -221,7 +305,7 @@ def _check_one(requirement: Requirement, raw: str, path: str) -> list[Finding]:
                 fields={
                     "requirement": raw,
                     "file": path,
-                    "install": install_command(raw),
+                    "install": install_command(raw, known),
                 },
             )
         ]
@@ -236,7 +320,7 @@ def _check_one(requirement: Requirement, raw: str, path: str) -> list[Finding]:
                     "requirement": raw,
                     "installed": found,
                     "file": path,
-                    "install": install_command(raw),
+                    "install": install_command(raw, known),
                 },
             )
         ]

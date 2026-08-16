@@ -1166,6 +1166,40 @@ def test_선언한_패키지가_없으면_등록되지_않는다(
     assert project.ids("script") == []
 
 
+def test_안내_명령이_등록소의_선언을_전부_포함한다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """★ `uv tool install --with` 는 **선언적**이다 — 하나만 안내하면 그대로 따른 AI 가
+    **다른 스크립트의 의존성을 지운다.** 등록소가 아는 선언을 전부 넣는다."""
+    first = VANTAGE_PEP723  # pydantic>=2
+    second = """
+    # /// script
+    # dependencies = ["packaging>=23"]
+    # ///
+""" + VANTAGE
+    assert project.run("script", "add", str(project.script("a", first))) == 0
+    assert project.run("script", "add", str(project.script("b", second))) == 0
+    capsys.readouterr()
+
+    assert project.run("script", "add", str(project.script("c", VANTAGE_MISSING_DEP))) == 2
+    out = capsys.readouterr().out
+    assert "--with 'definitely-not-installed-xyz'" in out
+    assert "--with 'pydantic>=2'" in out
+    assert "--with 'packaging>=23'" in out
+    assert "`--with` 는 **선언적**" in out
+
+
+def test_등록소가_비어도_안내가_나온다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """폴백 — 단순 형태. 여기서 예외를 내지 않는다."""
+    assert project.run("script", "add", str(project.script("c", VANTAGE_MISSING_DEP))) == 2
+    out = capsys.readouterr().out
+    assert (
+        "uv tool install strictler --with 'definitely-not-installed-xyz'" in out
+    )
+
+
 def test_node_update_가_테스트를_따라_교체하고_없으면_걷는다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:

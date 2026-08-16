@@ -1066,7 +1066,9 @@ def _resolved_contract(
 
     findings.extend(
         item.model_copy(update={"node": item.node or node_id})
-        for item in script_checks.check_script(source, str(path), node.type)
+        for item in script_checks.check_script(
+            source, str(path), node.type, known_dependencies=store.declared_dependencies()
+        )
     )
     contract, extracted = script_checks.extract_contract(source, str(path))
     findings.extend(

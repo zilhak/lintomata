@@ -839,10 +839,22 @@ class Declared:                   # frozen dataclass
 
 def read_header(source: str, path: str) -> tuple[Declared, list[Finding]]   # STR-DEP-002
 def declared_dependencies(source: str) -> tuple[str, ...]   # 관대하게 — 등록소 기록용
-def check_dependencies(source: str, path: str) -> list[Finding]   # STR-DEP-001/002/003
-def install_command(requirement: str) -> str    # uv tool install strictler --with '<req>'
-def missing_module_hint(source: str, module: str) -> str   # 실행 시점 안내. 해당 없으면 ""
+def check_dependencies(source: str, path: str, known: Iterable[str] = ()) -> list[Finding]
+def install_command(requirement: str, known: Iterable[str] = ()) -> str
+def missing_module_hint(source: str, module: str) -> str    # 헤더에 선언된 것을 못 찾았을 때
+def missing_submodule_hint(module: str) -> str              # `a.b` 인데 `a` 는 설치돼 있을 때
 ```
+
+**★ `--with` 는 선언적이다.** `uv tool install --with` 는 이전 `--with` 를 유지하지 않고
+**적은 것만 남긴다.** 문제가 된 것 하나만 안내하면 그대로 따른 AI 가 **다른 스크립트의
+의존성을 지운다** — lint 도구에서 잘못된 안내는 잘못된 리포트에 준한다.
+그래서 `install_command` 는 `known`(= `Store.declared_dependencies()`)을 합쳐
+**완전한 명령**을 만든다. `known` 이 비면 단순 형태로 폴백하고 **예외를 내지 않는다** —
+안내 문자열을 만드는 자리라서 여기서 터지면 원래 `Finding` 이 사라진다.
+
+**★ 설치돼 있는데 "없습니다" 라고 말하지 않는다.** `pydantic.없는것` 은 pydantic 이 없는
+것이 아니라 서브모듈이 없는 것이다 — `missing_submodule_hint` 가 그 경우를 가르고,
+그때는 **형제 파일 문단을 붙이지 않는다**(원인이 확정된 자리에 다른 방향을 얹지 않는다).
 
 **`uv run --script` 로 격리 프로세스를 띄우지 않는다** — `schema.md` 16절의 폐기된 안이다.
 스크립트는 strictler 와 같은 프로세스에 로드되므로 `import` 가 strictler 환경에서 풀린다.
@@ -953,6 +965,7 @@ class Store:
     def path_of(self, entry_id: str) -> Path
     def read(self, entry_id: str) -> str
     def verify_hash(self, entry_id: str) -> bool                     # STR-REG-001
+    def declared_dependencies(self) -> list[str]     # 전 스크립트 PEP 723 선언의 합집합
 ```
 
 **등록은 편의가 아니라 검증 결과를 재사용하는 기제다.** 해시가 그대로면 재검사하지 않는다.
@@ -1027,7 +1040,8 @@ class ScriptContract:
     tool_calls:  list[tuple[str,str]]   # (함수명, 실행파일 경로 인자)
 
 def extract_contract(source: str, path: str) -> tuple[ScriptContract, list[Finding]]
-def check_script(source: str, path: str, node_type: NodeType | None = None) -> list[Finding]
+def check_script(source: str, path: str, node_type: NodeType | None = None,
+                 known_dependencies: Iterable[str] = ()) -> list[Finding]
 def check_entrypoint(contract) -> list[Finding]                    # CONTRACT-001~003
 def check_args_shape(contract) -> list[Finding]                    # CONTRACT-004, STATE-001
 def check_types(contract) -> list[Finding]                         # TYPE-001~003

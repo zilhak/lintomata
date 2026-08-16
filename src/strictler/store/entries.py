@@ -311,6 +311,26 @@ class Store:
             return entries
         return [entry for entry in entries if entry.kind == kind]
 
+    def declared_dependencies(self) -> list[str]:
+        """등록된 모든 스크립트가 선언한 의존성의 **합집합** (원문 그대로).
+
+        안내 명령을 완전하게 만드는 재료다 — `uv tool install --with` 는 **선언적**
+        이라 적은 것만 남으므로, 문제가 된 것 하나만 안내하면 그대로 따른 AI 가
+        **다른 스크립트의 의존성을 지운다**(`deps.install_command`).
+
+        **읽을 수 없으면 빈 목록이다 — 예외를 내지 않는다.** 이 값은 문자열을
+        만드는 데만 쓰이므로, 여기서 터지면 원래의 `Finding` 이 사라진다.
+        """
+        try:
+            entries = self.load_index().entries.values()
+        except StrictlerError:
+            return []
+        found: dict[str, None] = {}
+        for entry in entries:
+            for item in entry.dependencies:
+                found[item] = None
+        return list(found)
+
     def show(self, entry_id: str) -> RegistryEntry:
         """항목 하나. 없으면 오류다."""
         index = self.load_index()
