@@ -952,7 +952,9 @@ def test_unimportable_script_is_an_error(project: Project) -> None:
 
     assert statuses(findings) == ["error"]
     assert ids(findings) == [""]  # 규칙 없는 오류 — 그래도 결과가 사라지지 않는다
-    assert "모듈 최상위" in findings[0].message
+    # 모듈을 못 찾은 것은 **부작용 문제가 아니다** — 못 찾은 이름을 짚어 안내한다.
+    assert "strictler_그런_모듈은_없다" in findings[0].message
+    assert "형제 파일 import 는 되지 않습니다" in findings[0].message
 
 
 def test_test_file_top_level_must_be_an_object(project: Project) -> None:

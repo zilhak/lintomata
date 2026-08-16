@@ -225,7 +225,10 @@ def test_load_script_appends_install_command(tmp_path: Path) -> None:
     )
 
 
-def test_load_script_without_header_keeps_plain_message(tmp_path: Path) -> None:
+def test_load_script_without_header_still_explains_module_not_found(
+    tmp_path: Path,
+) -> None:
+    """헤더가 없어도 **모듈을 못 찾은 것**은 부작용 문제가 아니다 — 따로 안내한다."""
     from strictler.engine import exec as engine_exec
     from strictler.errors import StrictlerError
 
@@ -233,4 +236,45 @@ def test_load_script_without_header_keeps_plain_message(tmp_path: Path) -> None:
     path.write_text("import definitely_not_installed_xyz\n", encoding="utf-8")
     with pytest.raises(StrictlerError) as exc:
         engine_exec.load_script(path)
-    assert "uv tool install" not in exc.value.message
+    message = exc.value.message
+    assert "definitely_not_installed_xyz" in message
+    # 선언에 없으므로 요구 원문을 짚는 PEP 723 안내는 붙지 않는다.
+    assert "uv tool install strictler --with 'definitely" not in message
+    # 대신 구조를 바꾸라는 안내가 나온다.
+    assert "형제 파일 import 는 되지 않습니다" in message
+    assert "부작용" not in message
+
+
+def test_sibling_file_import_fails_with_structural_guide(tmp_path: Path) -> None:
+    """★ conductor 실측: **옆에 있어도 형제 파일은 import 되지 않는다.**
+
+    스크립트 디렉터리는 `sys.path` 에 없고, 등록하면 스크립트 파일 하나만 복사되므로
+    옆 파일은 따라오지 않는다. 안내는 경로를 고치라고 하지 않고 **구조를 바꾸라고** 한다.
+    """
+    from strictler.engine import exec as engine_exec
+    from strictler.errors import StrictlerError
+
+    (tmp_path / "button_lib.py").write_text("def is_button(x):\n    return True\n", encoding="utf-8")
+    path = tmp_path / "node.py"
+    path.write_text("from button_lib import is_button\n", encoding="utf-8")
+
+    with pytest.raises(StrictlerError) as exc:
+        engine_exec.load_script(path)
+    message = exc.value.message
+    assert "button_lib" in message
+    assert "형제 파일 import 는 되지 않습니다" in message
+    assert "노드를 재사용" in message
+    assert "uv tool install strictler --with <패키지>" in message
+
+
+def test_other_load_errors_keep_the_side_effect_guide(tmp_path: Path) -> None:
+    """모듈 최상위에서 터지는 **다른** 예외에는 기존 안내가 그대로 맞다."""
+    from strictler.engine import exec as engine_exec
+    from strictler.errors import StrictlerError
+
+    path = tmp_path / "node.py"
+    path.write_text("VALUE = 1 // 0\n", encoding="utf-8")
+    with pytest.raises(StrictlerError) as exc:
+        engine_exec.load_script(path)
+    assert "import 만으로 부작용이 없어야" in exc.value.message
+    assert "형제 파일" not in exc.value.message

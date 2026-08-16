@@ -298,6 +298,45 @@ uv tool install strictler --with 'selectolax>=0.3'
 > **HTML 파싱에는 `selectolax`(lexbor) 를 쓴다.** `BeautifulSoup` 은 lxml 백엔드로도
 > 13배 느리다 (`CLAUDE.md` 실측표).
 
+### 공용 로직을 여러 스크립트가 돌려쓰려면
+
+**형제 파일 import 는 안 된다. 옆에 있어도 안 된다.**
+
+```python
+from button_lib import is_button      # ✕ ModuleNotFoundError — 파일이 옆에 있어도
+```
+
+스크립트가 있는 디렉터리는 `sys.path` 에 없다. 그리고 등록하면 **스크립트 파일 하나만**
+`~/.strictler/scripts/` 로 복사되므로 옆 파일은 따라오지 않는다 — `schema.md` 2절이
+**원본을 지워도 된다**고 못 박았으므로, 옆 파일에 기대는 순간 그 약속이 깨진다.
+
+**① 첫 번째 답은 노드 재사용이다.** 판정 *함수*를 공유하지 말고 **그 판정을 하는 노드**를
+여러 파이프라인이 참조한다. 노드 재사용은 별도 기능이 아니라 **근본 동작**이다
+(`schema.md` 1절). 네 층이 별개 파일인 이유가 이것이고, 이 문서 2절의
+`check_count` 하나가 `checkButtons`·`checkMenu` 두 자리에 쓰이는 것이 그 실물이다.
+
+**② 노드 재사용으로 안 풀리는 경우가 있다.** 예를 들어 **값 검증용 Perceive** 와
+**동일성 비교용 Perceive** 는 출력이 달라 별개 노드여야 하는데(`schema.md` 12절),
+*"무엇이 버튼인가"* 를 판정하는 로직은 같다. 그때는 **작은 패키지로 만들어 설치한다.**
+
+```
+uv tool install strictler --with /path/to/myproject-perceive-lib
+```
+
+```python
+# /// script
+# dependencies = ["myproject-perceive-lib>=0.1"]
+# ///
+from myproject_perceive import is_button
+```
+
+헤더로 선언하면 **등록 시점에 확인된다**(`STR-DEP-001`). 패키지는 파일이 아니라
+환경에 있으므로 원본을 지워도, 등록소로 복사돼도 그대로 풀린다.
+
+> **`PYTHONPATH` 로도 되기는 한다. 권하지 않는다.** 등록 후 원본 폴더를 지우면 깨지고,
+> 실행하는 셸마다 환경을 맞춰야 한다 — *"등록하면 원본을 지워도 된다"* 는 등록소 모델과
+> 어긋난다. 되는 것과 기대도 되는 것은 다르다.
+
 ---
 
 ## 4. 단위테스트를 어떻게 붙이는가

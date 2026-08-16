@@ -97,34 +97,69 @@ def load_script(path: Path) -> ModuleType:
         spec.loader.exec_module(module)
     except BaseException as exc:  # noqa: BLE001 - 사용자 코드는 무엇이든 던질 수 있다
         sys.modules.pop(name, None)
-        raise StrictlerError(
-            f"스크립트를 로드하다 예외가 났습니다: {path}\n"
-            f"{type(exc).__name__}: {exc}\n"
-            "모듈 최상위(import·상수 계산 등)에서 터진 것입니다. "
-            "노드 스크립트는 import 만으로 부작용이 없어야 하고, 실제 동작은 "
-            "`runNode(args)` 안에 두세요." + _dependency_hint(path, exc)
-        ) from exc
+        raise StrictlerError(_load_failure(path, exc)) from exc
     return module
 
 
-def _dependency_hint(path: Path, exc: BaseException) -> str:
-    """`ModuleNotFoundError` 이고 그 모듈이 PEP 723 헤더에 선언돼 있으면 설치 명령을 붙인다.
+def _load_failure(path: Path, exc: BaseException) -> str:
+    """로드 실패 메시지. **`ModuleNotFoundError` 는 따로 안내한다.**
 
-    없으면 `""` — 다른 예외에는 아무것도 덧붙이지 않는다. 예외 텍스트만 나가면
-    *"왜 없는지"* 와 *"어디에 깔아야 하는지"* 가 빠져 AI 가 고칠 곳을 못 찾는다
-    (`schema.md` 6절 — 격리하지 않으므로 strictler 환경에 깔아야 한다).
+    모듈을 못 찾은 것은 **부작용 문제가 아니다.** 둘을 한 문구로 묶으면
+    *"import 만으로 부작용이 없어야 한다"* 를 읽고 엉뚱한 곳을 고치게 된다 —
+    읽는 주체가 AI 라서 안내가 곧 수정 방향이다.
 
-    **소스를 못 읽는 것은 여기서 문제 삼지 않는다.** 이 함수는 이미 실패한 예외에
-    문장을 덧붙이는 자리라서, 여기서 새 예외를 내면 원인이 뭉개진다.
+    그 밖의 예외(상수 계산 실패 등)에는 기존 안내가 그대로 맞다.
+    """
+    head = f"스크립트를 로드하다 예외가 났습니다: {path}\n{type(exc).__name__}: {exc}\n"
+    guide = _missing_module_guide(path, exc)
+    if guide:
+        return head + guide
+    return (
+        head + "모듈 최상위(import·상수 계산 등)에서 터진 것입니다. "
+        "노드 스크립트는 import 만으로 부작용이 없어야 하고, 실제 동작은 "
+        "`runNode(args)` 안에 두세요."
+    )
+
+
+def _missing_module_guide(path: Path, exc: BaseException) -> str:
+    """`ModuleNotFoundError` 전용 안내. 다른 예외면 `""`.
+
+    **형제 파일 import 는 되지 않는다.** 스크립트가 있는 디렉터리는 `sys.path` 에
+    없고(엔진이 넣지 않는다), 등록하면 **스크립트 파일 하나만** 등록소로 복사되므로
+    옆 파일은 따라오지 않는다 — 등록소는 *"파일 하나 = 엔트리 하나"* 위에 서 있고
+    `schema.md` 2절이 **원본을 지워도 된다**고 못 박았다. 옆 파일에 기대면 그 약속이
+    깨진다. 그래서 이 안내는 **경로를 고치라고 하지 않고 구조를 바꾸라고 한다.**
+
+    PEP 723 헤더에 선언된 모듈이면 그 대조 결과를 **위에 얹는다**
+    (`deps.missing_module_hint`) — 선언은 했는데 환경에 없는 것이므로 고칠 곳이
+    다르고, 요구 원문 그대로의 설치 명령을 줄 수 있다.
+
+    **소스를 못 읽는 것은 여기서 문제 삼지 않는다.** 이미 실패한 예외에 문장을
+    덧붙이는 자리라서, 여기서 새 예외를 내면 원인이 뭉개진다.
     """
     if not isinstance(exc, ModuleNotFoundError) or not exc.name:
         return ""
+
+    declared = ""
     try:
         source = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        return ""
-    hint = deps.missing_module_hint(source, exc.name)
-    return f"\n{hint}" if hint else ""
+        pass
+    else:
+        hint = deps.missing_module_hint(source, exc.name)
+        declared = f"{hint}\n" if hint else ""
+
+    return (
+        f"{declared}"
+        f"못 찾은 모듈: `{exc.name}`. **형제 파일 import 는 되지 않습니다** — "
+        "스크립트가 있는 디렉터리는 `sys.path` 에 없고, 등록하면 스크립트 파일 "
+        "하나만 등록소로 복사되므로 옆 파일은 따라오지 않습니다.\n"
+        "공용 로직은 둘 중 하나로 풉니다: (1) 판정 함수를 공유하는 대신 "
+        "**그 판정을 하는 노드를 재사용**한다 (노드 재사용은 근본 동작입니다). "
+        "(2) 작은 패키지로 만들어 strictler 환경에 설치한다 — "
+        "`uv tool install strictler --with <패키지>` 후 PEP 723 헤더에 선언하면 "
+        "등록 시점에 확인됩니다."
+    )
 
 
 # ── 값 조립 ──────────────────────────────────────────────────────────────────
@@ -271,12 +306,14 @@ def invoke(module: ModuleType, args: Any) -> Any:
     try:
         return entry(args)
     except BaseException as exc:  # noqa: BLE001 - 사용자 코드는 무엇이든 던질 수 있다
+        # 늦은 import 가 `runNode` 안에서 터지는 경우도 있다 — 같은 안내를 준다.
+        guide = _missing_module_guide(Path(file), exc) if file else ""
         raise StrictlerError(
             f"`{ENTRYPOINT}` 가 예외를 냈습니다: {file or '?'}\n"
             f"{type(exc).__name__}: {exc}\n"
             "스크립트 예외는 위반이 아니라 **오류**입니다 — 기획과 다른 것이 아니라 "
             "검사 자체가 못 돈 것입니다. 스크립트를 고치세요."
-            + (_dependency_hint(Path(file), exc) if file else "")
+            + (f"\n{guide}" if guide else "")
         ) from exc
 
 
