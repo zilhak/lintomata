@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "strictler"
+version = "0.1.0"
+description = "기획대로 돌아가는지를 검사하는 도구 — QA 의 프로그램화, lint 의 인간 버전"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "pydantic>=2",
+]
+
+[project.scripts]
+strictler = "strictler.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/strictler"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/strictler", "README.md"]
