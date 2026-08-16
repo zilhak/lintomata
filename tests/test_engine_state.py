@@ -45,13 +45,23 @@ def test_초기_상태에서_시작한다() -> None:
     assert machine(["idle", "settled"], "idle").current == "idle"
 
 
-def test_after_node_가_전이를_수행한다() -> None:
+def step_through(m: StateMachine, node_id: str) -> None:
+    """구동부(`engine.drive`)가 하는 것과 **같은 방식**으로 구간을 지나간다.
+
+    통째로 미는 편의 함수를 두지 않는 이유가 이것이다 — 구간을 한 칸씩 지나가야
+    중간 상태에서 대기 중이던 노드가 그 자리에서 돌 수 있다 (R4-1).
+    """
+    for delay, to in m.steps_after(node_id):
+        m.enter(to, delay)
+
+
+def test_전이는_해당_노드가_끝났을_때만_일어난다() -> None:
     m = machine(
         ["idle", "settled"], "idle", [{"after": "submit", "to": "settled"}]
     )
-    m.after_node("other")
+    step_through(m, "other")
     assert m.current == "idle"
-    m.after_node("submit")
+    step_through(m, "submit")
     assert m.current == "settled"
 
 
@@ -127,7 +137,7 @@ def test_enter_가_선언된_delay_만큼_기다린다(monkeypatch: pytest.Monke
     monkeypatch.setattr(state_module, "_sleep", waited.append)
 
     m = machine(["idle", "x"], "idle", [{"after": "a", "to": "x", "delay": 250}])
-    m.after_node("a")
+    step_through(m, "a")
 
     assert waited == [0.25]
     assert m.current == "x"
@@ -137,7 +147,7 @@ def test_지연이_0_이면_기다리지_않는다(monkeypatch: pytest.MonkeyPat
     waited: list[float] = []
     monkeypatch.setattr(state_module, "_sleep", waited.append)
 
-    machine(["idle", "x"], "idle", [{"after": "a", "to": "x"}]).after_node("a")
+    step_through(machine(["idle", "x"], "idle", [{"after": "a", "to": "x"}]), "a")
 
     assert waited == []
 
@@ -146,7 +156,7 @@ def test_matches_는_노드_어휘를_파이프라인_상태로_번역한다() -
     m = machine(["idle", "settled"], "idle", [{"after": "a", "to": "settled"}])
 
     assert m.matches({"stop": "settled"}, "stop") is False
-    m.after_node("a")
+    step_through(m, "a")
     assert m.matches({"stop": "settled"}, "stop") is True
     # 매핑에 없는 이름은 만족될 수 없다 — `STR-STATE-002` 가 등록 시점에 짚는다.
     assert m.matches({"stop": "settled"}, "모름") is False
@@ -160,7 +170,7 @@ def test_snapshot_은_상태_여부와_실행_시각을_담는다() -> None:
         "stop": False,
         "__startedAt": STARTED_AT,
     }
-    m.after_node("a")
+    step_through(m, "a")
     assert m.snapshot({"go": "idle", "stop": "settled"}) == {
         "go": False,
         "stop": True,
@@ -175,8 +185,8 @@ def test_snapshot_의_실행_시각은_호출자가_준_값_그대로다() -> No
     assert m.snapshot({})["__startedAt"] == STARTED_AT
 
 
-def test_blocked_by_는_안_일어나게_되는_전이의_도착_상태들이다() -> None:
-    """`not_run` 전파의 두 번째 경로(상태 의존)를 계산하는 재료다."""
+def test_구간을_한_칸씩_지나가면_중간_상태를_실제로_거친다() -> None:
+    """마지막 상태만 반영하면 **중간 상태를 기다리던 노드가 통째로 사라진다** (R4-1)."""
     m = machine(
         ["idle", "loading", "done"],
         "idle",
@@ -186,9 +196,14 @@ def test_blocked_by_는_안_일어나게_되는_전이의_도착_상태들이다
             {"after": "b", "to": "done"},
         ],
     )
-    assert m.blocked_by("a") == ["loading", "done"]
-    assert m.blocked_by("b") == ["done"]
-    assert m.blocked_by("없음") == []
+    seen: list[str] = [m.current]
+    for delay, to in m.steps_after("a"):
+        m.enter(to, delay)
+        seen.append(m.current)
+
+    assert seen == ["idle", "loading", "done"]
+    assert m.steps_after("b") == [(0, "done")]
+    assert m.steps_after("없음") == []
 
 
 def test_노드는_상태를_바꾸지_못한다() -> None:

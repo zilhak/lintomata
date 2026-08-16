@@ -22,11 +22,10 @@
 **증거 캡처는 하지 않는다.** 위반은 정상 결과이므로 수습할 것이 없다 —
 lint 가 스크린샷을 남기지 않는 것과 같다.
 
-**★ 실행 순서는 파이프라인 `nodes` 선언 순서다** (MODULES.md R3-7).
-`checks.reachability.simulate().order` 가 참조 구현이고 여기가 그 순서를 따른다 —
-다르게 돌면 "등록은 통과했는데 실행에선 못 닿는다" 가 된다. 그래서 구동 루프는
-`simulate()` 의 전개(선언 순서 tie-break + 전이 구간 한 칸씩 지나가기)를 **그대로**
-옮겨 놓았다.
+**★ 구동 루프는 `engine.drive` 하나뿐이다** (MODULES.md R4-1).
+`ready()` 재스캔·구간 전이 drain·선언 순서 tie-break·실행 시점 해시 대조가 전부
+거기 있고 **`compare` 도 같은 것을 쓴다.** 여기에 복제해 두면 두 벌이 갈리고,
+갈리는 순간 lint 결과 자체가 틀린다 (통과할 노드에 거짓 not run).
 
 **★ `engine.compare` 를 top-level 로 import 하지 않는다.** 공용 결과 타입은
 `engine.result` 에 있고 `compare` 도 거기에만 의존한다. `kind: compare` 디스패치는
@@ -46,10 +45,11 @@ from strictler.checks import pipeline as pipeline_checks
 from strictler.checks import script as script_checks
 from strictler.checks.node import dedupe, findings_of
 from strictler.checks.script import ScriptContract
+from strictler.engine import drive as drive_loop
 from strictler.engine import exec as node_exec
 from strictler.engine.result import NodeOutcome, RunResult
 from strictler.engine.state import StateMachine
-from strictler.errors import Finding, NotRunCause, StrictlerError
+from strictler.errors import Finding, StrictlerError
 from strictler.model import Node, NodeType, Pipeline, PipelineNode, Spec
 from strictler.report import Report, build_report, write_compare_report
 from strictler.store.entries import Store
@@ -64,7 +64,6 @@ __all__ = [
     "run_plan_item",
     "run_pipeline",
     "propagate_not_run",
-    "topo_order",
 ]
 
 
@@ -308,27 +307,41 @@ def run_pipeline(
 
     if any(finding.status == "error" and not finding.node for finding in result.findings):
         # 노드에 귀속되지 않은 오류 = 파이프라인 자체가 성립하지 않는다.
-        result.findings.extend(propagate_not_run(pipeline, result, path))
-        result.findings = dedupe(result.findings)
-        return result
+        return _close(pipeline, result, path)
 
     registry, registry_findings = pipeline_checks.build_registry(
         [item.contract for item in loaded.values()], path
     )
     result.findings.extend(registry_findings)
     if registry is None:
-        result.findings = dedupe(result.findings)
-        return result
+        return _close(pipeline, result, path)
 
     try:
         machine = StateMachine(pipeline.states, pipeline.transitions, config, started_at_ms)
     except StrictlerError as exc:
         result.findings.extend(findings_of(exc, path=path))
-        result.findings = dedupe(result.findings)
-        return result
+        return _close(pipeline, result, path)
 
-    _drive(pipeline, loaded, machine, registry, config, path, result)
-    result.findings.extend(propagate_not_run(pipeline, result, path))
+    drive_loop.drive(
+        pipeline,
+        machine=machine,
+        runnable=loaded,
+        run_node=lambda pn: _run_node(
+            pn, loaded[pn.id], machine, registry, config, path, result
+        ),
+        result=result,
+    )
+    return _close(pipeline, result, path)
+
+
+def _close(pipeline: Pipeline, result: RunResult, path: str) -> RunResult:
+    """남은 노드를 `not_run` 으로 확정하고 결과를 정리한다.
+
+    **어느 반환 경로로 나가든 여기를 지난다** — 그래야 파이프라인의 모든 노드가
+    네 상태 중 정확히 하나에 들어간다 (R4-2). 중간에 그냥 `return` 하면 그 노드들이
+    리포트에서 조용히 사라지고, 그건 거짓 리포트다.
+    """
+    result.findings.extend(drive_loop.finalize(pipeline, result, path))
     result.findings = dedupe(result.findings)
     return result
 
@@ -344,71 +357,6 @@ def _broken_nodes(
     }
     broken |= {pn.id for pn in pipeline.nodes if pn.id not in loaded}
     return [pn.id for pn in pipeline.nodes if pn.id in broken]
-
-
-def _drive(
-    pipeline: Pipeline,
-    loaded: Mapping[str, _NodeRun],
-    machine: StateMachine,
-    registry: Any,
-    config: Mapping[str, Any],
-    path: str,
-    result: RunResult,
-) -> None:
-    """전개 — `checks.reachability.simulate()` 와 **같은 규칙**으로 돈다 (R3-7).
-
-    1. 아직 안 돈 노드를 **선언 순서대로** 훑어 첫 번째 실행 가능한 것을 집는다
-    2. 그 노드를 돌리고, 성공하면 그 노드를 `after` 로 삼는 전이 구간을 지나간다
-    3. 지나가는 **각 상태마다** 1 로 되돌아가 그 자리에서 실행 가능해진 노드를 소진한다
-
-    실패한 노드는 **전이를 밀지 않는다** — 그게 not run 의 두 번째 경로다.
-    """
-    declared = set(pipeline.states.values)
-    done: set[str] = set(result.outcomes)
-    succeeded: set[str] = set()
-
-    def waits_for(pn: PipelineNode) -> str | None:
-        """이 노드가 기다리는 파이프라인 상태. 번역 불가면 제약 없음으로 본다.
-
-        번역이 안 되는 것은 `STR-STATE-002`/`-003`/`-004` 가 등록 시점에 이미
-        짚었다 — 여기서 조용히 영원히 막아버리면 원인이 뭉개진다.
-        """
-        if pn.when is None:
-            return None
-        mapped = pn.states.get(pn.when.state)
-        if mapped is None or mapped not in declared:
-            return None
-        return mapped
-
-    def ready() -> PipelineNode | None:
-        for pn in pipeline.nodes:
-            if pn.id in done or pn.id not in loaded:
-                continue
-            if not all(dep in succeeded for dep in pn.inputs.values()):
-                continue
-            wait = waits_for(pn)
-            if wait is not None and wait != machine.current:
-                continue
-            return pn
-        return None
-
-    def drain() -> None:
-        while True:
-            pn = ready()
-            if pn is None:
-                return
-            done.add(pn.id)
-            outcome = _run_node(pn, loaded[pn.id], machine, registry, config, path, result)
-            result.outcomes[pn.id] = outcome
-            result.findings.extend(outcome.findings)
-            if outcome.status == "error":
-                continue  # 실패한 노드는 전이를 밀지 않는다
-            succeeded.add(pn.id)
-            for delay, to in machine.steps_after(pn.id):
-                machine.enter(to, delay)
-                drain()
-
-    drain()
 
 
 def _run_node(
@@ -551,100 +499,10 @@ def _default_violation_message(data: Mapping[str, Any]) -> str:
 # ── not run 전파 ─────────────────────────────────────────────────────────────
 
 
-def propagate_not_run(
-    pipeline: Pipeline,
-    result: RunResult,
-    path: str,
-) -> list[Finding]:
-    """실패의 여파를 **전수 검사해서** `not_run` 으로 바꾼다 (`schema.md` 9절).
+propagate_not_run = drive_loop.finalize
+"""실패의 여파를 **전수 검사해서** `not_run` 으로 바꾼다 — 정본은 `engine.drive` 다.
 
-    데이터 의존과 상태 의존 두 경로를 모두 훑는다. **원인 노드는 바꾸는 그 시점에
-    적는다** — `Finding.cause` 에 `{node, reason}`.
-
-    | 경로 | 언제 |
-    |---|---|
-    | `data_dependency` | `inputs` 로 받는 노드가 실패했거나 그 자신이 not run 이다 |
-    | `state_unreachable` | `when` 이 기다리는 상태로 가는 전이의 `after` 가 못 돌았다 |
-
-    두 번째를 놓치기 쉽다. 전이는 **성공한 노드만** 민다 — 실패한 노드의 전이는
-    일어나지 않고, 그 상태를 기다리던 노드는 영원히 조건을 못 만족한다.
-
-    **여파가 아닌 것은 표기하지 않는다.** 원인을 짚을 수 없는 미실행 노드는
-    구성 자체가 잘못된 경우인데, 그건 등록 시점의 `STR-STATE-007` 자리다.
-    """
-    by_id = {pn.id: pn for pn in pipeline.nodes}
-    order = [pn.id for pn in pipeline.nodes]
-
-    succeeded = {
-        node_id
-        for node_id, outcome in result.outcomes.items()
-        if outcome.status in ("pass", "violation")
-    }
-    failed = {
-        node_id for node_id, outcome in result.outcomes.items() if outcome.status == "error"
-    }
-
-    # 전이는 성공한 노드만 민다 — 초기 상태는 전이 없이도 처음부터 참이다.
-    entered = {pipeline.states.initial}
-    entered.update(t.to for t in pipeline.transitions if t.after in succeeded)
-
-    causes: dict[str, NotRunCause] = {}
-    changed = True
-    while changed:
-        changed = False
-        dead = failed | set(causes)
-        for node_id in order:
-            if node_id in succeeded or node_id in failed or node_id in causes:
-                continue
-            pn = by_id[node_id]
-
-            blocker = next((p for p in pn.inputs.values() if p in dead), "")
-            if blocker:
-                causes[node_id] = NotRunCause(node=blocker, reason="data_dependency")
-                changed = True
-                continue
-
-            if pn.when is None:
-                continue
-            wait = pn.states.get(pn.when.state)
-            if wait is None or wait in entered:
-                continue
-            blocker = next(
-                (t.after for t in pipeline.transitions if t.to == wait and t.after in dead),
-                "",
-            )
-            if blocker:
-                causes[node_id] = NotRunCause(node=blocker, reason="state_unreachable")
-                changed = True
-
-    return [
-        Finding(status="not_run", path=path, node=node_id, cause=causes[node_id])
-        for node_id in order
-        if node_id in causes
-    ]
-
-
-def topo_order(dag: dict[str, list[str]]) -> list[str]:
-    """의존 순서. 순환은 등록 시 이미 걸러졌으므로 여기선 없다고 본다.
-
-    **동시에 가능한 것은 선언 순서**로 집는다 (R3-7) — `dag` 의 키 순서가 곧
-    파이프라인의 `nodes` 선언 순서다 (`checks.pipeline.build_dag`).
-    """
-    order: list[str] = []
-    done: set[str] = set()
-    while len(done) < len(dag):
-        picked = None
-        for node_id, deps in dag.items():
-            if node_id in done:
-                continue
-            if all(dep in done or dep not in dag for dep in deps):
-                picked = node_id
-                break
-        if picked is None:
-            break  # 순환 — `STR-GRAPH-001` 이 등록 시점에 이미 잡았다
-        done.add(picked)
-        order.append(picked)
-    return order
+값 검증과 비교가 **같은 전파 규칙**을 써야 하므로 여기에 복제하지 않는다 (R4-1)."""
 
 
 # ── 로드 ─────────────────────────────────────────────────────────────────────
@@ -686,7 +544,9 @@ def _load_nodes(
         )
         if script_path is None:
             continue
-        findings.extend(_verify_hash(node.script, store=store, path=path, node_id=pn.id))
+        findings.extend(
+            drive_loop.verify_hash(node.script, store=store, path=path, node_id=pn.id)
+        )
 
         try:
             source = script_path.read_text(encoding="utf-8")
@@ -727,7 +587,7 @@ def _load_node(
     node_id: str,
 ) -> tuple[Node | None, list[Finding]]:
     """파이프라인 노드 항목의 `source` 를 실제 노드 정의로 로드한다."""
-    source_path, findings = _resolve_entry(
+    source_path, findings = drive_loop.resolve_entry(
         value, "node", store=store, env=env, path=path, node_id=node_id
     )
     if source_path is None:
@@ -747,80 +607,12 @@ def _load_node(
 def _resolve_pipeline(
     value: str, *, store: Store, env: Mapping[str, str], path: str
 ) -> tuple[Path | None, list[Finding]]:
-    """Spec `plan` 항목의 `source` 를 파이프라인 파일로 푼다."""
-    return _resolve_entry(value, "pipeline", store=store, env=env, path=path, node_id="")
+    """Spec `plan` 항목의 `source` 를 파이프라인 파일로 푼다.
 
-
-def _resolve_entry(
-    value: str,
-    kind: Any,
-    *,
-    store: Store,
-    env: Mapping[str, str],
-    path: str,
-    node_id: str,
-) -> tuple[Path | None, list[Finding]]:
-    """`${ref.<id>}` 또는 경로를 실제 파일로 푼다 — **해시 대조까지** 한다.
-
-    `STR-REG-002`(삭제된 id) / `STR-REG-001`(등록 이후 직접 수정) 는 **실행 시점**
-    규칙이다 (`schema.md` 13절 — 등록소 무결성).
+    해석과 해시 대조는 `engine.drive` 가 한다 — `compare` 와 **같은 것**을 써야
+    등록소 무결성 판정이 갈리지 않는다 (R4-1).
     """
-    if refs.is_ref(value):
-        try:
-            refs.parse_ref(value, kind)
-        except StrictlerError as exc:
-            return None, findings_of(exc, path=path, node=node_id)
-        entry_id = value[len("${ref.") : -1]
-        try:
-            store.show(entry_id)
-        except StrictlerError:
-            return None, [
-                rules.finding(
-                    "STR-REG-002", path=path, node=node_id, fields={"id": entry_id}
-                )
-            ]
-        if not store.verify_hash(entry_id):
-            return None, [
-                rules.finding(
-                    "STR-REG-001", path=path, node=node_id, fields={"id": entry_id}
-                )
-            ]
-        return store.path_of(entry_id), []
-
-    try:
-        resolved = refs.expand_path(value, env)
-    except StrictlerError as exc:
-        return None, findings_of(exc, path=path, node=node_id)
-    if not resolved.is_file():
-        return None, [
-            Finding(
-                status="error",
-                path=path,
-                node=node_id,
-                message=(
-                    f"파일이 없습니다: {resolved}\n"
-                    f"원본: {value!r}. 경로가 맞는지, 참조한 환경변수 값이 맞는지 "
-                    "확인하세요."
-                ),
-            )
-        ]
-    return resolved, []
-
-
-def _verify_hash(
-    value: str, *, store: Store, path: str, node_id: str
-) -> list[Finding]:
-    """`${ref.<id>}` 로 참조한 등록소 파일의 해시를 대조한다 (`STR-REG-001`)."""
-    if not refs.is_ref(value):
-        return []
-    entry_id = value[len("${ref.") : -1]
-    try:
-        store.show(entry_id)
-    except StrictlerError:
-        return []  # 삭제는 `resolve_script` 가 `STR-REG-002` 로 이미 짚었다
-    if store.verify_hash(entry_id):
-        return []
-    return [rules.finding("STR-REG-001", path=path, node=node_id, fields={"id": entry_id})]
+    return drive_loop.resolve_entry(value, "pipeline", store=store, env=env, path=path)
 
 
 def _read_json(

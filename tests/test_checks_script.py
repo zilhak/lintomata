@@ -61,13 +61,13 @@ class Args:
 
 @dataclass
 class Verdict:
-    ok: bool
+    passed: bool
 
 
 def runNode(args: Args) -> Verdict:
     if args.state.stop == "settled":
         pass
-    return returnResult(Verdict(ok=len(args.input.text) == args.params.expected))
+    return returnResult(Verdict(passed=len(args.input.text) == args.params.expected))
 '''
 
 
@@ -377,6 +377,66 @@ def test_reckon_with_empty_params_dataclass_is_caught() -> None:
     assert "STR-CONTRACT-005" in ids(sc.check_script(source, PATH, "reckon"))
 
 
+def test_reckon_without_verdict_field_is_caught() -> None:
+    """**등록 시점에 잡는다** (R4-4). 런타임까지 미루면 리포트가 아니라 오류가 난다 —
+    `schema.md` 6절이 형식 제한의 목적으로 적어둔 "돌리기 전에 잡아 자기 수정 신호를
+    준다" 가 정확히 이 자리다."""
+    header = (
+        "from dataclasses import dataclass\n\n\n"
+        "@dataclass\nclass Params:\n    expected: int\n\n\n"
+        "@dataclass\nclass Args:\n    input: str\n    params: Params\n\n\n"
+    )
+    missing = header + (
+        "@dataclass\nclass Verdict:\n    note: str\n\n\n"
+        "def runNode(args: Args) -> Verdict:\n"
+        "    return returnResult(Verdict(note='x'))\n"
+    )
+    assert "STR-CONTRACT-007" in ids(sc.check_script(missing, PATH, "reckon"))
+    # 노드 타입을 모르면(스크립트 단독 등록) 타입별 요구는 안 돈다
+    assert "STR-CONTRACT-007" not in ids(sc.check_script(missing, PATH))
+    # 판정 노드가 아니면 요구가 없다
+    assert "STR-CONTRACT-007" not in ids(sc.check_script(missing, PATH, "perceive"))
+
+    ok = header + (
+        "@dataclass\nclass Verdict:\n    passed: bool\n    message: str\n\n\n"
+        "def runNode(args: Args) -> Verdict:\n"
+        "    return returnResult(Verdict(passed=True, message='x'))\n"
+    )
+    assert sc.check_script(ok, PATH, "reckon") == []
+
+
+def test_verdict_field_must_be_bool() -> None:
+    """엔진은 `passed` 를 `bool` 로 읽는다 — 이름만 맞고 타입이 다르면 못 읽는다."""
+    source = (
+        "from dataclasses import dataclass\n\n\n"
+        "@dataclass\nclass Params:\n    expected: int\n\n\n"
+        "@dataclass\nclass Args:\n    input: str\n    params: Params\n\n\n"
+        "@dataclass\nclass Verdict:\n    passed: str\n\n\n"
+        "def runNode(args: Args) -> Verdict:\n"
+        "    return returnResult(Verdict(passed='yes'))\n"
+    )
+    assert "STR-CONTRACT-007" in ids(sc.check_script(source, PATH, "reckon"))
+
+
+def test_verdict_field_name_matches_the_engine() -> None:
+    """규약이 두 벌이면 등록은 통과하는데 실행에서 터진다."""
+    from strictler.engine import runtime
+
+    assert sc.VERDICT_FIELD == runtime.VERDICT_PASSED
+
+
+def test_non_dataclass_output_defers_to_contract_003() -> None:
+    """출력이 dataclass 가 아니면 `-003` 이 이미 원인을 짚었다 — 겹쳐 내지 않는다."""
+    source = (
+        "from dataclasses import dataclass\n\n\n"
+        "@dataclass\nclass Params:\n    expected: int\n\n\n"
+        "@dataclass\nclass Args:\n    input: str\n    params: Params\n\n\n"
+        "def runNode(args: Args) -> str:\n    return returnResult(args.input)\n"
+    )
+    found = only(sc.check_script(source, PATH, "reckon"), "STR-CONTRACT")
+    assert found == ["STR-CONTRACT-003"]
+
+
 def test_action_must_be_transparent() -> None:
     header = (
         "from dataclasses import dataclass\n\n\n"
@@ -427,10 +487,12 @@ def test_passthrough_output_type_comes_from_input() -> None:
 def test_passthrough_is_not_an_action_only_concern(node_type: str) -> None:
     """조건 분기의 표준 표현이므로 **모든 노드 타입**에서 성립해야 한다.
 
-    Reckon 만 기댓값 자리(`-005`)를 따로 요구한다 — 그건 통과형과 무관한 요구다.
+    Reckon 만 기댓값 자리(`-005`)와 판정 자리(`-007`)를 따로 요구한다 —
+    둘 다 통과형과 무관한 요구다.
     """
     findings = only(sc.check_script(PASSTHROUGH, PATH, node_type), "STR-CONTRACT")
-    assert findings == (["STR-CONTRACT-005"] if node_type == "reckon" else [])
+    expected = ["STR-CONTRACT-005", "STR-CONTRACT-007"] if node_type == "reckon" else []
+    assert findings == expected
 
 
 def test_passthrough_follows_the_actual_param_name() -> None:
@@ -619,6 +681,7 @@ ALL_RULES = (
     "STR-CONTRACT-004",
     "STR-CONTRACT-005",
     "STR-CONTRACT-006",
+    "STR-CONTRACT-007",
     "STR-TYPE-001",
     "STR-TYPE-002",
     "STR-TYPE-003",
@@ -658,6 +721,18 @@ def _every_finding() -> list[Finding]:
             "reckon",
         )
     )  # 005
+    collected.extend(
+        sc.check_script(
+            "from dataclasses import dataclass\n\n\n"
+            "@dataclass\nclass Params:\n    expected: int\n\n\n"
+            "@dataclass\nclass Args:\n    input: str\n    params: Params\n\n\n"
+            "@dataclass\nclass Verdict:\n    note: str\n\n\n"
+            "def runNode(args: Args) -> Verdict:\n"
+            "    return returnResult(Verdict(note='판정을 안 담았다'))\n",
+            PATH,
+            "reckon",
+        )
+    )  # 007
     collected.extend(
         sc.check_script(
             "import time\nimport random\nimport subprocess\n" + _with_body("    x = args.state.no\n"),

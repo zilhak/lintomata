@@ -1,137 +1,33 @@
 """Step 3-b — 비교 파이프라인 엔진 테스트.
 
-⚠ **대역은 Step 3-a 가 아직 `NotImplementedError` 인 것들만** 쓴다
-(`engine.result` / `engine.exec` / `engine.state`). 나머지 — `rules` `refs` `report`
-`store` `checks.*` `typesys` — 는 **진짜 구현을 그대로 쓴다.** Step 1·2 통합에서 남의
-모듈을 stub 으로 끼고 돌린 탓에 규칙 슬롯 누락이 merge 시점까지 안 잡혔기 때문이다.
+**대역을 쓰지 않는다.** `NodeOutcome`/`RunResult`/`StateMachine`/`node_exec` 를 전부
+대역으로 갈아끼웠더니 **진짜 구현과의 정합이 한 번도 안 태워졌고**, 그 사이에 구동
+결함 두 개가 통째로 가려졌다 (MODULES.md R4-7). `FakeStateMachine.snapshot` 은 문자열을
+주는데 진짜는 bool 을 준다 — 그 차이조차 안 드러났다.
 
-`engine.exec` 대역은 **진짜로 스크립트를 로드해 돌린다.** 흉내만 내면 "취합→분배가
-노드를 건너 제대로 흐르는가" 를 확인할 수 없다.
+짚는 것:
+  - 구동 순서·구간 전이·not run 전파가 **`engine.drive` 한 벌**로 도는가 (R4-1)
+  - 파이프라인의 **모든 노드가 네 상태 중 정확히 하나**에 들어가는가 (R4-2)
+  - 분배가 **스크립트가 낸 값 그대로** 흐르는가 (R4-5)
+  - target 무관한 결과가 target 수만큼 중복되지 않는가 (R4-6)
+  - **엔진은 `==` 만 안다** — 허용 오차도 반올림도 없다
 """
 
 from __future__ import annotations
 
-import importlib.util
-import itertools
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any, Mapping
 
-import pytest
-
+from strictler.checks import reachability
 from strictler.engine import compare
-from strictler.errors import Finding, NotRunCause
+from strictler.engine.result import RunResult
+from strictler.errors import NotRunCause
 from strictler.model import Pipeline
 from strictler.store.entries import Store
 
-# ── Step 3-a 대역 ────────────────────────────────────────────────────────────
-
-
-class FakeOutcome:
-    """`engine.result.NodeOutcome` — MODULES.md 가 적어둔 공개 필드만 갖는다."""
-
-    def __init__(self, node_id: str, status: str) -> None:
-        self.node_id = node_id
-        self.status = status
-        self.value: Any = None
-        self.findings: list[Finding] = []
-
-
-class FakeRunResult:
-    """`engine.result.RunResult`."""
-
-    def __init__(self) -> None:
-        self.outcomes: dict[str, FakeOutcome] = {}
-        self.findings: list[Finding] = []
-
-
-class FakeStateMachine:
-    """`engine.state.StateMachine` — `transitions` 는 **시간만** 다룬다."""
-
-    def __init__(self, states, transitions, config, started_at_ms) -> None:
-        self.state = states.initial
-        self.transitions = list(transitions)
-        self.started_at_ms = started_at_ms
-
-    @property
-    def current(self) -> str:
-        return self.state
-
-    def after_node(self, node_id: str) -> None:
-        for transition in self.transitions:
-            if transition.after == node_id:
-                self.state = transition.to
-
-    def matches(self, node_state_mapping: Mapping[str, str], when_state: str) -> bool:
-        return node_state_mapping.get(when_state, when_state) == self.state
-
-    def snapshot(self, node_state_mapping: Mapping[str, str]) -> dict[str, Any]:
-        snap: dict[str, Any] = {name: self.state for name in node_state_mapping}
-        snap["__startedAt"] = self.started_at_ms
-        return snap
-
-    def blocked_by(self, node_id: str) -> list[str]:
-        return [t.to for t in self.transitions if t.after == node_id]
-
-
-_counter = itertools.count()
-
-
-class FakeExec:
-    """`engine.exec` — **진짜로 로드해서 돌린다.**
-
-    `validate_input` / `validate_output` 은 기본이 통과다. 검증 실패의 여파를 보는
-    테스트만 `stub_input` / `stub_output` 을 채운다.
-    """
-
-    def __init__(self) -> None:
-        self.stub_input: list[Finding] = []
-        self.stub_output: list[Finding] = []
-
-    def load_script(self, path: Path):
-        name = f"strictler_compare_test_{next(_counter)}"
-        spec = importlib.util.spec_from_file_location(name, path)
-        module = importlib.util.module_from_spec(spec)
-        module.returnResult = lambda value: value  # 출력 진입점은 이름 고정
-        spec.loader.exec_module(module)
-        return module
-
-    def build_args(self, module, contract, *, input_value=None, params=None, state=None):
-        kwargs: dict[str, Any] = {}
-        if contract.input_type:
-            kwargs["input"] = input_value
-        if contract.params_type:
-            kwargs["params"] = _fill(module, contract.params_type, params or {})
-        if contract.state_type:
-            kwargs["state"] = _fill(module, contract.state_type, state or {})
-        return module.Args(**kwargs)
-
-    def invoke(self, module, args):
-        return module.runNode(args)
-
-    def validate_input(self, contract, value, registry, *, path, node):
-        return [item.model_copy() for item in self.stub_input]
-
-    def validate_output(self, contract, value, registry, *, path, node):
-        return [item.model_copy() for item in self.stub_output]
-
-
-def _fill(module, type_name: str, values: Mapping[str, Any]):
-    """`Args` 의 하위 dataclass 를 만든다. 선언에 없는 키는 넣지 않는다."""
-    cls = getattr(module, type_name)
-    declared = getattr(cls, "__annotations__", {})
-    return cls(**{key: value for key, value in values.items() if key in declared})
-
-
-@pytest.fixture(autouse=True)
-def stub_step_3a(monkeypatch):
-    """Step 3-a 산출물만 대역으로 바꾼다."""
-    fake = FakeExec()
-    monkeypatch.setattr(compare, "NodeOutcome", FakeOutcome)
-    monkeypatch.setattr(compare, "RunResult", FakeRunResult)
-    monkeypatch.setattr(compare, "StateMachine", FakeStateMachine)
-    monkeypatch.setattr(compare, "node_exec", fake)
-    return fake
+STARTED_AT = 1_700_000_000_000
 
 
 # ── 픽스처 만들기 ────────────────────────────────────────────────────────────
@@ -206,6 +102,58 @@ def runNode(args: Args) -> Buttons:
     raise ValueError("인식 실패")
 """
 
+WRONG_OUTPUT = """\
+from dataclasses import dataclass
+
+
+@dataclass
+class Params:
+    bump: int
+
+
+@dataclass
+class Args:
+    params: Params
+
+
+@dataclass
+class Buttons:
+    count: int
+
+
+def runNode(args: Args) -> Buttons:
+    return returnResult(Buttons(count="셋이요"))
+"""
+
+WATCH = """\
+from dataclasses import dataclass
+
+
+@dataclass
+class Buttons:
+    count: int
+
+
+@dataclass
+class State:
+    phase: bool
+
+
+@dataclass
+class Args:
+    input: Buttons
+    state: State
+
+
+@dataclass
+class Seen:
+    phase: bool
+
+
+def runNode(args: Args) -> Seen:
+    return returnResult(Seen(phase=args.state.phase))
+"""
+
 
 def write(tmp_path: Path, name: str, text: str) -> Path:
     path = tmp_path / name
@@ -240,13 +188,13 @@ def build_pipeline(nodes: list[dict], targets: list[str], compare_ids: list[str]
     return Pipeline.model_validate(raw)
 
 
-def run(pipeline, config, tmp_path):
+def run(pipeline, config, tmp_path, store: Store | None = None):
     return compare.run_compare_pipeline(
         pipeline,
         config,
-        store=Store(tmp_path / "home"),
+        store=store or Store(tmp_path / "home"),
         env={"HOME": str(tmp_path)},
-        started_at_ms=1_700_000_000_000,
+        started_at_ms=STARTED_AT,
         path="cmp.json > plan[0] > cmp",
     )
 
@@ -289,6 +237,31 @@ def chain_fixture(
     return pipeline, config
 
 
+FOUR_STATES = {"pass", "violation", "not_run", "error"}
+
+
+def assert_four_states(pipeline: Pipeline, result: Any) -> dict[str, str]:
+    """★ **파이프라인의 모든 노드가 네 상태 중 정확히 하나에 들어간다** (R4-2).
+
+    어느 상태에도 없이 리포트에서 조용히 사라지는 노드가 있으면 그건 거짓
+    리포트다 (`schema.md` 9절). 한 클래스의 결함을 통째로 막는 가드다.
+    """
+    ids = [pn.id for pn in pipeline.nodes]
+    assert set(result.outcomes) == set(ids), "결과가 없는 노드가 있다"
+
+    reported: dict[str, set[str]] = {}
+    for finding in result.findings:
+        if finding.node:
+            reported.setdefault(finding.node, set()).add(finding.status)
+
+    for node_id in ids:
+        status = result.outcomes[node_id].status
+        assert status in FOUR_STATES
+        assert node_id in reported, f"{node_id} 가 리포트에서 사라졌다"
+        assert reported[node_id] == {status}, (node_id, reported[node_id], status)
+    return {node_id: result.outcomes[node_id].status for node_id in ids}
+
+
 # ── all_same — 짝비교가 아니라 전체 일치 ─────────────────────────────────────
 
 
@@ -308,6 +281,23 @@ def test_all_same_짝비교가_아니다():
 def test_all_same_원소가_없거나_하나면_참():
     assert compare.all_same({}) is True
     assert compare.all_same({"only": 1}) is True
+
+
+def test_엔진은_같음_만_안다_반올림하지_않는다():
+    """**허용 오차도 무시 필드도 엔진에 두지 않는다** (`schema.md` 12절).
+
+    정규화는 비교용 데이터를 내보내는 **스크립트**가 한다 — 좌표 반올림도
+    타임스탬프 제거도 도메인 지식이고, 도메인 지식은 언제나 스크립트 쪽에 있다.
+    엔진이 한 번이라도 값을 손보면 그 순간 "동일하다"의 뜻이 흐려진다.
+    """
+    assert compare.all_same({"legacy": 3.0, "v2": 3.0001}) is False
+    assert compare.all_same({"legacy": {"x": 3.0}, "v2": {"x": 3.0001}}) is False
+    assert compare.all_same({"legacy": 3.0, "v2": 3.0}) is True
+
+
+def test_리포트_취합도_반올림하지_않는다(tmp_path):
+    """`_plain` 은 구조를 펴기만 한다 — 값은 손대지 않는다."""
+    assert compare._plain([1.0, {"x": 2.00001}]) == [1.0, {"x": 2.00001}]
 
 
 # ── resolve_target_config ────────────────────────────────────────────────────
@@ -349,7 +339,7 @@ def test_대상_셋이_전부_같으면_통과(tmp_path):
     assert [f.status for f in result.findings] == ["pass", "pass"]
     assert report.root["detect"].same is True
     assert report.root["shape"].same is True
-    assert result.outcomes["shape"].status == "pass"
+    assert assert_four_states(pipeline, result) == {"detect": "pass", "shape": "pass"}
 
 
 def test_대상_넷_중_하나만_달라도_위반이고_리포트에_전부_남는다(tmp_path):
@@ -379,9 +369,38 @@ def test_위반은_뒷단을_끊지_않는다(tmp_path):
     )
     result, _ = run(pipeline, config, tmp_path)
 
-    assert result.outcomes["detect"].status == "violation"
-    assert result.outcomes["shape"].status == "violation"
+    assert assert_four_states(pipeline, result) == {
+        "detect": "violation",
+        "shape": "violation",
+    }
     assert not [f for f in result.findings if f.status == "not_run"]
+
+
+def test_분배는_스크립트가_낸_값을_그대로_넘긴다(tmp_path):
+    """**재구성하지 않는다** (R4-5).
+
+    앞단이 낸 dataclass 인스턴스가 다른 무언가로 바뀌면 `dataclasses.asdict` 나
+    `isinstance` 를 쓰는 스크립트가 값 검증에서는 되고 비교에서만 안 된다 —
+    "스크립트의 모양이 값 검증과 완전히 같다" 가 깨진다.
+    """
+    pipeline, config = chain_fixture(
+        tmp_path, {"legacy": 7, "v2": 7, "v3": 7}, ["legacy", "v2", "v3"]
+    )
+    result, report = run(pipeline, config, tmp_path)
+
+    detected = compare.collect_target_values(result, "detect")
+    assert set(detected) == {"legacy", "v2", "v3"}
+    for target, value in detected.items():
+        assert dataclasses.is_dataclass(value) and not isinstance(value, type)
+        assert type(value).__name__ == "Buttons"
+        assert dataclasses.asdict(value) == {"count": 7}
+    # target 마다 스크립트가 다르므로 **클래스도 다르다** — 그래서 비교는 편 값으로 한다.
+    assert type(detected["legacy"]) is not type(detected["v2"])
+    assert report.root["detect"].values == {
+        "legacy": {"count": 7},
+        "v2": {"count": 7},
+        "v3": {"count": 7},
+    }
 
 
 def test_취합한_묶음이_노드를_건너_분배된다(tmp_path):
@@ -389,14 +408,11 @@ def test_취합한_묶음이_노드를_건너_분배된다(tmp_path):
     pipeline, config = chain_fixture(
         tmp_path, {"legacy": 7, "v2": 7, "v3": 7}, ["legacy", "v2", "v3"]
     )
-    result, _ = run(pipeline, config, tmp_path)
+    result, report = run(pipeline, config, tmp_path)
 
-    detected = compare.collect_target_values(result, "detect")
     shaped = compare.collect_target_values(result, "shape")
-    # 취합은 **평평한 데이터**다 — target 마다 클래스가 달라도 개념 층에서 비교된다.
-    assert detected == {"legacy": {"count": 7}, "v2": {"count": 7}, "v3": {"count": 7}}
-    assert shaped == detected
-    assert compare.all_same(shaped) is True
+    assert {t: v.count for t, v in shaped.items()} == {"legacy": 7, "v2": 7, "v3": 7}
+    assert report.root["shape"].same is True
 
 
 def test_target_별_params_가_타입까지_달라도_통과한다(tmp_path):
@@ -418,13 +434,19 @@ def test_target_별_params_가_타입까지_달라도_통과한다(tmp_path):
 
 
 def test_compare_에_적힌_노드만_리포트에_담긴다(tmp_path):
-    """어느 노드를 비교할지는 파이프라인의 `compare` 가 정한다."""
+    """어느 노드를 비교할지는 파이프라인의 `compare` 가 정한다.
+
+    담기지 않는 노드도 **돌아간 것 자체는 통과로 보고된다** — 안 그러면 그 노드가
+    네 상태 어디에도 없이 리포트에서 사라진다 (R4-2).
+    """
     pipeline, config = chain_fixture(
         tmp_path, {"legacy": 5, "v2": 5}, ["legacy", "v2"]
     )
     pipeline.compare = ["shape"]
-    _, report = run(pipeline, config, tmp_path)
+    result, report = run(pipeline, config, tmp_path)
+
     assert set(report.root) == {"shape"}
+    assert assert_four_states(pipeline, result) == {"detect": "pass", "shape": "pass"}
 
 
 def test_리포트는_실행과_동시에_쌓이고_그대로_기록된다(tmp_path):
@@ -447,8 +469,139 @@ def test_리포트는_실행과_동시에_쌓이고_그대로_기록된다(tmp_p
 
 
 def test_collect_target_values_는_돌지_않은_노드에_빈_매핑(tmp_path):
-    result = FakeRunResult()
-    assert compare.collect_target_values(result, "없음") == {}
+    assert compare.collect_target_values(RunResult(), "없음") == {}
+
+
+# ── 구동 — 값 검증과 **같은 한 벌**로 돈다 (R4-1) ────────────────────────────
+
+
+def order_fixture(tmp_path: Path, targets: list[str]):
+    """`watch` 가 `tick` 보다 **먼저 선언된** 파이프라인.
+
+    정적 topo 정렬은 `seed` 다음 층을 `[watch, tick]` 으로 보고 선언 순서대로 돌려
+    `watch` 를 `idle` 상태에서 집는다 → 못 돌아서 **거짓 not run** 이 찍힌다.
+    `ready()` 재스캔은 `tick` 이 상태를 민 뒤 `watch` 를 집는다.
+    """
+    shape = write(tmp_path, "shape.py", SHAPE)
+    watch = write(tmp_path, "watch.py", WATCH)
+    scoped: dict[str, dict[str, Any]] = {}
+    for target in targets:
+        detect = write(
+            tmp_path, f"detect_{target}.py", DETECT.format(ptype="int", expr="args.params.bump")
+        )
+        scoped[target] = {"detectScript": str(detect), "bump": 2}
+
+    nodes = [
+        {
+            "id": "seed",
+            "source": node_file(tmp_path, "seed", "${config.detectScript}"),
+            "params": {"bump": "${config.bump}"},
+        },
+        {
+            "id": "watch",
+            "source": node_file(tmp_path, "watch", str(watch), kind="sense"),
+            "inputs": {"input": "seed"},
+            "states": {"phase": "active"},
+            "when": {"state": "phase"},
+        },
+        {
+            "id": "tick",
+            "source": node_file(tmp_path, "tick", str(shape)),
+            "inputs": {"input": "seed"},
+        },
+    ]
+    pipeline = build_pipeline(
+        nodes,
+        targets,
+        ["watch"],
+        states={"values": ["idle", "active"], "initial": "idle"},
+        transitions=[{"after": "tick", "to": "active"}],
+    )
+    return pipeline, {"targets": scoped}
+
+
+def test_상태를_기다리는_노드가_먼저_선언돼도_돈다(tmp_path):
+    """재현 케이스 ② — 정적 topo 정렬은 여기서 **통과할 노드에 거짓 not run** 을 찍는다."""
+    pipeline, config = order_fixture(tmp_path, ["legacy", "v2"])
+    result, report = run(pipeline, config, tmp_path)
+
+    assert list(result.outcomes) == ["seed", "tick", "watch"]
+    assert assert_four_states(pipeline, result) == {
+        "seed": "pass",
+        "tick": "pass",
+        "watch": "pass",
+    }
+    # `active` 에서 실제로 돌았다 — 상태를 읽어 그대로 내놓는 노드다.
+    assert report.root["watch"].values["legacy"] == {"phase": True}
+
+
+def test_실행_순서는_simulate_order_와_같다(tmp_path):
+    """동시에 실행 가능한 노드는 파이프라인 `nodes` 선언 순서로 돈다 (R3-7).
+
+    `reachability.simulate().order` 가 참조 구현이고 **값 검증도 비교도 그 순서를
+    따른다** — 다르게 돌면 "등록은 통과했는데 실행에선 못 닿는다" 가 된다.
+    """
+    pipeline, config = order_fixture(tmp_path, ["legacy", "v2"])
+    expected = reachability.simulate(
+        pipeline, {pn.id: dict(pn.states) for pn in pipeline.nodes}
+    ).order
+
+    result, _ = run(pipeline, config, tmp_path)
+    assert list(result.outcomes) == expected == ["seed", "tick", "watch"]
+
+
+def test_순수_데이터_DAG_도_선언_순서로_돈다(tmp_path):
+    """층 단위 정적 정렬은 `[a, c]` 를 한 층으로 보고 `a, c, b` 를 낸다.
+    참조 구현은 `a` 를 돌린 뒤 **재스캔**해서 선언 순서대로 `b` 를 집는다."""
+    shape = write(tmp_path, "shape.py", SHAPE)
+    scoped: dict[str, dict[str, Any]] = {}
+    for target in ("legacy", "v2"):
+        detect = write(
+            tmp_path, f"detect_{target}.py", DETECT.format(ptype="int", expr="args.params.bump")
+        )
+        scoped[target] = {"detectScript": str(detect), "bump": 2}
+
+    source = node_file(tmp_path, "seed", "${config.detectScript}")
+    nodes = [
+        {"id": "a", "source": source, "params": {"bump": "${config.bump}"}},
+        {
+            "id": "b",
+            "source": node_file(tmp_path, "shape", str(shape)),
+            "inputs": {"input": "a"},
+        },
+        {"id": "c", "source": source, "params": {"bump": "${config.bump}"}},
+    ]
+    pipeline = build_pipeline(nodes, ["legacy", "v2"], ["b"])
+    expected = reachability.simulate(
+        pipeline, {pn.id: dict(pn.states) for pn in pipeline.nodes}
+    ).order
+
+    result, _ = run(pipeline, {"targets": scoped}, tmp_path)
+    assert list(result.outcomes) == expected == ["a", "b", "c"]
+
+
+def test_구간_전이의_중간_상태에서도_노드가_돈다(tmp_path):
+    """재현 케이스 ① — 같은 `after` 의 전이 둘은 **구간**이다 (R3-6).
+
+    구간을 통째로 밀면 `loading` 을 기다리던 `watch` 가 통째로 `not_run` 이 된다.
+    """
+    pipeline, config = order_fixture(tmp_path, ["legacy", "v2"])
+    watch = next(pn for pn in pipeline.nodes if pn.id == "watch")
+    watch.states = {"phase": "loading"}
+    pipeline.states.values = ["idle", "loading", "done"]
+    pipeline.transitions = [
+        t.model_copy(update={"to": to, "delay": delay})
+        for t, to, delay in zip(
+            pipeline.transitions * 2, ["loading", "done"], [None, 0]
+        )
+    ]
+
+    result, _ = run(pipeline, config, tmp_path)
+    assert assert_four_states(pipeline, result) == {
+        "seed": "pass",
+        "tick": "pass",
+        "watch": "pass",
+    }
 
 
 # ── 오류와 not run ───────────────────────────────────────────────────────────
@@ -464,8 +617,10 @@ def test_한_target_스크립트가_예외면_노드는_오류_뒷단은_not_run
 
     result, report = run(pipeline, config, tmp_path)
 
-    assert result.outcomes["detect"].status == "error"
-    assert result.outcomes["shape"].status == "not_run"
+    assert assert_four_states(pipeline, result) == {
+        "detect": "error",
+        "shape": "not_run",
+    }
     assert "detect" not in report.root and "shape" not in report.root
 
     not_run = [f for f in result.findings if f.status == "not_run"]
@@ -476,35 +631,36 @@ def test_한_target_스크립트가_예외면_노드는_오류_뒷단은_not_run
     assert any("v3" in f.message and "인식 실패" in f.message for f in errors)
 
 
-def test_not_run_원인은_최초로_못_돈_노드다(tmp_path):
-    """중간 노드를 가리키면 원인이 뭉개진다 — 3단 체인에서 확인한다."""
+def test_not_run_원인은_바로_앞의_막은_노드다(tmp_path):
+    """원인은 **자기를 막은 노드**다 — 값 검증과 같은 규칙이어야 한다 (R4-1).
+
+    3단 체인이면 `tail → shape → detect` 로 사슬이 이어져, 각 노드의 원인을 따라가면
+    최초 실패 지점에 닿는다. 전부 최초 노드를 가리키게 하면 그 사슬이 사라진다.
+    """
     pipeline, config = chain_fixture(
         tmp_path, {"legacy": 3, "v2": 3, "v3": 3}, ["legacy", "v2", "v3"]
     )
     tail = write(tmp_path, "tail.py", SHAPE)
     pipeline.nodes.append(
-        Pipeline.model_validate(
-            {
-                "info": {"name": "x", "description": "x", "kind": "compare"},
-                "states": {"values": ["idle"], "initial": "idle"},
-                "nodes": [
-                    {
-                        "id": "tail",
-                        "source": node_file(tmp_path, "tail", str(tail)),
-                        "inputs": {"input": "shape"},
-                    }
-                ],
-                "targets": ["legacy", "v2", "v3"],
-                "compare": [],
+        pipeline.nodes[1].model_copy(
+            update={
+                "id": "tail",
+                "source": node_file(tmp_path, "tail", str(tail)),
+                "inputs": {"input": "shape"},
             }
-        ).nodes[0]
+        )
     )
     config["targets"]["legacy"]["detectScript"] = str(write(tmp_path, "boom2.py", BOOM))
 
     result, _ = run(pipeline, config, tmp_path)
     causes = {f.node: f.cause for f in result.findings if f.status == "not_run"}
     assert causes["shape"] == NotRunCause(node="detect", reason="data_dependency")
-    assert causes["tail"] == NotRunCause(node="detect", reason="data_dependency")
+    assert causes["tail"] == NotRunCause(node="shape", reason="data_dependency")
+    assert assert_four_states(pipeline, result) == {
+        "detect": "error",
+        "shape": "not_run",
+        "tail": "not_run",
+    }
 
 
 def test_상태를_밀_노드가_실패하면_기다리던_노드는_state_unreachable(tmp_path):
@@ -519,7 +675,7 @@ from dataclasses import dataclass
 
 @dataclass
 class State:
-    phase: str
+    phase: bool
 
 
 @dataclass
@@ -529,7 +685,7 @@ class Args:
 
 @dataclass
 class Seen:
-    phase: str
+    phase: bool
 
 
 def runNode(args: Args) -> Seen:
@@ -559,22 +715,28 @@ def runNode(args: Args) -> Seen:
     config = {"targets": {"legacy": {"bump": 1}, "v2": {"bump": 1}}}
 
     result, _ = run(pipeline, config, tmp_path)
-    assert result.outcomes["capture"].status == "error"
+    assert assert_four_states(pipeline, result) == {
+        "capture": "error",
+        "watch": "not_run",
+    }
     cause = next(f.cause for f in result.findings if f.status == "not_run")
     assert cause == NotRunCause(node="capture", reason="state_unreachable")
 
 
-def test_출력_검증이_걸리면_노드는_오류다(tmp_path, stub_step_3a):
+def test_출력이_선언된_타입과_다르면_오류다(tmp_path):
     """계약 위반은 **오류**다 — 위반이 아니다."""
     pipeline, config = chain_fixture(
         tmp_path, {"legacy": 1, "v2": 1}, ["legacy", "v2"]
     )
-    stub_step_3a.stub_output = [
-        Finding(status="error", message="출력 타입이 선언과 다릅니다.")
-    ]
+    config["targets"]["legacy"]["detectScript"] = str(
+        write(tmp_path, "bad.py", WRONG_OUTPUT)
+    )
     result, report = run(pipeline, config, tmp_path)
 
-    assert result.outcomes["detect"].status == "error"
+    assert assert_four_states(pipeline, result) == {
+        "detect": "error",
+        "shape": "not_run",
+    }
     assert report.root == {}
     assert any("[target: legacy]" in f.message for f in result.findings)
 
@@ -586,12 +748,89 @@ def test_script_가_안_풀리면_오류(tmp_path):
     del config["targets"]["v2"]["detectScript"]
     result, report = run(pipeline, config, tmp_path)
 
-    finding = next(f for f in result.findings if f.status == "error")
-    assert finding.rule_id == "STR-CMP-004"
+    finding = next(f for f in result.findings if f.rule_id == "STR-CMP-004")
+    assert finding.node == "detect"
     # target 한 벌이 빠지면 비교가 성립하지 않는다 — 뒷단은 not run 이다.
-    assert result.outcomes["detect"].status == "error"
-    assert result.outcomes["shape"].status == "not_run"
+    assert assert_four_states(pipeline, result) == {
+        "detect": "error",
+        "shape": "not_run",
+    }
     assert report.root == {}
+
+
+# ── 등록소 무결성 — **실행 시점** 규칙이다 (R4-1) ────────────────────────────
+
+
+def test_등록소_파일이_수정되면_STR_REG_001(tmp_path):
+    """등록은 검증 결과를 재사용하는 기제다 — 정적 검사 루트를 피해 파일을 고친
+    것을 실행 직전에 잡지 않으면 등록이 아무것도 보장하지 않는다 (`schema.md` 2절)."""
+    store = Store(tmp_path / "home")
+    shape = write(tmp_path, "shape.py", SHAPE)
+    node_path = Path(node_file(tmp_path, "shape", str(shape)))
+    entry = store.add("node", node_path)
+    store.path_of(entry.id).write_text("{}", encoding="utf-8")
+
+    detects: dict[str, dict[str, Any]] = {}
+    for target in ("legacy", "v2"):
+        detect = write(
+            tmp_path, f"detect_{target}.py", DETECT.format(ptype="int", expr="args.params.bump")
+        )
+        detects[target] = {"detectScript": str(detect), "bump": 1}
+
+    nodes = [
+        {
+            "id": "detect",
+            "source": node_file(tmp_path, "detect", "${config.detectScript}"),
+            "params": {"bump": "${config.bump}"},
+        },
+        {
+            "id": "shape",
+            "source": "${ref." + entry.id + "}",
+            "inputs": {"input": "detect"},
+        },
+    ]
+    pipeline = build_pipeline(nodes, ["legacy", "v2"], ["detect"])
+    result, _ = run(pipeline, {"targets": detects}, tmp_path, store=store)
+
+    assert "STR-REG-001" in {f.rule_id for f in result.findings}
+    assert assert_four_states(pipeline, result)["shape"] == "error"
+
+
+def test_등록된_스크립트가_수정되면_STR_REG_001(tmp_path):
+    """`script` 자리의 `${ref.sc_...}` 도 같은 대조를 받는다 — target 별로 갈리므로
+    `${config.X}` 를 편 값을 봐야 한다."""
+    store = Store(tmp_path / "home")
+    shape = write(tmp_path, "shape.py", SHAPE)
+    entry = store.add("script", shape)
+    store.path_of(entry.id).write_text(SHAPE + "\n# 몰래 고쳤다\n", encoding="utf-8")
+
+    detects: dict[str, dict[str, Any]] = {}
+    for target in ("legacy", "v2"):
+        detect = write(
+            tmp_path, f"detect_{target}.py", DETECT.format(ptype="int", expr="args.params.bump")
+        )
+        detects[target] = {
+            "detectScript": str(detect),
+            "bump": 1,
+            "shapeScript": "${ref." + entry.id + "}",
+        }
+
+    nodes = [
+        {
+            "id": "detect",
+            "source": node_file(tmp_path, "detect", "${config.detectScript}"),
+            "params": {"bump": "${config.bump}"},
+        },
+        {
+            "id": "shape",
+            "source": node_file(tmp_path, "shape", "${config.shapeScript}"),
+            "inputs": {"input": "detect"},
+        },
+    ]
+    pipeline = build_pipeline(nodes, ["legacy", "v2"], ["detect"])
+    result, _ = run(pipeline, {"targets": detects}, tmp_path, store=store)
+
+    assert "STR-REG-001" in {f.rule_id for f in result.findings}
 
 
 # ── 규칙 슬롯 — 내 모듈이 내는 규칙 id 가 살아남는가 ─────────────────────────
@@ -606,9 +845,11 @@ def test_targets_가_둘_미만이면_STR_CMP_003(tmp_path):
     )
     result, report = run(pipeline, {}, tmp_path)
 
-    assert [f.rule_id for f in result.findings] == ["STR-CMP-003"]
+    assert [f.rule_id for f in result.findings if f.rule_id] == ["STR-CMP-003"]
     assert "1" in result.findings[0].message
     assert report.root == {}
+    # 돌 수 없었어도 **노드는 리포트에서 사라지지 않는다** (R4-2).
+    assert assert_four_states(pipeline, result) == {"shape": "not_run"}
 
 
 def test_없는_config_는_STR_CMP_004_로_나온다(tmp_path):
@@ -627,9 +868,39 @@ def test_없는_config_는_STR_CMP_004_로_나온다(tmp_path):
     )
     result, _ = run(pipeline, {"targets": {"legacy": {}, "v2": {}}}, tmp_path)
 
-    finding = next(f for f in result.findings if f.rule_id == "STR-CMP-004")
-    assert "없는값" in finding.message
-    assert finding.node == "shape"
+    found = [f for f in result.findings if f.rule_id == "STR-CMP-004"]
+    assert [f.node for f in found] == ["shape", "shape"]
+    # target 별로 갈리는 것은 **target 별로 나오는 게 정상**이다 (R4-6) —
+    # 어느 대상이 잘못됐는지가 메시지에 박혀 있어 dedupe 로 뭉개지지 않는다.
+    assert {f.message.splitlines()[0] for f in found} == {
+        "현재 target: legacy",
+        "현재 target: v2",
+    }
+    assert "없는값" in found[0].message
+
+
+def test_배선_오류는_target_수만큼_중복되지_않는다(tmp_path):
+    """`Args.input` 은 값 하나다. **배선 판정은 target 과 무관**하므로 한 번만 난다 (R4-6)."""
+    pipeline, config = chain_fixture(
+        tmp_path, {"legacy": 1, "v2": 1, "v3": 1}, ["legacy", "v2", "v3"]
+    )
+    other = write(tmp_path, "other.py", DETECT.format(ptype="int", expr="1"))
+    pipeline.nodes.append(
+        pipeline.nodes[0].model_copy(
+            update={
+                "id": "other",
+                "source": node_file(tmp_path, "other", str(other)),
+            }
+        )
+    )
+    shape = next(pn for pn in pipeline.nodes if pn.id == "shape")
+    shape.inputs = {"a": "detect", "b": "other"}
+
+    result, _ = run(pipeline, config, tmp_path)
+
+    wiring = [f for f in result.findings if "서로 다른 앞단" in f.message]
+    assert len(wiring) == 1
+    assert assert_four_states(pipeline, result)["shape"] == "error"
 
 
 def test_내가_내는_규칙_전부가_렌더된다():
@@ -661,33 +932,9 @@ def test_값_검증_파이프라인을_받으면_오류(tmp_path):
         "states": {"values": ["idle"], "initial": "idle"},
         "nodes": [{"id": "shape", "source": node_file(tmp_path, "shape", str(shape))}],
     }
-    result, report = run(Pipeline.model_validate(raw), {}, tmp_path)
+    pipeline = Pipeline.model_validate(raw)
+    result, report = run(pipeline, {}, tmp_path)
 
-    assert [f.status for f in result.findings] == ["error"]
+    assert [f.status for f in result.findings] == ["error", "not_run"]
     assert "verify" in result.findings[0].message
     assert report.root == {}
-
-
-# ── 배선 ─────────────────────────────────────────────────────────────────────
-
-
-def test_앞단이_둘이면_오류다(tmp_path):
-    """`Args.input` 은 값 하나다. 억지로 골라 넣으면 조용한 오답이 된다."""
-    pipeline, config = chain_fixture(
-        tmp_path, {"legacy": 1, "v2": 1}, ["legacy", "v2"]
-    )
-    other = write(tmp_path, "other.py", DETECT.format(ptype="int", expr="1"))
-    pipeline.nodes.append(
-        pipeline.nodes[0].model_copy(
-            update={
-                "id": "other",
-                "source": node_file(tmp_path, "other", str(other)),
-            }
-        )
-    )
-    shape = next(pn for pn in pipeline.nodes if pn.id == "shape")
-    shape.inputs = {"a": "detect", "b": "other"}
-
-    result, _ = run(pipeline, config, tmp_path)
-    assert result.outcomes["shape"].status == "error"
-    assert any("서로 다른 앞단" in f.message for f in result.findings)

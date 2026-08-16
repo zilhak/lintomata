@@ -38,7 +38,24 @@
 각 중간 상태에서 대기 중이던 노드를 그 자리에서 실행 가능으로 본다.
 마지막 하나만 반영하면 `reachable_states` 와 최종 상태가 서로 반대를 말하고
 **전이 선언 순서를 뒤집으면 등록 성패가 뒤집힌다** (MODULES.md R3-6).
-`delay` 가 아직 안 풀린 `${config.X}` 문자열이면 `0` 으로 본다 — 선언 순서가 남는다.
+
+## ★ 안 풀린 `delay` 는 0 이 아니라 **모름**이다 (MODULES.md R4-3)
+
+`delay: "${config.settleMs}"` 는 **Spec 이 값을 채우기 전까지 순서를 알 수 없다.**
+여기서 `0` 으로 추측하면 등록 시점과 실행 시점(`engine.state` 는 config 를 풀어 실제
+값을 쓴다)이 갈리고, **추측으로 등록을 막는** 일이 생긴다.
+
+→ **두 층으로 나눈다.**
+
+| 층 | 무엇을 하나 |
+|---|---|
+| 등록 시점 (여기) | 순서를 모르는 구간이 있으면 그 구간이 만드는 상태를 기다리는 노드에 **`-007` 을 내지 않는다** |
+| 실행 시점 (`engine.drive`) | config 가 풀렸으니 **실제 값으로 판정**. 못 닿으면 `not_run(state_unreachable)` |
+
+**config 가 도달성을 바꾸는 것은 정상이다** — 같은 파이프라인을 다른 Spec config 로
+돌리는 것이 설계이고, not run 은 애초에 정상 결과다. 알 수 없는 것으로 등록을 막지
+않는다 (lint 는 보수적으로). 전개 자체는 `0` 으로 가정해 계속한다 — `order` 는 있어야
+하고, 그 순서에 기댄 **판정만** 내지 않는다.
 
 **★ 동시에 실행 가능한 노드들의 순서는 파이프라인의 `nodes` 선언 순서다. 이것은 계약이다**
 (MODULES.md R3-7). 상태가 하나뿐이라 순서를 정하지 않으면 결과가 갈리고,
@@ -62,6 +79,8 @@ AI 가 엉뚱한 곳을 고친다. 데이터로 막힌 이유는 언제나 따�
 
 from __future__ import annotations
 
+from typing import Any
+
 from strictler import rules
 from strictler.errors import Finding
 from strictler.model import Pipeline, PipelineNode
@@ -77,8 +96,11 @@ class ReachResult:
       `unreachable`        — 영원히 실행되지 않는 노드 id 집합
       `reachable_states`   — 초기 상태에서 실제로 들어가지는 상태 이름 집합
       `order`              — 실행 순서. **동시 실행 가능한 노드는 선언 순서다 —
-                             이것은 계약이고 `engine.runtime` 이 이 순서를 따른다**
+                             이것은 계약이고 `engine.drive` 가 이 순서를 따른다**
                              (MODULES.md R3-7)
+      `unknown_order_states` — 통과 순서를 **모르는** 구간이 만드는 상태들.
+                             `delay` 가 아직 안 풀린 `${config.X}` 라 등록 시점에는
+                             순서를 알 수 없다 (MODULES.md R4-3)
     """
 
     def __init__(self) -> None:
@@ -86,6 +108,7 @@ class ReachResult:
         self.unreachable: set[str] = set()
         self.reachable_states: set[str] = set()
         self.order: list[str] = []
+        self.unknown_order_states: set[str] = set()
 
 
 def _wait_state(
@@ -111,7 +134,8 @@ def _outgoing(pipeline: Pipeline) -> dict[str, list[str]]:
     """`{after: [지나가는 상태, ...]}` — 같은 `after` 의 전이는 **구간**이다.
 
     `delay` 오름차순(없으면 0), 같으면 선언 순서. `delay` 가 아직 안 풀린
-    `${config.X}` 문자열이면 `0` 으로 보아 선언 순서를 남긴다.
+    `${config.X}` 문자열이면 전개를 위해 `0` 으로 가정한다 —
+    **그 가정에 기댄 판정은 `_unknown_order_states()` 가 따로 걸러낸다** (R4-3).
     """
     grouped: dict[str, list[tuple[int, int, str]]] = {}
     for index, transition in enumerate(pipeline.transitions):
@@ -120,6 +144,25 @@ def _outgoing(pipeline: Pipeline) -> dict[str, list[str]]:
     return {
         after: [to for _, _, to in sorted(items)] for after, items in grouped.items()
     }
+
+
+def _unknown_order_states(pipeline: Pipeline) -> set[str]:
+    """통과 순서를 **모르는** 구간이 만드는 상태들 (MODULES.md R4-3).
+
+    구간(같은 `after` 의 전이 둘 이상) 안에 아직 안 풀린 `delay` 가 하나라도 있으면
+    그 구간의 통과 순서는 **Spec 이 config 를 채워야 정해진다.** 전이가 하나뿐이면
+    순서랄 것이 없으므로 모름이 아니다.
+    """
+    grouped: dict[str, list[Any]] = {}
+    for transition in pipeline.transitions:
+        grouped.setdefault(transition.after, []).append(transition)
+    unknown: set[str] = set()
+    for items in grouped.values():
+        if len(items) < 2:
+            continue
+        if any(not isinstance(t.delay, int) and t.delay is not None for t in items):
+            unknown.update(t.to for t in items)
+    return unknown
 
 
 def simulate(pipeline: Pipeline, node_states: dict[str, dict[str, str]]) -> ReachResult:
@@ -182,6 +225,7 @@ def simulate(pipeline: Pipeline, node_states: dict[str, dict[str, str]]) -> Reac
 
     result.reachable = set(executed)
     result.unreachable = {node.id for node in nodes} - executed
+    result.unknown_order_states = _unknown_order_states(pipeline)
     return result
 
 
@@ -236,6 +280,12 @@ def check_reachability(
             continue
         # 데이터 의존이 하나라도 못 닿으면 그쪽이 원인이다 — 여기서 겹쳐 내지 않는다.
         if not all(dep in result.reachable for dep in node.inputs.values()):
+            continue
+        # **순서를 모르는 구간에 걸린 노드는 판정하지 않는다** (R4-3).
+        # `delay` 가 아직 `${config.X}` 라 전개가 추측이었고, 추측으로 등록을 막으면
+        # config 만 바꾸면 돌 파이프라인이 아예 등록되지 못한다. 실행 시점에
+        # config 가 풀린 뒤 `engine.drive` 가 `not_run` 으로 판정한다.
+        if _wait_state(node, node_states, declared) in result.unknown_order_states:
             continue
         findings.append(
             rules.finding(

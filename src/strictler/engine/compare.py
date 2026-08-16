@@ -34,6 +34,13 @@
 뒷단을 끊는 것은 **오류**(스크립트 예외·계약 위반)뿐이고, 그 여파는 `not_run` 이다.
 복구·재시도·대체 경로는 없다.
 
+### ★ 구동 루프는 `engine.drive` 하나다
+
+`ready()` 재스캔·구간 전이 drain·선언 순서 tie-break·실행 시점 해시 대조를 **여기에
+복제하지 않는다** (MODULES.md R4-1). 값 검증과 각자 구현했더니 실제로 갈렸고,
+정적 topo 정렬로 돌던 탓에 **통과할 노드에 거짓 not run** 이 찍혔다.
+비교 엔진이 따로 정하는 것은 **한 노드를 target 마다 돌려 취합하는 방법**뿐이다.
+
 **★ `engine.runtime` 을 import 하지 마라.** 공용 결과 타입(`RunResult`/`NodeOutcome`)은
 `engine.result` 에 있다. `runtime` 이 `kind` 를 보고 이쪽으로 디스패치하므로,
 반대 방향 import 를 만들면 순환이 된다.
@@ -48,15 +55,17 @@ from strictler import refs, rules
 from strictler.checks import node as node_checks
 from strictler.checks import pipeline as pipeline_checks
 from strictler.checks import script as script_checks
+from strictler.checks.node import dedupe
 from strictler.checks.script import ScriptContract
+from strictler.engine import drive as drive_loop
 from strictler.engine import exec as node_exec
 from strictler.engine.result import NodeOutcome, RunResult
 from strictler.engine.state import StateMachine
-from strictler.errors import Finding, NotRunCause, StrictlerError
+from strictler.errors import Finding, StrictlerError
 from strictler.model import Node, Pipeline, PipelineNode
 from strictler.report import CompareReport, build_compare_report
 from strictler.store.entries import Store
-from strictler.typesys.registry import TypeKey, TypeRegistry
+from strictler.typesys.registry import TypeRegistry
 
 __all__ = [
     "resolve_target_config",
@@ -117,14 +126,14 @@ def run_compare_pipeline(
                 ),
             )
         )
-        return result, build_compare_report({})
+        return _close(pipeline, result, path), build_compare_report({})
 
     targets = list(pipeline.targets)
     if len(targets) < 2:
         result.findings.append(
             rules.finding("STR-CMP-003", path=path, fields={"count": len(targets)})
         )
-        return result, build_compare_report({})
+        return _close(pipeline, result, path), build_compare_report({})
 
     target_configs = {name: resolve_target_config(config, name) for name in targets}
 
@@ -133,7 +142,15 @@ def run_compare_pipeline(
     )
     result.findings.extend(prep_findings)
     if prepared is None:
-        return result, build_compare_report({})
+        return _close(pipeline, result, path), build_compare_report({})
+
+    # 전이 지연은 그래프의 성질이라 target 별로 갈리지 않는다 — 공통 config 다.
+    common = resolve_target_config(config, "")
+    try:
+        machine = StateMachine(pipeline.states, list(pipeline.transitions), common, started_at_ms)
+    except StrictlerError as exc:
+        result.findings.extend(node_checks.findings_of(exc, path=path))
+        return _close(pipeline, result, path), build_compare_report({})
 
     values = _walk(
         pipeline,
@@ -141,12 +158,26 @@ def run_compare_pipeline(
         target_configs,
         prepared=prepared,
         result=result,
-        # 전이 지연은 그래프의 성질이라 target 별로 갈리지 않는다 — 공통 config 다.
-        common=resolve_target_config(config, ""),
-        started_at_ms=started_at_ms,
+        machine=machine,
         path=path,
     )
-    return result, build_compare_report(values)
+    return _close(pipeline, result, path), build_compare_report(values)
+
+
+def _close(pipeline: Pipeline, result: RunResult, path: str) -> RunResult:
+    """남은 노드를 `not_run` 으로 확정하고 결과를 정리한다.
+
+    **어느 반환 경로로 나가든 여기를 지난다** — 그래야 파이프라인의 모든 노드가
+    네 상태 중 정확히 하나에 들어간다 (R4-2). 중간에 그냥 `return` 하면 그 노드들이
+    리포트에서 조용히 사라지고, 그건 거짓 리포트다.
+
+    **target 무관한 결과는 여기서 한 번만 남는다** (R4-6) — 배선 오류 같은 것이
+    target 수만큼 쌓이면 AI 가 "여러 군데가 틀렸다"고 읽는다. target 별로 갈리는
+    것은 메시지에 target 이 박혀 있어 지워지지 않는다.
+    """
+    result.findings.extend(drive_loop.finalize(pipeline, result, path))
+    result.findings = dedupe(result.findings)
+    return result
 
 
 def collect_target_values(result: RunResult, node_id: str) -> dict[str, Any]:
@@ -205,6 +236,12 @@ def _prepare(
             pn.source, store=store, env=env, source_path=path, node_id=pn.id
         )
         findings.extend(load_findings)
+        # **실행 시점 해시 대조** (`STR-REG-001`) — 값 검증과 같은 자리에서 본다.
+        # 등록은 검증 결과를 재사용하는 기제이므로, 정적 검사 루트를 피해 등록소
+        # 파일을 고친 것을 실행 직전에 잡아야 한다 (`schema.md` 2·13절).
+        findings.extend(
+            drive_loop.verify_hash(pn.source, store=store, path=path, node_id=pn.id)
+        )
         if node is None:
             continue
         for target in targets:
@@ -243,7 +280,13 @@ def _resolve_one(
     env: Mapping[str, str],
     path: str,
 ) -> tuple[tuple[Path, ScriptContract] | None, list[Finding]]:
-    """이 target 에서 실제로 도는 스크립트 경로와 그 계약."""
+    """이 target 에서 실제로 도는 스크립트 경로와 그 계약.
+
+    ⚠ 여기서 나오는 결과에 target 을 덧붙이지 않는다. `STR-CMP-004` 는 `refs` 가
+    이미 "현재 target: X" 를 담아 주고, 나머지(경로·등록소 판정)는 경로가 문구에
+    들어 있어 대상이 다르면 문구도 다르다. 문구까지 완전히 같다면 그건 정말로
+    **같은 사실 하나**이므로 `_close` 의 dedupe 가 한 번만 남기는 것이 맞다 (R4-6).
+    """
     script_path, raw = node_checks.resolve_script(
         node, store=store, env=env, config=config, target=target
     )
@@ -269,6 +312,12 @@ def _resolve_one(
                 )
             )
         return None, findings
+
+    findings.extend(
+        drive_loop.verify_hash(
+            _expanded_script(node, config, target), store=store, path=path, node_id=node_id
+        )
+    )
 
     try:
         source = script_path.read_text(encoding="utf-8")
@@ -301,6 +350,19 @@ def _resolve_one(
     return (script_path, contract), findings
 
 
+def _expanded_script(node: Node, config: Mapping[str, Any], target: str) -> Any:
+    """`script` 자리의 값을 이 target 기준으로 편 것 — 해시 대조 대상을 고르기 위함.
+
+    비교 파이프라인은 `script` 에 `${config.buttonScript}` 를 쓰고 그 값이
+    `${ref.sc_...}` 일 수 있다. 원문 그대로 보면 등록소 참조인지 알 수 없다.
+    못 펴면 원문을 준다 — 그 실패는 `resolve_script` 가 이미 짚었다.
+    """
+    try:
+        return refs.expand_config(node.script, config, target)
+    except StrictlerError:
+        return node.script
+
+
 # ── 구동 ─────────────────────────────────────────────────────────────────────
 
 
@@ -311,69 +373,128 @@ def _walk(
     *,
     prepared: _Prepared,
     result: RunResult,
-    common: Mapping[str, Any],
-    started_at_ms: int,
+    machine: StateMachine,
     path: str,
 ) -> dict[str, dict[str, Any]]:
-    """DAG 를 훑으며 노드마다 target 전부를 돌리고 취합한다."""
-    machine = StateMachine(
-        pipeline.states, list(pipeline.transitions), common, started_at_ms
-    )
-    dag = pipeline_checks.build_dag(pipeline)
+    """노드마다 target 전부를 돌리고 취합한다.
+
+    **구동 순서·전이·not run 전파는 `engine.drive` 가 한다** (R4-1). 여기가 정하는
+    것은 "한 노드를 어떻게 도느냐" 하나뿐이고, 그게 값 검증과 갈리는 유일한 지점이다.
+    """
     compare_ids = set(pipeline.compare)
     values: dict[str, dict[str, Any]] = {}
-    # 상태 의존 `not_run` 의 원인 추적 — 실패한 노드가 밀지 못한 상태들.
-    blocked_states: dict[str, str] = {}
+    runnable = _mark_unprepared(pipeline, targets, prepared, result, path)
 
-    for node_id in _topo_order(dag, [pn.id for pn in pipeline.nodes]):
-        pn = prepared.nodes[node_id]
-
-        cause = _blocking_cause(pn, dag.get(node_id, []), result, machine, blocked_states)
-        if cause is not None:
-            _record(result, node_id, "not_run", findings=[], cause_of=cause, path=path)
-            for state in machine.blocked_by(node_id):
-                blocked_states.setdefault(state, cause.node)
-            continue
-
-        scripts = prepared.scripts.get(node_id, {})
-        missing = [target for target in targets if target not in scripts]
-        if missing:
-            # 준비 단계가 이미 오류를 냈다. 여기서 억지로 이어가면 원인이 뭉개진다.
-            _record(result, node_id, "error", findings=[], path=path)
-            for state in machine.blocked_by(node_id):
-                blocked_states.setdefault(state, node_id)
-            continue
-
-        outputs, node_findings = _run_targets(
+    def run_node(pn: PipelineNode) -> NodeOutcome:
+        outputs, findings = _run_targets(
             pn,
             targets,
             target_configs,
-            scripts=scripts,
+            scripts=prepared.scripts[pn.id],
             registry=prepared.registry,
             result=result,
             machine=machine,
             path=path,
         )
-
         if outputs is None:
-            _record(result, node_id, "error", findings=node_findings, path=path)
-            for state in machine.blocked_by(node_id):
-                blocked_states.setdefault(state, node_id)
-            continue
+            return _outcome(pn.id, "error", findings)
 
         status = "pass"
-        if node_id in compare_ids:
-            values[node_id] = outputs
-            same = all_same(outputs)
-            node_findings.append(_verdict(node_id, outputs, same=same, path=path))
+        if pn.id in compare_ids:
+            # 비교·리포트는 **평평한 데이터**로 한다 — target 마다 클래스가 다르므로
+            # 인스턴스끼리는 `==` 이 언제나 거짓이 되어 비교가 성립하지 않는다.
+            flat = {name: _plain(value) for name, value in outputs.items()}
+            values[pn.id] = flat
+            same = all_same(flat)
+            findings.append(_verdict(pn.id, flat, same=same, path=path))
             if not same:
                 status = "violation"
+        else:
+            # 비교 대상이 아니어도 **돌아간 것 자체가 통과다.** 결과를 안 남기면
+            # 그 노드가 네 상태 어디에도 없이 리포트에서 사라진다 (R4-2).
+            findings.append(Finding(status="pass", path=path, node=pn.id))
 
         # **위반은 뒷단을 끊지 않는다.** 값은 멀쩡히 나왔고, 차이는 전부 모은다.
-        _record(result, node_id, status, findings=node_findings, value=outputs, path=path)
-        machine.after_node(node_id)
+        outcome = _outcome(pn.id, status, findings)
+        # 분배할 값은 **스크립트가 낸 그대로** 넘긴다 — 재구성해서 넘기면
+        # `dataclasses.asdict`/`isinstance` 를 쓰는 스크립트가 값 검증과 갈린다 (R4-5).
+        outcome.value = outputs
+        return outcome
 
+    drive_loop.drive(
+        pipeline, machine=machine, runnable=runnable, run_node=run_node, result=result
+    )
     return values
+
+
+def _mark_unprepared(
+    pipeline: Pipeline,
+    targets: list[str],
+    prepared: _Prepared,
+    result: RunResult,
+    path: str,
+) -> list[str]:
+    """준비 단계에서 이미 막힌 노드를 `error` 로 확정하고, 돌릴 노드만 돌려준다.
+
+    target 한 벌이라도 스크립트가 안 풀리면 묶음이 안 차서 비교가 성립하지 않는다.
+    억지로 이어가면 원인이 뭉개지므로 그 자리에서 진행하지 않는다 — 여파는
+    `drive.finalize` 가 `not_run` 으로 표기한다.
+    """
+    attributed = {
+        finding.node
+        for finding in result.findings
+        if finding.status == "error" and finding.node
+    }
+    runnable: list[str] = []
+    for pn in pipeline.nodes:
+        missing = [t for t in targets if t not in prepared.scripts.get(pn.id, {})]
+        if not missing and pn.id not in attributed:
+            runnable.append(pn.id)
+            continue
+        findings: list[Finding] = []
+        if pn.id not in attributed:
+            findings.append(
+                Finding(
+                    status="error",
+                    path=path,
+                    node=pn.id,
+                    message=(
+                        "이 노드의 스크립트가 일부 target 에서 준비되지 않았습니다: "
+                        f"{', '.join(missing)}\n"
+                        "비교는 target 전부의 값이 모여야 성립합니다. 위의 오류를 "
+                        "먼저 고치세요."
+                    ),
+                )
+            )
+            result.findings.extend(findings)
+        result.outcomes[pn.id] = _outcome(pn.id, "error", findings)
+    return runnable
+
+
+def _outcome(node_id: str, status: str, findings: list[Finding]) -> NodeOutcome:
+    outcome = NodeOutcome(node_id, status)  # type: ignore[arg-type]
+    outcome.findings = list(findings)
+    return outcome
+
+
+def _plain(value: Any) -> Any:
+    """비교·리포트용 **평평한 데이터**로 편다.
+
+    target 마다 스크립트가 다르므로 같은 개념도 서로 다른 클래스로 나온다 —
+    클래스를 그대로 두면 `==` 이 언제나 거짓이라 비교가 성립하지 않는다.
+    dataclass 를 dict 로 펴면 **개념 층에서** 비교되고 리포트에 그대로 실린다.
+
+    ⚠ **정규화가 아니다.** 반올림도 무시 필드도 허용 오차도 없다 — 구조를 펴기만
+    하고 값은 손대지 않는다. `3.0` 과 `3.0001` 은 여기를 지나도 다른 값이다.
+    무엇을 무시해도 되는지는 도메인 지식이고, 그건 스크립트 쪽에 있다.
+    """
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    try:
+        data = node_exec.as_mapping(value)
+    except StrictlerError:
+        return value  # primitive — 펼 것이 없다
+    return {name: _plain(item) for name, item in data.items()}
 
 
 def _run_targets(
@@ -391,27 +512,26 @@ def _run_targets(
 
     **스크립트는 자기 target 의 값 하나만 받고 하나만 내놓는다** — 분배도 취합도
     엔진의 몫이라 스크립트의 모양이 값 검증 파이프라인과 완전히 같다.
+    **값도 스크립트가 낸 그대로** 오간다 (R4-5): 재구성해서 넘기면 앞단이 낸
+    dataclass 인스턴스가 다른 무언가로 바뀌어, 값 검증에서는 되는 스크립트가
+    비교에서만 안 되는 일이 생긴다.
     """
     findings: list[Finding] = []
     outputs: dict[str, Any] = {}
     state = machine.snapshot(pn.states)
     failed = False
 
+    # **배선 판정은 target 과 무관하다** — 루프 안에서 보면 같은 오류가 target
+    # 수만큼 쌓인다 (R4-6). 여기서 한 번만 본다.
+    producer, wiring = _producer_of(pn, path=path)
+    if wiring:
+        return None, wiring
+
     for target in targets:
         script_path, contract = scripts[target]
-        raw_input, input_findings = _input_for(pn, result, target, path=path)
-        findings.extend(input_findings)
-        if input_findings:
-            failed = True
-            continue
-
-        input_value, shaped = _shape(
-            raw_input, contract.input_type, contract, registry, pn.id, target, path=path
+        input_value = (
+            collect_target_values(result, producer).get(target) if producer else None
         )
-        if shaped is not None:
-            findings.append(shaped)
-            failed = True
-            continue
 
         params, param_findings = _params_for(
             pn, target_configs[target], target, state, path=path
@@ -458,30 +578,42 @@ def _run_targets(
             failed = True
             continue
 
-        bundled, dumped = _dump(value, contract, registry, pn.id, target, path=path)
-        if dumped is not None:
-            findings.append(dumped)
+        if not contract.output_type:
+            findings.append(
+                Finding(
+                    status="error",
+                    path=path,
+                    node=pn.id,
+                    message=(
+                        f"target `{target}` 의 스크립트가 출력 타입을 선언하지 "
+                        f"않았습니다: {contract.path}\n"
+                        "출력은 `returnResult()` 로 dataclass 를 내보내야 합니다 — "
+                        "비교는 그 구조를 보고 합니다."
+                    ),
+                )
+            )
             failed = True
             continue
-        outputs[target] = bundled
+
+        # **스크립트가 낸 값을 그대로 보관한다.** 재구성하지 않는다 (R4-5) —
+        # 타입 검증은 바로 위 `validate_output` 이 이미 별개로 했다.
+        outputs[target] = value
 
     if failed:
         return None, findings
     return outputs, findings
 
 
-def _input_for(
-    pn: PipelineNode, result: RunResult, target: str, *, path: str
-) -> tuple[Any, list[Finding]]:
-    """앞단 묶음에서 이 target 의 값 하나를 꺼낸다 (**분배**)."""
+def _producer_of(pn: PipelineNode, *, path: str) -> tuple[str, list[Finding]]:
+    """이 노드에 값을 주는 앞단 노드. **target 과 무관한 배선 판정**이다."""
     producers: list[str] = []
     for producer in pn.inputs.values():
         if producer not in producers:
             producers.append(producer)
     if not producers:
-        return None, []
+        return "", []
     if len(producers) > 1:
-        return None, [
+        return "", [
             Finding(
                 status="error",
                 path=path,
@@ -494,82 +626,7 @@ def _input_for(
                 ),
             )
         ]
-    return collect_target_values(result, producers[0]).get(target), []
-
-
-def _shape(
-    raw: Any,
-    type_name: str,
-    contract: ScriptContract,
-    registry: TypeRegistry,
-    node_id: str,
-    target: str,
-    *,
-    path: str,
-) -> tuple[Any, Finding | None]:
-    """앞단 묶음의 값을 **이 스크립트가 선언한 input 타입**으로 세운다 (분배).
-
-    묶음은 target 을 건너 오가므로 스크립트마다 다른 클래스가 된다 — 그래서 취합은
-    평평한 데이터로 하고, 분배할 때 뒷단이 선언한 타입으로 다시 세운다.
-    """
-    if not type_name or raw is None:
-        return None, None
-    try:
-        return registry.to_value(TypeKey(contract.path, type_name), raw), None
-    except Exception as exc:  # noqa: BLE001 - pydantic / 등록기 어느 쪽이든 계약 위반이다
-        return None, Finding(
-            status="error",
-            path=path,
-            node=node_id,
-            message=(
-                f"target `{target}` 의 입력을 `{type_name}` 으로 세울 수 없습니다.\n"
-                f"{type(exc).__name__}: {exc}\n"
-                "앞단 출력 정의와 이 노드의 `Args.input` 정의가 같아야 합니다."
-            ),
-        )
-
-
-def _dump(
-    value: Any,
-    contract: ScriptContract,
-    registry: TypeRegistry,
-    node_id: str,
-    target: str,
-    *,
-    path: str,
-) -> tuple[Any, Finding | None]:
-    """출력을 **평평한 데이터**로 만든다 (취합).
-
-    target 마다 스크립트가 다르므로 같은 개념도 서로 다른 클래스로 나온다 —
-    클래스를 그대로 두면 `==` 이 언제나 거짓이라 비교가 성립하지 않는다.
-    등록기가 아는 구조로 한 번 세워서 평평하게 펴면 **개념 층에서** 비교된다.
-    리포트에 그대로 실릴 수 있는 형태이기도 하다.
-    """
-    if not contract.output_type:
-        return None, Finding(
-            status="error",
-            path=path,
-            node=node_id,
-            message=(
-                f"target `{target}` 의 스크립트가 출력 타입을 선언하지 않았습니다: "
-                f"{contract.path}\n"
-                "출력은 `returnResult()` 로 dataclass 를 내보내야 합니다 — "
-                "비교는 그 구조를 보고 합니다."
-            ),
-        )
-    try:
-        model = registry.to_value(TypeKey(contract.path, contract.output_type), value)
-    except Exception as exc:  # noqa: BLE001 - 계약 위반이지 위반이 아니다
-        return None, Finding(
-            status="error",
-            path=path,
-            node=node_id,
-            message=(
-                f"target `{target}` 의 출력이 선언한 `{contract.output_type}` 과 "
-                f"맞지 않습니다.\n{type(exc).__name__}: {exc}"
-            ),
-        )
-    return model.model_dump(), None
+    return producers[0], []
 
 
 def _params_for(
@@ -593,77 +650,7 @@ def _params_for(
     return dict(expanded), []
 
 
-# ── not run 전파 ─────────────────────────────────────────────────────────────
-
-
-def _blocking_cause(
-    pn: PipelineNode,
-    deps: list[str],
-    result: RunResult,
-    machine: StateMachine,
-    blocked_states: Mapping[str, str],
-) -> NotRunCause | None:
-    """이 노드가 도달 불가가 됐는지. 전파 경로는 **둘**이다 (`schema.md` 9절).
-
-    ① **데이터 의존** — 앞단이 오류로 끝났거나 애초에 돌지 않았다.
-    ② **상태 의존** — 상태를 밀어야 할 노드가 실패해 전이가 일어나지 않았고,
-       그 상태를 `when` 으로 기다리는 노드는 영원히 조건을 만족하지 못한다.
-
-    **위반은 여기 해당 없다.** 위반한 노드도 값은 내놨으므로 뒷단은 그대로 돈다.
-    """
-    for dep in deps:
-        upstream = result.outcomes.get(dep)
-        if upstream is None or upstream.status in ("error", "not_run"):
-            # 원인은 **최초로 못 돈 노드**다. 중간 노드를 가리키면 원인이 뭉개진다.
-            origin = _origin_of(upstream) if upstream is not None else None
-            return NotRunCause(node=origin or dep, reason="data_dependency")
-
-    if pn.when is not None:
-        mapped = pn.states.get(pn.when.state, pn.when.state)
-        culprit = blocked_states.get(mapped)
-        if culprit is not None:
-            return NotRunCause(node=culprit, reason="state_unreachable")
-        if not machine.matches(pn.states, pn.when.state):
-            return NotRunCause(node=pn.id, reason="state_unreachable")
-    return None
-
-
-def _origin_of(outcome: NodeOutcome) -> str | None:
-    """이미 `not_run` 인 노드가 적어둔 최초 원인 노드."""
-    for item in outcome.findings:
-        if item.cause is not None:
-            return item.cause.node
-    return None
-
-
 # ── 결과 기록 ────────────────────────────────────────────────────────────────
-
-
-def _record(
-    result: RunResult,
-    node_id: str,
-    status: str,
-    *,
-    findings: list[Finding],
-    value: Any = None,
-    cause_of: NotRunCause | None = None,
-    path: str,
-) -> None:
-    """노드 하나의 결과를 `RunResult` 에 남긴다.
-
-    **`not_run` 의 원인은 바꾸는 그 시점에 적는다** (`schema.md` 9절).
-    """
-    collected = list(findings)
-    if cause_of is not None:
-        collected.append(
-            Finding(status="not_run", path=path, node=node_id, cause=cause_of)
-        )
-    outcome = NodeOutcome(node_id, status)
-    outcome.findings = collected
-    if value is not None:
-        outcome.value = value
-    result.outcomes[node_id] = outcome
-    result.findings.extend(collected)
 
 
 def _verdict(
@@ -719,30 +706,3 @@ def _tag(findings: list[Finding], target: str) -> list[Finding]:
         item.model_copy(update={"message": f"[target: {target}] {item.message}"})
         for item in findings
     ]
-
-
-# ── DAG ──────────────────────────────────────────────────────────────────────
-
-
-def _topo_order(dag: Mapping[str, list[str]], declared: list[str]) -> list[str]:
-    """의존이 먼저 오도록 정렬한다. 같은 층은 **선언 순서**를 지킨다.
-
-    순환은 등록 시점(`STR-GRAPH-001`)에 이미 막혔다. 그래도 남으면 선언 순서로
-    뒤에 붙인다 — 그 노드들은 앞단 결과가 없어 `not_run` 이 된다.
-    """
-    order: list[str] = []
-    placed: set[str] = set()
-    remaining = list(declared)
-    while remaining:
-        ready = [
-            node_id
-            for node_id in remaining
-            if all(dep in placed or dep not in dag for dep in dag.get(node_id, ()))
-        ]
-        if not ready:
-            order.extend(remaining)
-            break
-        order.extend(ready)
-        placed.update(ready)
-        remaining = [node_id for node_id in remaining if node_id not in placed]
-    return order

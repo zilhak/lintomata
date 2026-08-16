@@ -1,7 +1,7 @@
 """검사 규칙 테이블 — `STR-<CATEGORY>-<NNN>`.
 
-`rules.md` 전체가 근거다. 규칙 58개 (PATH 4 / REF 7 / GRAPH 2 / TYPE 7 /
-CONTRACT 6 / STATE 7 / BAN 4 / TOOL 2 / CONFIG 3 / CMP 4 / TEST 7 / REG 5).
+`rules.md` 전체가 근거다. 규칙 59개 (PATH 4 / REF 7 / GRAPH 2 / TYPE 7 /
+CONTRACT 7 / STATE 7 / BAN 4 / TOOL 2 / CONFIG 3 / CMP 4 / TEST 7 / REG 5).
 **늘어나는 것이 전제다** — 카테고리별 독립 번호 공간, 번호 재사용 금지,
 폐기해도 `status: deprecated` 로 남긴다.
 
@@ -344,6 +344,16 @@ _TABLE: tuple[Rule, ...] = (
         "Action 노드인데 input 타입과 output 타입이 다릅니다. (파일: {file})",
         "Action 은 데이터를 그대로 통과시킵니다. `Args.input` 타입과 반환 타입이 "
         "같아야 합니다. 변환이 필요하면 Perceive 를 쓰세요",
+    ),
+    _rule(
+        "STR-CONTRACT-007",
+        "reckon-verdict-missing",
+        (_N,),
+        "Reckon 노드인데 출력 dataclass 에 판정 필드 `passed: bool` 이 없습니다. "
+        "(파일: {file})",
+        "Reckon 은 **판정**을 내는 노드입니다 — 출력 dataclass 에 `passed: bool` "
+        "필드가 있어야 엔진이 통과/위반을 가릅니다. 이게 없으면 실행할 때까지 "
+        "아무도 모르고, 그때는 리포트가 아니라 오류가 납니다",
     ),
     # ── STATE — 상태·상태머신 ──────────────────────────────────────────
     _rule(

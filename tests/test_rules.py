@@ -17,7 +17,7 @@ EXPECTED_COUNTS = {
     "REF": 7,
     "GRAPH": 2,
     "TYPE": 7,
-    "CONTRACT": 6,
+    "CONTRACT": 7,
     "STATE": 7,
     "BAN": 4,
     "TOOL": 2,
@@ -28,9 +28,9 @@ EXPECTED_COUNTS = {
 }
 
 
-def test_rule_count_is_58() -> None:
-    assert len(RULES) == 58
-    assert sum(EXPECTED_COUNTS.values()) == 58
+def test_rule_count_is_59() -> None:
+    assert len(RULES) == 59
+    assert sum(EXPECTED_COUNTS.values()) == 59
 
 
 def test_category_counts_match_rules_md() -> None:

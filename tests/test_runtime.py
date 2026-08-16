@@ -386,6 +386,32 @@ def errors(findings: list[Finding]) -> list[Finding]:
     return [finding for finding in findings if finding.status == "error"]
 
 
+FOUR_STATES = {"pass", "violation", "not_run", "error"}
+
+
+def assert_four_states(project: Project, path: Path, result: Any) -> dict[str, str]:
+    """★ **파이프라인의 모든 노드가 네 상태 중 정확히 하나에 들어간다** (R4-2).
+
+    어느 상태에도 없이 리포트에서 조용히 사라지는 노드가 있으면 그건 거짓
+    리포트다 (`schema.md` 9절). 한 클래스의 결함을 통째로 막는 가드라 결과를
+    보는 테스트마다 통과시킨다.
+    """
+    ids = [pn.id for pn in project.load_pipeline(path).nodes]
+    assert set(result.outcomes) == set(ids), "결과가 없는 노드가 있다"
+
+    reported: dict[str, set[str]] = {}
+    for finding in result.findings:
+        if finding.node:
+            reported.setdefault(finding.node, set()).add(finding.status)
+
+    for node_id in ids:
+        status = result.outcomes[node_id].status
+        assert status in FOUR_STATES
+        assert node_id in reported, f"{node_id} 가 리포트에서 사라졌다"
+        assert reported[node_id] == {status}, (node_id, reported[node_id], status)
+    return {node_id: result.outcomes[node_id].status for node_id in ids}
+
+
 # ── 통과 경로 ────────────────────────────────────────────────────────────────
 
 
@@ -539,9 +565,9 @@ def test_한_노드가_실패해도_독립한_노드는_전부_돈다(project: P
     )
     result = project.run(path, {"url": "abcd"})
 
-    assert result.outcomes["boom"].status == "error"
-    assert result.outcomes["buttons"].status == "pass"
-    assert result.outcomes["page"].status == "pass"
+    assert assert_four_states(project, path, result) == {
+        "page": "pass", "boom": "error", "buttons": "pass"
+    }
 
 
 # ── not run 전파 ─────────────────────────────────────────────────────────────
@@ -578,6 +604,9 @@ def test_데이터_의존_경로로_not_run_이_전파된다(project: Project) -
     )
     result = project.run(path, {"url": "abcd", "expected": 4})
 
+    assert assert_four_states(project, path, result) == {
+        "page": "pass", "boom": "error", "check": "not_run"
+    }
     not_run = [f for f in result.findings if f.status == "not_run"]
     assert [f.node for f in not_run] == ["check"]
     assert not_run[0].cause is not None
@@ -621,6 +650,9 @@ def test_상태_의존_경로로_not_run_이_전파된다(project: Project) -> N
     )
     result = project.run(path, {"url": "abcd"})
 
+    assert assert_four_states(project, path, result) == {
+        "page": "pass", "boom": "error", "wait": "not_run"
+    }
     not_run = [f for f in result.findings if f.status == "not_run"]
     assert [f.node for f in not_run] == ["wait"]
     assert not_run[0].cause is not None
@@ -676,6 +708,9 @@ def test_두_전파_경로가_한_실행에서_함께_갈린다(project: Project
         if f.status == "not_run" and f.cause is not None
     }
     assert reasons == {"check": "data_dependency", "wait": "state_unreachable"}
+    assert assert_four_states(project, path, result) == {
+        "page": "pass", "boom": "error", "check": "not_run", "wait": "not_run"
+    }
 
 
 def test_not_run_은_전이적으로_전파된다(project: Project) -> None:
@@ -723,6 +758,9 @@ def test_not_run_은_전이적으로_전파된다(project: Project) -> None:
     }
     assert causes["relay"] == ("boom", "data_dependency")
     assert causes["wait"] == ("relay", "state_unreachable")
+    assert assert_four_states(project, path, result) == {
+        "page": "pass", "boom": "error", "relay": "not_run", "wait": "not_run"
+    }
 
 
 def test_propagate_not_run_은_아무_일도_없으면_아무것도_안_낸다(project: Project) -> None:
@@ -779,13 +817,190 @@ def test_실행_순서는_simulate_order_와_같다(project: Project) -> None:
     assert ran == expected == ["page", "a", "wait", "b"]
 
 
-def test_topo_order_는_선언_순서를_tie_break_로_쓴다() -> None:
-    dag = {"page": [], "b": ["page"], "a": ["page"], "check": ["a", "b"]}
-    assert runtime.topo_order(dag) == ["page", "b", "a", "check"]
+def test_정적_topo_정렬로는_이_순서가_안_나온다(project: Project) -> None:
+    """`when` 이 **상태**에 걸리므로 실행 가능 순서는 동적이다 (R4-1).
+
+    층 단위 정적 정렬은 `page` 다음에 `wait`·`a`·`b` 를 한 층으로 보고 선언 순서대로
+    돌려버린다 — 그러면 `wait` 는 아직 `idle` 이라 못 돌고 **통과할 노드에 거짓
+    not run** 이 찍힌다. `ready()` 재스캔은 `a` 가 상태를 민 뒤 `wait` 를 집는다.
+    """
+    project.node("page", "vantage", project.script("page", VANTAGE))
+    project.node("a", "perceive", project.script("a", PERCEIVE))
+    project.node("b", "perceive", project.script("b", PERCEIVE))
+    project.node("wait", "sense", project.script("wait", WAITING))
+    path = project.pipeline(
+        "dynamic",
+        config={"url": {"type": "str", "required": True}},
+        states={"values": ["idle", "settled"], "initial": "idle"},
+        transitions=[{"after": "a", "to": "settled"}],
+        nodes=[
+            {
+                "id": "page",
+                "source": str(project.root / "nodes" / "page.json"),
+                "params": {"url": "${config.url}"},
+            },
+            {
+                "id": "wait",
+                "source": str(project.root / "nodes" / "wait.json"),
+                "inputs": {"scene": "page"},
+                "states": {"stop": "settled"},
+                "when": {"state": "stop"},
+            },
+            {"id": "a", "source": str(project.root / "nodes" / "a.json"),
+             "inputs": {"scene": "page"}},
+            {"id": "b", "source": str(project.root / "nodes" / "b.json"),
+             "inputs": {"scene": "page"}},
+        ],
+    )
+    result = project.run(path, {"url": "abcd"})
+
+    assert list(result.outcomes) == ["page", "a", "wait", "b"]
+    assert assert_four_states(project, path, result) == {
+        "page": "pass",
+        "wait": "pass",
+        "a": "pass",
+        "b": "pass",
+    }
 
 
-def test_topo_order_는_순환에서_멈춘다() -> None:
-    assert runtime.topo_order({"a": ["b"], "b": ["a"]}) == []
+def test_구간_전이의_중간_상태에서도_노드가_돈다(project: Project) -> None:
+    """같은 `after` 의 전이 둘은 **구간**이다 (R3-6). 통째로 밀면 중간 상태를
+    기다리던 노드가 통째로 `not_run` 이 된다 — 재현 케이스 ①."""
+    project.node("page", "vantage", project.script("page", VANTAGE))
+    project.node("capture", "perceive", project.script("capture", PERCEIVE))
+    project.node("watch", "sense", project.script("watch", WAITING))
+    path = project.pipeline(
+        "interval",
+        config={"url": {"type": "str", "required": True}},
+        states={"values": ["idle", "loading", "done"], "initial": "idle"},
+        transitions=[
+            {"after": "capture", "to": "loading"},
+            {"after": "capture", "to": "done", "delay": 0},
+        ],
+        nodes=[
+            {
+                "id": "page",
+                "source": str(project.root / "nodes" / "page.json"),
+                "params": {"url": "${config.url}"},
+            },
+            {
+                "id": "capture",
+                "source": str(project.root / "nodes" / "capture.json"),
+                "inputs": {"scene": "page"},
+            },
+            {
+                "id": "watch",
+                "source": str(project.root / "nodes" / "watch.json"),
+                "inputs": {"scene": "page"},
+                "states": {"stop": "loading"},
+                "when": {"state": "stop"},
+            },
+        ],
+    )
+    result = project.run(path, {"url": "abcd"})
+
+    assert assert_four_states(project, path, result) == {
+        "page": "pass",
+        "capture": "pass",
+        "watch": "pass",
+    }
+    assert result.outcomes["watch"].value.size == 1  # `loading` 에서 실제로 돌았다
+
+
+# ── 실행 시점 도달성 — config 가 도달성을 바꾸는 것은 정상이다 (R4-3) ────────
+
+
+CONFIG_ORDERED = """
+    from dataclasses import dataclass
+
+    @dataclass
+    class Traffic:
+        size: int
+
+    @dataclass
+    class St:
+        stop: bool
+
+    @dataclass
+    class Args:
+        input: Traffic
+        state: St
+
+    def runNode(args: Args) -> Traffic:
+        return returnResult(Traffic(size=args.input.size))
+"""
+
+
+def config_ordered(project: Project) -> Path:
+    """구간의 통과 순서를 **Spec config 가 정하는** 파이프라인.
+
+    `w` 는 `loading` 을 기다리는데 그때 앞단 `b`(= `done` 대기)가 아직 안 돌았다.
+    그래서 `loading` 이 `done` **뒤에** 와야만 `w` 가 돈다 — 도달성이 config 에 달렸다.
+    """
+    project.node("page", "vantage", project.script("page", VANTAGE))
+    project.node("a", "perceive", project.script("a", PERCEIVE))
+    project.node("b", "sense", project.script("b", WAITING))
+    project.node("w", "sense", project.script("w", CONFIG_ORDERED))
+    return project.pipeline(
+        "byconfig",
+        config={
+            "url": {"type": "str", "required": True},
+            "d1": {"type": "int", "required": True},
+            "d2": {"type": "int", "required": True},
+        },
+        states={"values": ["idle", "loading", "done"], "initial": "idle"},
+        transitions=[
+            {"after": "a", "to": "loading", "delay": "${config.d1}"},
+            {"after": "a", "to": "done", "delay": "${config.d2}"},
+        ],
+        nodes=[
+            {
+                "id": "page",
+                "source": str(project.root / "nodes" / "page.json"),
+                "params": {"url": "${config.url}"},
+            },
+            {"id": "a", "source": str(project.root / "nodes" / "a.json"),
+             "inputs": {"scene": "page"}},
+            {
+                "id": "w",
+                "source": str(project.root / "nodes" / "w.json"),
+                "inputs": {"traffic": "b"},
+                "states": {"stop": "loading"},
+                "when": {"state": "stop"},
+            },
+            {
+                "id": "b",
+                "source": str(project.root / "nodes" / "b.json"),
+                "inputs": {"scene": "page"},
+                "states": {"stop": "done"},
+                "when": {"state": "stop"},
+            },
+        ],
+    )
+
+
+def test_config_가_순서를_맞추면_전부_돈다(project: Project) -> None:
+    path = config_ordered(project)
+    result = project.run(path, {"url": "abcd", "d1": 1, "d2": 0})
+
+    assert assert_four_states(project, path, result) == {
+        "page": "pass",
+        "a": "pass",
+        "w": "pass",
+        "b": "pass",
+    }
+
+
+def test_config_가_도달_불가로_만들면_not_run_이다(project: Project) -> None:
+    """**등록 실패가 아니라 not run 이다** (R4-3). 같은 파이프라인을 다른 Spec
+    config 로 돌리면 도달성이 달라지는 것이 설계다."""
+    path = config_ordered(project)
+    result = project.run(path, {"url": "abcd", "d1": 0, "d2": 1})
+
+    assert assert_four_states(project, path, result)["w"] == "not_run"
+    assert errors(result.findings) == []
+    cause = next(f.cause for f in result.findings if f.node == "w")
+    assert cause is not None and cause.reason == "state_unreachable"
 
 
 # ── Spec 단위 ────────────────────────────────────────────────────────────────
@@ -1141,6 +1356,137 @@ def test_판정이_통과면_pass_다(project: Project) -> None:
     result = project.run(path, {"url": "abcd", "expected": 4})
 
     assert statuses(result.findings)["check"] == "pass"
+
+
+# ── 실행 시점 재검·주입이 실제로 일어나는가 (R4-10 — 뮤테이션 가드) ──────────
+
+
+BANNED = """
+    import time
+
+    from dataclasses import dataclass
+
+    @dataclass
+    class Params:
+        url: str
+
+    @dataclass
+    class Scene:
+        url: str
+
+    @dataclass
+    class Args:
+        params: Params
+
+    def runNode(args: Args) -> Scene:
+        return returnResult(Scene(url=args.params.url + str(len(dir(time)))))
+"""
+
+STAMPED = """
+    from dataclasses import dataclass
+
+    @dataclass
+    class Params:
+        at: int
+
+    @dataclass
+    class Scene:
+        url: str
+
+    @dataclass
+    class Args:
+        params: Params
+
+    def runNode(args: Args) -> Scene:
+        return returnResult(Scene(url=str(args.params.at)))
+"""
+
+
+def test_config_가_풀린_뒤_스크립트_금지_검사가_다시_돈다(project: Project) -> None:
+    """`recheck_resolved` 를 안 부르면 **노드 스크립트가 계약·금지 검사를 한 번도
+    안 받는다.** 로드 경로는 계약 추출만 하지 `check_script` 를 돌리지 않는다."""
+    project.node("page", "vantage", project.script("page", BANNED))
+    path = project.pipeline(
+        "banned",
+        config={"url": {"type": "str", "required": True}},
+        nodes=[
+            {
+                "id": "page",
+                "source": str(project.root / "nodes" / "page.json"),
+                "params": {"url": "${config.url}"},
+            }
+        ],
+    )
+    result = project.run(path, {"url": "abcd"})
+
+    assert "STR-BAN-001" in {f.rule_id for f in result.findings}
+    # 금지 위반은 오류이므로 그 노드는 돌지 않는다 — 여파는 not run 이다.
+    assert assert_four_states(project, path, result) == {"page": "error"}
+
+
+def test_비교_파이프라인의_target_스크립트도_재검을_받는다(project: Project) -> None:
+    """비교 파이프라인의 노드 스크립트는 **등록 시점에 검사 자체가 불가능하다** —
+    어느 스크립트가 도는지를 Spec `config` 가 정하기 때문이다 (R3-4). `recheck_resolved`
+    를 안 부르면 계약·금지 검사를 **한 번도 안 받는다**."""
+    project.node("seed", "perceive", "${config.seedScript}")
+    banned = project.script("banned", BANNED)
+    path = project.pipeline(
+        "cmp",
+        info={"name": "cmp", "description": "비교", "kind": "compare"},
+        config={
+            "seedScript": {"type": "str", "required": True},
+            "url": {"type": "str", "required": True},
+        },
+        targets=["old", "new"],
+        compare=["seed"],
+        nodes=[
+            {
+                "id": "seed",
+                "source": str(project.root / "nodes" / "seed.json"),
+                "params": {"url": "${config.url}"},
+            }
+        ],
+    )
+    spec = project.spec(
+        [
+            {
+                "source": str(path),
+                "description": "비교",
+                "report": str(project.root / "out.json"),
+                "config": {
+                    "url": "abcd",
+                    "targets": {
+                        "old": {"seedScript": str(banned)},
+                        "new": {"seedScript": str(banned)},
+                    },
+                },
+            }
+        ]
+    )
+    report = runtime.run_spec(
+        spec, store=project.store, env=project.env, started_at_ms=STARTED_AT
+    )
+
+    assert "STR-BAN-001" in {f.rule_id for f in report.results}
+
+
+def test_params_의_startedAt_은_엔진이_넣어준_값이다(project: Project) -> None:
+    """`${state.__startedAt}` 주입을 빼면 참조가 안 풀려 오류가 난다 (R4-10)."""
+    project.node("page", "vantage", project.script("page", STAMPED))
+    path = project.pipeline(
+        "stamped",
+        nodes=[
+            {
+                "id": "page",
+                "source": str(project.root / "nodes" / "page.json"),
+                "params": {"at": "${state.__startedAt}"},
+            }
+        ],
+    )
+    result = project.run(path, {})
+
+    assert errors(result.findings) == []
+    assert result.outcomes["page"].value.url == str(STARTED_AT)
 
 
 # ── 규칙 슬롯 — 이 모듈이 내는 모든 규칙을 실제로 렌더해 본다 ────────────────

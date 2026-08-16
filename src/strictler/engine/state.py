@@ -27,8 +27,11 @@
 `{after:A, to:loading}` + `{after:A, to:done, delay:5000}` 은 `schema.md` 8절이 `delay` 로
 표현하려던 구간 그 자체다. **`delay` 오름차순(없으면 0), 같으면 선언 순서**로 차례로
 지나간다 — `checks.reachability` 와 **같은 규칙이어야 한다** (MODULES.md R3-6).
-중간 상태에서 대기 중이던 노드가 그 자리에서 돌아야 하므로, 구동부는 `after_node()`
-대신 `steps_after()` + `enter()` 로 **한 칸씩** 지나가며 그 사이에 노드를 소진한다.
+
+**구간을 통째로 미는 API 는 두지 않는다.** 중간 상태에서 대기 중이던 노드가 그 자리에서
+돌아야 하므로 구동부는 `steps_after()` + `enter()` 로 **한 칸씩** 지나가며 그 사이에
+노드를 소진한다 (`engine.drive`). 통째로 미는 편의 함수가 있으면 그걸 쓰는 구동부가
+생기고, 실제로 그렇게 갈려서 **중간 상태를 기다리던 노드가 not_run** 이 됐다 (R4-1).
 """
 
 from __future__ import annotations
@@ -138,11 +141,6 @@ class StateMachine:
             _sleep(delay_ms / 1000)
         self._current = to
 
-    def after_node(self, node_id: str) -> None:
-        """노드 하나가 끝났음을 알린다. 해당하는 전이가 있으면 (지연 후) 수행한다."""
-        for delay, to in self.steps_after(node_id):
-            self.enter(to, delay)
-
     def matches(self, node_state_mapping: Mapping[str, str], when_state: str) -> bool:
         """노드의 `when` 이 지금 만족되는지.
 
@@ -166,10 +164,3 @@ class StateMachine:
         }
         snap["__startedAt"] = self.started_at_ms
         return snap
-
-    def blocked_by(self, node_id: str) -> list[str]:
-        """이 노드가 실패했을 때 **일어나지 않게 되는 전이의 도착 상태들**.
-
-        `not_run` 전파의 두 번째 경로(상태 의존)를 계산하는 재료다 (`schema.md` 9절).
-        """
-        return [to for _, to in self.steps_after(node_id)]

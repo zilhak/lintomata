@@ -480,3 +480,90 @@ def test_result_defaults_are_empty() -> None:
     assert result.unreachable == set()
     assert result.reachable_states == set()
     assert result.order == []
+
+
+# ── ★ 안 풀린 `delay` 는 0 이 아니라 모름이다 (MODULES.md R4-3) ──────────────
+
+
+def _config_ordered_pipeline() -> tuple[Pipeline, dict[str, dict[str, str]]]:
+    """구간의 통과 순서를 **Spec config 가 정하는** 파이프라인.
+
+    `w` 는 `loading` 을 기다리는데 그때 앞단 `b`(= `done` 대기)가 아직 안 돌았다.
+    그래서 `loading` 이 `done` **뒤에** 와야만 `w` 가 돈다 — `${config.d*}` 값에
+    따라 도달성이 갈린다. 등록 시점에는 그 값을 알 수 없다.
+    """
+    pipeline = _pipeline(
+        [
+            _node("a"),
+            _node("w", inputs={"t": "b"}, when="stop"),
+            _node("b", when="stop"),
+        ],
+        values=["idle", "loading", "done"],
+        initial="idle",
+        transitions=[("a", "loading"), ("a", "done")],
+    )
+    pipeline.transitions[0].delay = "${config.d1}"
+    pipeline.transitions[1].delay = "${config.d2}"
+    return pipeline, {"w": {"stop": "loading"}, "b": {"stop": "done"}}
+
+
+def test_unresolved_delay_does_not_block_registration() -> None:
+    """추측으로 등록을 막지 않는다 — **config 만 바꾸면 돌 파이프라인**이다.
+
+    `delay` 를 `0` 으로 추측하면 `loading → done` 순서가 되어 `w` 가 도달 불가로
+    보이고 `STR-STATE-007` 이 등록을 막는다. 실행 시점에는 `engine.state` 가 config 를
+    풀어 실제 값을 쓰므로 두 층이 서로 다른 말을 하게 된다.
+    """
+    pipeline, node_states = _config_ordered_pipeline()
+    findings = check_reachability(pipeline, node_states, "/p.json")
+
+    assert _ids(findings, "STR-STATE-007") == set()
+    # 정보는 남긴다 — Finding 만 안 낸다.
+    result = simulate(pipeline, node_states)
+    assert "w" in result.unreachable
+    assert result.unknown_order_states == {"loading", "done"}
+
+
+def test_resolved_delay_still_blocks_registration() -> None:
+    """값이 적혀 있으면 순서를 아는 것이므로 그대로 판정한다."""
+    pipeline, node_states = _config_ordered_pipeline()
+    pipeline.transitions[0].delay = 0
+    pipeline.transitions[1].delay = 10
+    findings = check_reachability(pipeline, node_states, "/p.json")
+
+    assert _ids(findings, "STR-STATE-007") == {"w"}
+    _assert_rendered(findings)
+    assert simulate(pipeline, node_states).unknown_order_states == set()
+
+
+def test_single_transition_delay_is_never_unknown() -> None:
+    """전이가 하나면 순서랄 것이 없다 — `delay` 가 안 풀렸어도 모름이 아니다."""
+    pipeline = _pipeline(
+        [_node("a"), _node("w", when="stop")],
+        values=["idle", "gone"],
+        initial="idle",
+        transitions=[("a", "gone")],
+    )
+    pipeline.transitions[0].delay = "${config.settleMs}"
+
+    assert simulate(pipeline, {"w": {"stop": "gone"}}).unknown_order_states == set()
+
+
+def test_unknown_order_does_not_hide_other_unreachable_nodes() -> None:
+    """모름은 **그 구간에 걸린 노드에만** 적용된다 — 무관한 도달 불가는 그대로 난다."""
+    pipeline = _pipeline(
+        [
+            _node("a"),
+            _node("w", when="stop"),
+            _node("lost", when="never"),
+        ],
+        values=["idle", "loading", "done", "never"],
+        initial="idle",
+        transitions=[("a", "loading"), ("a", "done"), ("lost", "never")],
+    )
+    pipeline.transitions[0].delay = "${config.d1}"
+    pipeline.transitions[1].delay = "${config.d2}"
+    node_states = {"w": {"stop": "loading"}, "lost": {"never": "never"}}
+
+    findings = check_reachability(pipeline, node_states, "/p.json")
+    assert _ids(findings, "STR-STATE-007") == {"lost"}

@@ -57,6 +57,7 @@ __all__ = [
     "check_bans",
     "check_node_type_form",
     "check_tool_calls",
+    "VERDICT_FIELD",
 ]
 
 
@@ -340,12 +341,28 @@ def check_node_type_form(contract: ScriptContract, node_type: NodeType) -> list[
     - Reckon: `Args.params` 에 기댓값 필드가 있어야 한다 (`STR-CONTRACT-005`).
       없으면 기획 파일이 껍데기가 되고, 기획을 고쳐도 판정이 안 바뀌며,
       "같은 기획을 A/B 에 돌린다"가 성립하지 않는다. **형식 제한이 그 자리를 없앤다.**
+    - Reckon: 출력 dataclass에 `passed: bool` 이 있어야 한다 (`STR-CONTRACT-007`).
+      엔진이 통과/위반을 읽는 자리다 — 없으면 **실행할 때까지 아무도 모르고**,
+      그때는 리포트가 아니라 오류가 난다. `schema.md` 6절이 형식 제한의 목적으로
+      적어둔 *"돌리기 전에 잡아 자기 수정 신호를 준다"* 가 정확히 이 자리다.
     - Action: `Args.input` 타입 == 반환 타입이어야 한다 (`STR-CONTRACT-006`).
       Action 은 중간에서 **부작용만** 일으키고 데이터 변환은 하지 않는다.
+
+    **`-005` 와 `-007` 은 서로 다른 자리라 함께 낸다** — 하나는 기댓값을 받는
+    입구(`Args.params`), 다른 하나는 판정을 내보내는 출구다. 고치는 곳이 다르다.
     """
     fields: dict[str, object] = {"file": contract.path}
-    if node_type == "reckon" and not _has_expected_field(contract):
-        return [rules.finding("STR-CONTRACT-005", path=contract.path, fields=fields)]
+    findings: list[Finding] = []
+    if node_type == "reckon":
+        if not _has_expected_field(contract):
+            findings.append(
+                rules.finding("STR-CONTRACT-005", path=contract.path, fields=fields)
+            )
+        if not _has_verdict_field(contract):
+            findings.append(
+                rules.finding("STR-CONTRACT-007", path=contract.path, fields=fields)
+            )
+        return findings
     if node_type == "action" and (
         not contract.input_type or contract.input_type != contract.output_type
     ):
@@ -612,6 +629,29 @@ def _has_expected_field(contract: ScriptContract) -> bool:
     if spec is None:
         return True  # primitive params — 값은 여전히 Spec 이 준다
     return bool(spec.fields)
+
+
+VERDICT_FIELD = "passed"
+"""Reckon 출력에서 **판정**을 담는 필드 이름. 타입은 `bool` (`STR-CONTRACT-007`).
+
+엔진이 이 필드를 읽어 통과/위반을 가른다 — 비교 파이프라인에서 동등 비교를 엔진이
+하는 것과 같은 자리다. **무엇이 통과인지의 판단은 여전히 스크립트가** 하고 엔진은
+그 결론을 읽기만 한다. `engine.runtime.VERDICT_PASSED` 와 같은 값이어야 한다."""
+
+
+def _has_verdict_field(contract: ScriptContract) -> bool:
+    """Reckon 의 출력 dataclass 에 `passed: bool` 이 있는가 (`STR-CONTRACT-007`).
+
+    **출력 타입이 dataclass 가 아니면 여기서 판정하지 않는다** — `STR-CONTRACT-003`
+    이 이미 그 원인을 짚었고, 겹쳐 내면 AI 가 두 군데를 고치려 든다.
+    """
+    spec = contract.dataclasses.get(contract.output_type)
+    if spec is None:
+        return True
+    return any(
+        field.name == VERDICT_FIELD and str(field.type) == "bool"
+        for field in spec.fields
+    )
 
 
 def _import_aliases(tree: ast.Module) -> dict[str, str]:
