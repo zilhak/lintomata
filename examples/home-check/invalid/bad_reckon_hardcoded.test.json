@@ -1,0 +1,19 @@
+{
+  "node": "${env.STRICTLER_EXAMPLE_ROOT}/invalid/bad_reckon_hardcoded.json",
+  "cases": [
+    {
+      "name": "기댓값 3 — 통과가 나온다",
+      "args": {
+        "input": { "count": 3, "labels": ["가", "나", "다"] },
+        "params": { "expectedCount": 3, "expectedLabels": ["가", "나", "다"] }
+      }
+    },
+    {
+      "name": "input 은 같고 기댓값만 4 — 판정이 바뀌어야 하는데 안 바뀐다",
+      "args": {
+        "input": { "count": 3, "labels": ["가", "나", "다"] },
+        "params": { "expectedCount": 4, "expectedLabels": ["가", "나", "다", "라"] }
+      }
+    }
+  ]
+}

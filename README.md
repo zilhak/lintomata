@@ -33,11 +33,18 @@ strictler check <spec-id>                        # 검사 실행
 
 | 문서 | 무엇 |
 |---|---|
+| [`docs/AUTHORING.md`](docs/AUTHORING.md) | **저작 가이드** — 요구에서 네 층 파일까지, 단위테스트 붙이는 법, 결과 읽는 법, 실패 카탈로그. `examples/home-check` 를 따라간다 |
 | [`docs/schema.md`](docs/schema.md) | **확정 사항 정본** — 네 층 구조·등록소·타입 시스템·노드 계약·상태머신·리포트·비교 파이프라인 |
 | [`docs/rules.md`](docs/rules.md) | 검사 규칙 **61개** + ID 체계 + **증가 이력**(어떤 규칙이 왜 추가됐는지) |
 | [`docs/MODULES.md`](docs/MODULES.md) | 모듈 경계와 공개 시그니처. 최상단 **계약 개정 R1~R6** 이 본문보다 우선한다 |
 
 `schema.md` 16절에 **폐기된 안과 그 이유**가 있다.
+
+## 예제
+
+[`examples/home-check`](examples/home-check) — 다섯 노드 타입과 두 파이프라인 종류(값 검증 /
+비교)를 전부 태우는 예제. 등록 없이 파일 경로만으로 끝까지 돈다.
+[`tests/test_examples.py`](tests/test_examples.py) 가 이걸 CLI 로 그대로 태워 회귀를 막는다.
 
 ## 결과 상태 — 네 가지
 

@@ -1,0 +1,34 @@
+{
+  "node": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/detect_buttons.json",
+  "cases": [
+    {
+      "name": "버튼 3개짜리 평범한 페이지 — 개수와 라벨까지 본다",
+      "args": {
+        "input": {
+          "source": "/tmp/fixture-a.html",
+          "html": "<main><button>확인</button><div role=\"button\">취소</div><button type=\"submit\">닫기</button></main>"
+        },
+        "state": { "ready": true }
+      },
+      "expect": { "count": 3, "labels": ["확인", "취소", "닫기"] }
+    },
+    {
+      "name": "누를 수 있게 생긴 배경 장식은 버튼이 아니다",
+      "args": {
+        "input": {
+          "source": "/tmp/fixture-b.html",
+          "html": "<main><div class=\"hero\" data-decoy=\"true\" role=\"button\">배경</div><button>확인</button></main>"
+        },
+        "state": { "ready": true }
+      },
+      "expect": { "count": 1, "labels": ["확인"] }
+    },
+    {
+      "name": "버튼 없는 페이지 — 기대값 없이 타입만 확인",
+      "args": {
+        "input": { "source": "/tmp/fixture-c.html", "html": "<main><p>글만 있다</p></main>" },
+        "state": { "ready": true }
+      }
+    }
+  ]
+}

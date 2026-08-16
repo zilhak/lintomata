@@ -1,0 +1,36 @@
+{
+  "info": {
+    "name": "buttons-same",
+    "description": "세 벌의 형상이 같은 버튼 개념을 보여주는지 — 마크업이 달라도 개념이 같으면 통과",
+    "kind": "compare"
+  },
+
+  "config": {
+    "pagePath": { "type": "str", "required": true, "path": true, "description": "대상마다 다른 HTML 파일" },
+    "buttonScript": { "type": "str", "required": true, "description": "대상마다 다른 버튼 인식 스크립트" }
+  },
+
+  "states": { "values": ["idle"], "initial": "idle" },
+  "transitions": [],
+
+  "targets": ["alpha", "beta", "gamma"],
+  "compare": ["buttons"],
+
+  "nodes": [
+    {
+      "id": "page",
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/pick_page.json",
+      "params": { "pagePath": "${config.pagePath}" }
+    },
+    {
+      "id": "html",
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/read_html.json",
+      "inputs": { "scene": "page" }
+    },
+    {
+      "id": "buttons",
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/compare_buttons.json",
+      "inputs": { "sensum": "html" }
+    }
+  ]
+}

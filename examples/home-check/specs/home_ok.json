@@ -1,0 +1,23 @@
+{
+  "info": {
+    "description": "홈 화면(정상 판)이 기획대로 보이는지 검사한다",
+    "version": "0.1.0"
+  },
+
+  "tool": {},
+
+  "plan": [
+    {
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/pipelines/page_check.json",
+      "description": "버튼 3개(시작하기·문서 보기·문의하기)와 메뉴 4개가 기획 순서대로 있어야 한다",
+      "config": {
+        "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/home.html",
+        "auditLog": "${env.STRICTLER_EXAMPLE_OUT}/audit.log",
+        "expectedButtonCount": 3,
+        "expectedButtonLabels": ["시작하기", "문서 보기", "문의하기"],
+        "expectedMenuCount": 4,
+        "expectedMenuLabels": ["홈", "제품", "가격", "지원"]
+      }
+    }
+  ]
+}

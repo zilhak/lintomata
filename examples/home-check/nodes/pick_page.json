@@ -1,0 +1,5 @@
+{
+  "info": { "name": "pick-page", "description": "검사할 HTML 파일 하나를 관측 지점으로 잡는다" },
+  "type": "vantage",
+  "script": "${env.STRICTLER_EXAMPLE_ROOT}/scripts/vantage_pick_page.py"
+}

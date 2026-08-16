@@ -1,0 +1,5 @@
+{
+  "info": { "name": "bad-reckon-hardcoded", "description": "기댓값을 하드코딩한 Reckon — 단위테스트가 잡아야 한다" },
+  "type": "reckon",
+  "script": "${env.STRICTLER_EXAMPLE_ROOT}/invalid/bad_reckon_hardcoded.py"
+}

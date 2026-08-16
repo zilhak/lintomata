@@ -1,0 +1,32 @@
+{
+  "node": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/check_count.json",
+  "cases": [
+    {
+      "name": "기획대로 3개 — 통과",
+      "args": {
+        "input": { "count": 3, "labels": ["시작하기", "문서 보기", "문의하기"] },
+        "params": { "expectedCount": 3, "expectedLabels": ["시작하기", "문서 보기", "문의하기"] }
+      },
+      "expect": { "passed": true, "rule": "expectedCount", "message": "3개, 순서 일치" }
+    },
+    {
+      "name": "같은 입력에 기댓값만 4개로 — 위반 (대조쌍)",
+      "args": {
+        "input": { "count": 3, "labels": ["시작하기", "문서 보기", "문의하기"] },
+        "params": { "expectedCount": 4, "expectedLabels": ["시작하기", "문서 보기", "문의하기", "베타 신청"] }
+      }
+    },
+    {
+      "name": "개수는 맞고 순서가 다르다 — 위반",
+      "args": {
+        "input": { "count": 3, "labels": ["시작하기", "문서 보기", "문의하기"] },
+        "params": { "expectedCount": 3, "expectedLabels": ["문의하기", "문서 보기", "시작하기"] }
+      },
+      "expect": {
+        "passed": false,
+        "rule": "expectedLabels",
+        "message": "['문의하기', '문서 보기', '시작하기'] 순서 기대, ['시작하기', '문서 보기', '문의하기'] 관측"
+      }
+    }
+  ]
+}

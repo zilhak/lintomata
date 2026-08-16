@@ -1,6 +1,10 @@
 # 작업용 문서·임시 파일 (git 에 올리지 않는다)
 .claude-workspace/
 
+# 등록소·실행 산출물 — 도구가 만드는 것이지 저장소가 갖는 것이 아니다
+.strictler/
+reports/
+
 # 편집기·OS
 *.swp
 *.swo

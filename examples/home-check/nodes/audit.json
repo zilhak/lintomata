@@ -1,0 +1,5 @@
+{
+  "info": { "name": "audit", "description": "관측 사실을 감사 로그에 남긴다. 값은 그대로 통과시킨다" },
+  "type": "action",
+  "script": "${env.STRICTLER_EXAMPLE_ROOT}/scripts/action_audit.py"
+}

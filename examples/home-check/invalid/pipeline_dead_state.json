@@ -1,0 +1,118 @@
+{
+  "info": {
+    "name": "page-check-dead-state",
+    "description": "홈 화면이 기획대로 보이는지 — 버튼 개수/라벨과 메뉴 개수/순서를 본다",
+    "kind": "verify"
+  },
+  "config": {
+    "pagePath": {
+      "type": "str",
+      "required": true,
+      "path": true,
+      "description": "검사할 HTML 파일의 절대경로"
+    },
+    "auditLog": {
+      "type": "str",
+      "required": true,
+      "path": true,
+      "description": "Action 이 관측 사실을 남길 로그 파일"
+    },
+    "expectedButtonCount": {
+      "type": "int",
+      "required": true,
+      "description": "기획이 정한 버튼 개수"
+    },
+    "expectedButtonLabels": {
+      "type": "list[str]",
+      "required": true,
+      "description": "기획이 정한 버튼 라벨과 그 순서"
+    },
+    "expectedMenuCount": {
+      "type": "int",
+      "required": true,
+      "description": "기획이 정한 메뉴 개수"
+    },
+    "expectedMenuLabels": {
+      "type": "list[str]",
+      "required": true,
+      "description": "기획이 정한 메뉴 라벨과 그 순서"
+    }
+  },
+  "states": {
+    "values": [
+      "idle",
+      "observed"
+    ],
+    "initial": "idle"
+  },
+  "transitions": [],
+  "nodes": [
+    {
+      "id": "pickPage",
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/pick_page.json",
+      "params": {
+        "pagePath": "${config.pagePath}"
+      }
+    },
+    {
+      "id": "readHtml",
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/read_html.json",
+      "inputs": {
+        "scene": "pickPage"
+      }
+    },
+    {
+      "id": "audit",
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/audit.json",
+      "inputs": {
+        "sensum": "readHtml"
+      },
+      "params": {
+        "logPath": "${config.auditLog}",
+        "startedAt": "${state.__startedAt}"
+      }
+    },
+    {
+      "id": "detectButtons",
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/detect_buttons.json",
+      "inputs": {
+        "sensum": "audit"
+      },
+      "states": {
+        "ready": "observed"
+      },
+      "when": {
+        "state": "ready"
+      }
+    },
+    {
+      "id": "checkButtons",
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/check_count.json",
+      "inputs": {
+        "percept": "detectButtons"
+      },
+      "params": {
+        "expectedCount": "${config.expectedButtonCount}",
+        "expectedLabels": "${config.expectedButtonLabels}"
+      }
+    },
+    {
+      "id": "detectMenu",
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/detect_menu.json",
+      "inputs": {
+        "sensum": "audit"
+      }
+    },
+    {
+      "id": "checkMenu",
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/nodes/check_count.json",
+      "inputs": {
+        "percept": "detectMenu"
+      },
+      "params": {
+        "expectedCount": "${config.expectedMenuCount}",
+        "expectedLabels": "${config.expectedMenuLabels}"
+      }
+    }
+  ]
+}

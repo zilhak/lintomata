@@ -1,0 +1,23 @@
+{
+  "info": {
+    "description": "대상 파일이 없는 경우 — Sense 가 오류로 끝나고 그 여파가 not run 으로 표기되어야 한다",
+    "version": "0.1.0"
+  },
+
+  "tool": {},
+
+  "plan": [
+    {
+      "source": "${env.STRICTLER_EXAMPLE_ROOT}/pipelines/page_check.json",
+      "description": "존재하지 않는 HTML 을 관측 지점으로 잡는다 — 오류 1건 + 뒷단 전부 not run",
+      "config": {
+        "pagePath": "${env.STRICTLER_EXAMPLE_ROOT}/targets/does_not_exist.html",
+        "auditLog": "${env.STRICTLER_EXAMPLE_OUT}/audit.log",
+        "expectedButtonCount": 3,
+        "expectedButtonLabels": ["시작하기", "문서 보기", "문의하기"],
+        "expectedMenuCount": 4,
+        "expectedMenuLabels": ["홈", "제품", "가격", "지원"]
+      }
+    }
+  ]
+}
