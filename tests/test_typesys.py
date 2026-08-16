@@ -1,17 +1,18 @@
 """타입 시스템 테스트 (`schema.md` 7절).
 
-`check_allowed` 와 등록기는 `rules.finding()` 으로 `Finding` 을 만든다. 그 구현은 Step 1-b 의
-몫이므로, 여기서는 규칙 id 만 확인할 수 있도록 최소 대역을 끼워 넣는다 — 검사 대상은
-`typesys` 지 `rules` 가 아니다. 대역은 개정된 시그니처
-(`finding(rule_id, *, path, node, fields)`)를 따른다.
+`check_allowed` 와 등록기는 **진짜 `rules.finding()`** 으로 `Finding` 을 만든다.
+여기에 대역을 끼우면 **슬롯 누락이 통째로 가려진다** — 실제로 그랬고, 그 탓에
+`STR-TYPE-001~003` 을 내는 유일한 자리가 셋 다 `StrictlerError` 로 터지는 것을
+Step 2 까지 아무도 못 봤다. 대역을 두지 않는 것이 이 파일의 계약이다.
 """
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from pydantic import ValidationError
 
-from strictler import rules
 from strictler.errors import Finding, StrictlerError
 from strictler.typesys.primitives import (
     FORBIDDEN,
@@ -23,29 +24,6 @@ from strictler.typesys.primitives import (
     parse_type,
 )
 from strictler.typesys.registry import DataclassSpec, FieldSpec, TypeKey, TypeRegistry
-
-
-@pytest.fixture(autouse=True)
-def _stub_rule_finding(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_finding(
-        rule_id: str,
-        *,
-        status: str = "error",
-        path: str = "",
-        node: str = "",
-        cause: object = None,
-        fields: dict[str, object] | None = None,
-    ) -> Finding:
-        slots = fields or {}
-        return Finding(
-            status=status,
-            path=path,
-            node=node,
-            rule_id=rule_id,
-            message=" ".join(f"{k}={v}" for k, v in sorted(slots.items())),
-        )
-
-    monkeypatch.setattr(rules, "finding", fake_finding)
 
 
 def dc(name: str, origin: str = "a.py", **fields: str) -> DataclassSpec:
@@ -150,6 +128,27 @@ def test_every_forbidden_name_is_actually_rejected() -> None:
 def test_finding_carries_location() -> None:
     found = check_allowed(parse_type("dict"), known=KNOWN, path="nodes/a.json", node="count")
     assert (found[0].path, found[0].node) == ("nodes/a.json", "count")
+
+
+@pytest.mark.parametrize("expr", ["dict[str, int]", "Optional[str]", "Button[int]", "str | int"])
+def test_every_rejection_path_fills_its_slots(expr: str) -> None:
+    """★ 세 규칙(`-001`/`-002`/`-003`) 전부 **실제 `rules.finding()`** 을 태운다.
+
+    슬롯을 빠뜨리면 `StrictlerError` 가 나면서 규칙 id 가 통째로 사라진다 —
+    `known=frozenset()` 으로 dataclass 도 없는 최악 조건에서 확인한다.
+    """
+    found = check_allowed(parse_type(expr), known=frozenset(), path="/abs/n.py")
+    assert len(found) == 1
+    assert found[0].rule_id.startswith("STR-TYPE-")
+    leftover = re.compile(r"(?<!\$)\{[A-Za-z_][A-Za-z0-9_]*\}")
+    assert not leftover.search(found[0].message), found[0].message
+    assert "/abs/n.py" in found[0].message
+
+
+def test_unsupported_type_message_names_the_type() -> None:
+    """`{type}` 슬롯이 실제 표기로 채워진다 — 안 그러면 무엇이 문제인지 못 읽는다."""
+    found = check_allowed(parse_type("set[str]"), known=frozenset(), path="/abs/n.py")
+    assert "set[str]" in found[0].message
 
 
 # --- registry: (origin, name) 키 -------------------------------------------
@@ -300,7 +299,7 @@ def test_self_recursive_type_is_str_type_007() -> None:
         reg.normalize()
     found = excinfo.value.findings[0]
     assert found.rule_id == "STR-TYPE-007"
-    assert "cycle=N → N" in found.message
+    assert "N → N" in found.message  # `{cycle}` 슬롯이 실제 순환으로 채워진다
 
 
 def test_unknown_field_type_is_a_tool_error() -> None:
@@ -387,7 +386,7 @@ def test_merge_field_conflict_is_str_type_006() -> None:
         reg.merge_components()
     found = excinfo.value.findings[0]
     assert found.rule_id == "STR-TYPE-006"
-    assert "field=x" in found.message
+    assert "필드 `x`" in found.message  # `{field}` 슬롯이 실제 필드명으로 채워진다
     assert "`A`(a.py)" in found.message  # names 슬롯에 성분 전체가 들어간다
 
 

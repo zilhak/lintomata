@@ -18,6 +18,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
+    "ENGINE_STATE_FIELDS",
     "EntryKind",
     "ID_PREFIXES",
     "NodeType",
@@ -63,6 +64,16 @@ PipelineKind = Literal["verify", "compare"]
 
 STRICT = ConfigDict(extra="forbid")
 """모든 스키마 모델 공통 설정. 선언되지 않은 키는 오류."""
+
+ENGINE_STATE_FIELDS: frozenset[str] = frozenset({"__startedAt"})
+"""엔진이 자동으로 채워주는 `Args.state` 필드 (`schema.md` 8절).
+
+`__` 접두는 엔진 예약이라 사용자가 `Args.state` 에 선언할 수 없고(`STR-STATE-001`),
+그래서 **선언 없이 읽어도 `STR-BAN-004` 가 아니다.**
+
+★ **정본은 여기 하나다.** `engine/state.py`(`ENGINE_FIELDS`) · `refs.py` · `checks/script.py`
+셋이 여기서 가져다 쓴다. 복제해 두면 엔진 제공 필드가 늘 때 `STR-BAN-004` 오탐이 난다.
+`model` 은 최하층이라 세 곳 어디서 import 해도 순환이 없다."""
 
 
 # ── Spec (`schema.md` 3절) ───────────────────────────────────────────────────

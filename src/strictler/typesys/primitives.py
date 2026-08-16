@@ -143,19 +143,23 @@ def check_allowed(t: TypeRef, *, known: frozenset[str], path: str, node: str = "
     `known` 은 그 스크립트가 선언한 dataclass 이름들. primitive 도 `list[T]` 도
     `known` 도 아니면 `STR-TYPE-003`, `dict` 면 `STR-TYPE-001`,
     `Optional`/`None` 이면 `STR-TYPE-002`.
+
+    ★ **세 규칙 전부 자리표시자를 갖는다** — `-001`/`-002` 는 `{file}`, `-003` 은
+    `{type}` + `{file}`. 하나라도 빠뜨리면 `rules.finding()` 이 `StrictlerError` 를
+    내면서 **규칙 id 가 통째로 사라진다.**
     """
     base = t.base
 
     forbidden_rule = _FORBIDDEN_RULE.get(base)
     if forbidden_rule is not None:
-        return [rules.finding(forbidden_rule, path=path, node=node)]
+        return [_finding(forbidden_rule, t, path, node)]
 
     if t.name == _UNION:
         # `str | None` 은 안쪽 `None` 이 STR-TYPE-002 를 낸다. 그 밖의 합집합은 어휘 밖이다.
         inner: list[Finding] = []
         for arg in t.args:
             inner.extend(check_allowed(arg, known=known, path=path, node=node))
-        return inner or [rules.finding("STR-TYPE-003", path=path, node=node)]
+        return inner or [_finding("STR-TYPE-003", t, path, node)]
 
     if is_primitive(t):
         return []
@@ -163,7 +167,15 @@ def check_allowed(t: TypeRef, *, known: frozenset[str], path: str, node: str = "
         return check_allowed(element_type(t), known=known, path=path, node=node)
     if base in known and not t.args:
         return []
-    return [rules.finding("STR-TYPE-003", path=path, node=node)]
+    return [_finding("STR-TYPE-003", t, path, node)]
+
+
+def _finding(rule_id: str, t: TypeRef, path: str, node: str) -> Finding:
+    """규칙이 선언한 슬롯만 채워 넘긴다 — `rules.finding()` 은 미선언 필드를 거부한다."""
+    fields: dict[str, object] = {"file": path}
+    if "type" in rules.get_rule(rule_id).slots:
+        fields["type"] = str(t)
+    return rules.finding(rule_id, path=path, node=node, fields=fields)
 
 
 # --- 파서 내부 ------------------------------------------------------------

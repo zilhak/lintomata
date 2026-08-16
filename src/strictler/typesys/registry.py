@@ -285,13 +285,16 @@ class TypeRegistry:
 
         `checks/script.py` 가 등록 전에 1차로 잡지만, **2선 방어에도 규칙 id 는 있어야 한다.**
         id 없는 맨 예외로 나가면 리포트에서 무엇이 걸렸는지 기계적으로 알 수 없다.
+
+        ⚠ `STR-TYPE-003` 은 슬롯 `{type}`·`{file}` 을 갖는다 — 안 채우면 `rules.finding()`
+        이 터지면서 **규칙 id 가 통째로 사라진다** (여기가 정확히 그랬다).
         """
         where = f"`{owner.name}`" + (f" ({owner.origin})" if owner.origin else "")
         return _rule_error(
             "STR-TYPE-003",
             path=owner.origin,
             node=owner.name,
-            fields={},
+            fields={"type": str(t), "file": owner.origin},
             message=(
                 f"{where} 의 필드 타입 `{t}` 를 해석할 수 없습니다. "
                 "쓸 수 있는 타입은 `int` `float` `str` `bool` `bytes` `list[T]` 와 "

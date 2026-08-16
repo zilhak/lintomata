@@ -47,6 +47,7 @@ from typing import Any, NoReturn
 
 from strictler import rules
 from strictler.errors import Finding, StrictlerError
+from strictler.model import ENGINE_STATE_FIELDS as _ENGINE_STATE_FIELDS
 from strictler.model import ID_PREFIXES, EntryKind
 
 __all__ = [
@@ -77,9 +78,9 @@ _BRACE_C = re.compile(r"\$\{[^{}]*\}")
 """`${...}` **전부**를 잡는다. 네임스페이스가 없는 것까지 걸러내야 하므로
 `PLACEHOLDER_RE` 보다 넓게 훑고 나서 `_wellformed` 로 대조한다."""
 
-_ENGINE_STATE_FIELDS: frozenset[str] = frozenset({"__startedAt"})
-"""`__` 접두를 쓸 수 있는 것은 엔진 제공 필드뿐이다 (`schema.md` 8절).
-`__startedAt` 은 epoch 밀리초 정수."""
+"""`_ENGINE_STATE_FIELDS` — `__` 접두를 쓸 수 있는 것은 엔진 제공 필드뿐이다
+(`schema.md` 8절). `__startedAt` 은 epoch 밀리초 정수.
+**정본은 `model.ENGINE_STATE_FIELDS`** — `engine/state.py`·`checks/script.py` 와 같은 것을 본다."""
 
 _KIND_LABEL: dict[EntryKind, str] = {
     "script": "스크립트(`sc_`)",

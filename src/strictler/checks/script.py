@@ -43,14 +43,8 @@ import ast
 
 from strictler import rules
 from strictler.errors import Finding, StrictlerError
-from strictler.model import NodeType
-from strictler.typesys.primitives import (
-    TypeRef,
-    element_type,
-    is_list,
-    is_primitive,
-    parse_type,
-)
+from strictler.model import ENGINE_STATE_FIELDS, NodeType
+from strictler.typesys.primitives import TypeRef, check_allowed, parse_type
 from strictler.typesys.registry import DataclassSpec, FieldSpec
 
 __all__ = [
@@ -78,12 +72,12 @@ ARGS_NAME = "Args"
 ARGS_FIELDS: tuple[str, ...] = ("input", "params", "state")
 """`Args` 가 가질 수 있는 필드. **쓰는 것만 선언한다** — 셋 다 있어야 하는 게 아니다."""
 
-ENGINE_STATE_FIELDS: frozenset[str] = frozenset({"__startedAt"})
-"""엔진이 채워주는 state 필드. 사용자는 `__` 접두를 못 쓰므로(`STR-STATE-001`)
-`Args.state` 에 선언할 수 없고, 그래서 **선언 없이 접근해도 `STR-BAN-004` 가 아니다.**
+"""`ENGINE_STATE_FIELDS` — 엔진이 채워주는 state 필드. 사용자는 `__` 접두를 못 쓰므로
+(`STR-STATE-001`) `Args.state` 에 선언할 수 없고, 그래서 **선언 없이 접근해도
+`STR-BAN-004` 가 아니다.**
 
-⚠ `engine/state.py` 의 `ENGINE_FIELDS` 와 같은 것이지만 **거기서 import 하지 않는다** —
-`checks` 는 `engine` 보다 아래층이라 역방향 의존이 된다 (MODULES.md 0절)."""
+정본은 `model` 에 있다 (`engine/state.py`·`refs.py` 와 셋이 같은 것을 본다) —
+복제해 두면 엔진 제공 필드가 늘 때 `STR-BAN-004` 오탐이 난다."""
 
 
 # --- 금지 표 -------------------------------------------------------------
@@ -121,26 +115,6 @@ _BANNED_CALLS: dict[str, str] = {
 }
 """호출해야 걸리는 것 → 규칙 id. import 로 이미 걸리는 모듈의 함수는 여기 두지 않는다
 (같은 사실을 두 번 보고하게 된다)."""
-
-_FORBIDDEN_TYPE_RULE: dict[str, str] = {
-    "dict": "STR-TYPE-001",
-    "Dict": "STR-TYPE-001",
-    "Optional": "STR-TYPE-002",
-    "None": "STR-TYPE-002",
-    "NoneType": "STR-TYPE-002",
-    "Any": "STR-TYPE-003",
-}
-"""거절 타입 이름 → 규칙 id.
-
-⚠ `typesys.primitives.check_allowed` 가 같은 판정을 하지만 **자리표시자 값을 안 넘겨서
-`STR-TYPE-001`/`-003` 이 `StrictlerError` 로 터진다**(`{file}`·`{type}` 슬롯 누락).
-그래서 **판정 어휘는 `primitives` 것을 그대로 쓰되**(`FORBIDDEN`·`is_primitive`·`is_list`·
-`element_type`·`parse_type`) `Finding` 생성만 여기서 한다. 표가 갈라지지 않도록
-**이 표가 `primitives.FORBIDDEN` 전체를 덮는지 테스트가 고정한다.**"""
-
-_UNION_BASE = "Union"
-"""`A | B` / `Union[A, B]` 를 담는 `TypeRef` 이름. 허용 어휘가 아니다."""
-
 
 class ScriptContract:
     """스크립트에서 뽑아낸 **능력 선언**. 이후 층 전부가 이걸 보고 판단한다.
@@ -189,9 +163,17 @@ class ScriptContract:
 
 
 def extract_contract(source: str, path: str) -> tuple[ScriptContract, list[Finding]]:
-    """스크립트 소스에서 계약을 뽑는다. 뽑는 도중 잡히는 형식 오류도 같이 낸다.
+    """스크립트 소스에서 계약을 뽑는다. 파이프라인 검사·엔진·단위테스트가 이 결과를 재료로 쓴다.
 
-    파이프라인 검사·엔진·단위테스트가 전부 이 결과를 재료로 쓴다.
+    ★ **두 번째 반환값은 언제나 빈 목록이다. 검증은 `check_script` 가 한다.**
+    추출 단계에는 고유한 오류가 없기 때문이다 — 해석 안 되는 어노테이션은
+    `_type_of` 가 **미지 타입 그대로** 남겨 `check_types` 가 `STR-TYPE-003` 으로 잡고,
+    없는 `Args`·없는 진입점·안 나가는 출력은 전부 *"뽑을 게 없다"* 여서 계약이 비는
+    것으로 표현되며 `check_entrypoint` 가 판정한다. 추출은 **읽기만** 한다.
+
+    자리를 남겨 두는 것은 시그니처가 계약(MODULES.md)이기 때문이고, 나중에
+    추출 고유의 오류가 생기면 여기에 담는다.
+    → **`extract_contract` 만 부르고 통과로 판단하지 마라.** 검사는 `check_script` 다.
 
     **파싱이 안 되면 `StrictlerError`** — 위반이 아니라 검사기가 못 돈 것이다.
     """
@@ -233,9 +215,14 @@ def check_script(source: str, path: str, node_type: NodeType | None = None) -> l
 
 
 def check_entrypoint(contract: ScriptContract) -> list[Finding]:
-    """`runNode(args: Args)` 형태인지, `returnResult()` 를 호출하는지.
+    """`runNode(args: Args)` 형태인지, `returnResult()` 로 **dataclass** 를 내보내는지.
 
     `STR-CONTRACT-001` (Args 미선언) / `-002` (진입점) / `-003` (반환).
+
+    **`-003` 은 두 경우를 한 규칙으로 낸다** — `returnResult()` 미호출과
+    **출력 타입이 dataclass 가 아닌 경우**(primitive·미확정). 타입 동일성을
+    **구조로** 판정하는 이상 primitive 출력은 성립하지 않으므로, 둘 다 고치는 방법이
+    *"`returnResult()` 로 dataclass 를 내보내라"* 하나다 (`rules.md` `STR-CONTRACT-003`).
     """
     findings: list[Finding] = []
     fields: dict[str, object] = {"file": contract.path}
@@ -243,7 +230,7 @@ def check_entrypoint(contract: ScriptContract) -> list[Finding]:
         findings.append(rules.finding("STR-CONTRACT-001", path=contract.path, fields=fields))
     if not contract._entrypoint_ok:
         findings.append(rules.finding("STR-CONTRACT-002", path=contract.path, fields=fields))
-    if not contract._returns_result:
+    if not contract._returns_result or contract.output_type not in contract.dataclasses:
         findings.append(rules.finding("STR-CONTRACT-003", path=contract.path, fields=fields))
     return findings
 
@@ -283,6 +270,9 @@ def check_types(contract: ScriptContract) -> list[Finding]:
 
     **검사 대상은 선언된 모든 타입**이다 — dataclass 필드 전부와 `runNode` 의 반환
     어노테이션. 같은 타입 표기가 여러 번 나와도 한 번만 보고한다.
+
+    ★ **판정은 `typesys.primitives.check_allowed` 가 한다.** 여기서 표를 복제하면
+    어휘가 두 벌이 되어 갈라진다 — 실제로 그랬다.
     """
     known = frozenset(contract.dataclasses)
     findings: list[Finding] = []
@@ -292,7 +282,7 @@ def check_types(contract: ScriptContract) -> list[Finding]:
         if text in seen:
             continue
         seen.add(text)
-        findings.extend(_check_type_allowed(used, known, contract.path))
+        findings.extend(check_allowed(used, known=known, path=contract.path))
     return findings
 
 
@@ -516,7 +506,7 @@ def _fill_output(
 
     if call is None or not call.args:
         return
-    contract.output_type = _value_type(call.args[0], scope, contract.dataclasses)
+    contract.output_type = _value_type(call.args[0], scope, contract)
 
 
 def _find_result_call(scope: ast.AST) -> ast.Call | None:
@@ -534,11 +524,26 @@ def _callee_name(func: ast.expr) -> str:
     return ""
 
 
-def _value_type(value: ast.expr, scope: ast.AST, known: dict[str, DataclassSpec]) -> str:
+def _value_type(value: ast.expr, scope: ast.AST, contract: ScriptContract) -> str:
     """`returnResult(...)` 에 넘긴 값의 dataclass 이름. 못 찾으면 `""`."""
+    known = contract.dataclasses
     if isinstance(value, ast.Call):
         name = _callee_name(value.func)
         return name if name in known else ""
+    if isinstance(value, ast.Attribute):
+        # `returnResult(args.input)` — **통과형**. CLAUDE.md 가 조건 분기의 표준 표현으로
+        # 못박은 *"스크립트가 그냥 `input` 을 반환한다"* 가 이 형태이고, Action 의
+        # 교과서적 모습이기도 하다. 여기를 못 뽑으면 `output_type` 이 비어
+        # `STR-CONTRACT-006` 이 오탐된다.
+        if (
+            value.attr == "input"
+            and isinstance(value.value, ast.Name)
+            and value.value.id == contract._param_name
+        ):
+            # `output_type` 은 **dataclass 이름**이라는 계약을 지킨다 — primitive 통과형은
+            # 여기서 비우고 `STR-CONTRACT-003` 이 잡는다.
+            return contract.input_type if contract.input_type in known else ""
+        return ""
     if isinstance(value, ast.Name):
         # `result = Percept(...)` / `returnResult(result)` 형태를 한 단계만 따라간다.
         for node in ast.walk(scope):
@@ -592,34 +597,6 @@ def _is_path_like(text: str) -> bool:
 
 
 # --- 검사 내부 ------------------------------------------------------------
-
-
-def _check_type_allowed(t: TypeRef, known: frozenset[str], path: str) -> list[Finding]:
-    """타입 하나가 허용 어휘에 드는지. 판정은 `typesys.primitives` 것을 쓴다."""
-    base = t.base
-
-    rule_id = _FORBIDDEN_TYPE_RULE.get(base)
-    if rule_id is not None:
-        return [rules.finding(rule_id, path=path, fields={"type": str(t), "file": path})]
-
-    if base == _UNION_BASE:
-        # `str | None` 은 안쪽 `None` 이 `STR-TYPE-002` 를 낸다. 그 밖의 합집합은 어휘 밖이다.
-        inner: list[Finding] = []
-        for arg in t.args:
-            inner.extend(_check_type_allowed(arg, known, path))
-        return inner or [_unsupported(t, path)]
-
-    if is_primitive(t):
-        return []
-    if is_list(t):
-        return _check_type_allowed(element_type(t), known, path)
-    if base in known and not t.args:
-        return []
-    return [_unsupported(t, path)]
-
-
-def _unsupported(t: TypeRef, path: str) -> Finding:
-    return rules.finding("STR-TYPE-003", path=path, fields={"type": str(t), "file": path})
 
 
 def _has_expected_field(contract: ScriptContract) -> bool:

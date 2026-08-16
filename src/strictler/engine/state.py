@@ -23,13 +23,16 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from strictler.model import States, Transition
+from strictler.model import ENGINE_STATE_FIELDS, States, Transition
 
 __all__ = ["ENGINE_FIELDS", "StateMachine"]
 
 
-ENGINE_FIELDS: tuple[str, ...] = ("__startedAt",)
-"""엔진이 자동으로 채워주는 필드들. 사용자가 `states.values` 에 선언하지 않는다."""
+ENGINE_FIELDS: tuple[str, ...] = tuple(sorted(ENGINE_STATE_FIELDS))
+"""엔진이 자동으로 채워주는 필드들. 사용자가 `states.values` 에 선언하지 않는다.
+
+**정본은 `model.ENGINE_STATE_FIELDS`** — `refs.py`·`checks/script.py` 와 같은 것을 본다.
+복제해 두면 엔진 제공 필드가 늘 때 `STR-BAN-004` 오탐이 난다."""
 
 
 class StateMachine:

@@ -14,8 +14,9 @@ import re
 
 import pytest
 
-from strictler import rules
+from strictler import model, refs, rules
 from strictler.checks import script as sc
+from strictler.engine import state
 from strictler.errors import Finding, StrictlerError
 from strictler.typesys import primitives
 from strictler.typesys.registry import DataclassSpec, TypeRegistry
@@ -226,9 +227,49 @@ def test_bad_return_annotation_is_caught() -> None:
     assert "STR-TYPE-001" in ids(sc.check_script(source, PATH))
 
 
-def test_forbidden_table_covers_primitives_vocabulary() -> None:
-    """판정 어휘의 정본은 `primitives.FORBIDDEN` 이다 — 표가 갈라지면 여기서 깨진다."""
-    assert set(primitives.FORBIDDEN) == set(sc._FORBIDDEN_TYPE_RULE)
+def test_type_judgement_is_delegated_not_duplicated(monkeypatch: pytest.MonkeyPatch) -> None:
+    """판정의 정본은 `primitives.check_allowed` 하나다 — 표를 복제하면 갈라진다.
+
+    복제본이 되살아나면 이 대역이 안 불려 `dict` 가 그대로 걸리고 여기서 깨진다.
+    """
+    calls: list[str] = []
+
+    def spy(t: object, **kwargs: object) -> list[Finding]:
+        calls.append(str(t))
+        return []
+
+    monkeypatch.setattr(sc, "check_allowed", spy)
+    source = (
+        "from dataclasses import dataclass\n\n\n"
+        "@dataclass\nclass Args:\n    input: dict\n\n\n"
+        "def runNode(args: Args):\n    return returnResult(args.input)\n"
+    )
+    contract, _ = sc.extract_contract(source, PATH)
+    assert sc.check_types(contract) == []
+    assert calls == ["dict"]
+
+
+@pytest.mark.parametrize("name", sorted(primitives.FORBIDDEN))
+def test_every_forbidden_name_is_rejected_through_check_script(name: str) -> None:
+    """`primitives.FORBIDDEN` 전부가 스크립트 검사까지 실제로 걸린다."""
+    source = (
+        "from dataclasses import dataclass\n\n\n"
+        f"@dataclass\nclass Args:\n    input: {name}\n\n\n"
+        "def runNode(args: Args):\n    return returnResult(args.input)\n"
+    )
+    assert only(sc.check_script(source, PATH), "STR-TYPE") != []
+
+
+@pytest.mark.parametrize("annotation", ["str | int", "Button[int]"])
+def test_union_and_parameterized_dataclass_are_rejected(annotation: str) -> None:
+    """어휘 밖 합집합과 **매개변수 붙은 dataclass** — 위임 전 복제본에서 미커버였던 두 분기."""
+    source = (
+        "from dataclasses import dataclass\n\n\n"
+        "@dataclass\nclass Button:\n    label: str\n\n\n"
+        f"@dataclass\nclass Args:\n    input: {annotation}\n\n\n"
+        "def runNode(args: Args):\n    return returnResult(args.input)\n"
+    )
+    assert only(sc.check_script(source, PATH), "STR-TYPE") == ["STR-TYPE-003"]
 
 
 # --- BAN — 금지 4종 각각 --------------------------------------------------
@@ -363,6 +404,86 @@ def test_action_without_input_is_caught() -> None:
     assert "STR-CONTRACT-006" in ids(sc.check_script(source, PATH, "action"))
 
 
+PASSTHROUGH = (
+    "from dataclasses import dataclass\n\n\n"
+    "@dataclass\nclass Form:\n    selector: str\n\n\n"
+    "@dataclass\nclass Args:\n    input: Form\n\n\n"
+    "def runNode(args: Args):\n"  # ★ 반환 어노테이션이 없다
+    "    return returnResult(args.input)\n"
+)
+"""**통과형** — CLAUDE.md 가 조건 분기의 표준 표현으로 못박은
+*"스크립트가 그냥 `input` 을 반환한다"*. Action 의 교과서적 모습이기도 하다."""
+
+
+def test_passthrough_output_type_comes_from_input() -> None:
+    """`returnResult(args.input)` 에서 출력 타입을 못 뽑으면 `output_type` 이 비고
+    **교과서적 Action 이 `STR-CONTRACT-006` 으로 오탐된다.**"""
+    contract, _ = sc.extract_contract(PASSTHROUGH, PATH)
+    assert (contract.input_type, contract.output_type) == ("Form", "Form")
+    assert sc.check_script(PASSTHROUGH, PATH, "action") == []
+
+
+@pytest.mark.parametrize("node_type", ["vantage", "sense", "perceive", "reckon", "action"])
+def test_passthrough_is_not_an_action_only_concern(node_type: str) -> None:
+    """조건 분기의 표준 표현이므로 **모든 노드 타입**에서 성립해야 한다.
+
+    Reckon 만 기댓값 자리(`-005`)를 따로 요구한다 — 그건 통과형과 무관한 요구다.
+    """
+    findings = only(sc.check_script(PASSTHROUGH, PATH, node_type), "STR-CONTRACT")
+    assert findings == (["STR-CONTRACT-005"] if node_type == "reckon" else [])
+
+
+def test_passthrough_follows_the_actual_param_name() -> None:
+    """진입점 인자 이름이 `args` 가 아니어도 따라간다."""
+    source = PASSTHROUGH.replace("def runNode(args: Args):", "def runNode(a: Args):").replace(
+        "returnResult(args.input)", "returnResult(a.input)"
+    )
+    contract, _ = sc.extract_contract(source, PATH)
+    assert contract.output_type == "Form"
+
+
+def test_passthrough_of_a_non_input_field_is_not_the_input_type() -> None:
+    """`args.params` 는 입력이 아니다 — 통과형으로 오인하면 Action 검사가 무의미해진다."""
+    source = (
+        "from dataclasses import dataclass\n\n\n"
+        "@dataclass\nclass Form:\n    selector: str\n\n\n"
+        "@dataclass\nclass Args:\n    input: Form\n    params: Form\n\n\n"
+        "def runNode(args: Args):\n    return returnResult(args.params)\n"
+    )
+    contract, _ = sc.extract_contract(source, PATH)
+    assert contract.output_type == ""
+
+
+# --- 출력은 dataclass 여야 한다 (`STR-CONTRACT-003`) -----------------------
+
+
+@pytest.mark.parametrize("input_type", ["str", "list[str]"])
+def test_primitive_output_is_caught(input_type: str) -> None:
+    """`-> str` 같은 primitive 반환은 성립하지 않는다 — 타입 동일성을 **구조로** 판정한다."""
+    source = (
+        "from dataclasses import dataclass\n\n\n"
+        f"@dataclass\nclass Args:\n    input: {input_type}\n\n\n"
+        "def runNode(args: Args):\n    return returnResult(args.input)\n"
+    )
+    assert "STR-CONTRACT-003" in ids(sc.check_script(source, PATH))
+
+
+def test_undetermined_output_is_caught() -> None:
+    """무엇이 나가는지 못 뽑는 것도 같은 규칙이다 — 고치는 방법이 하나이기 때문이다."""
+    source = (
+        "from dataclasses import dataclass\n\n\n"
+        "@dataclass\nclass Out:\n    ok: bool\n\n\n"
+        "@dataclass\nclass Args:\n    input: str\n\n\n"
+        "def runNode(args: Args):\n    return returnResult(build())\n"
+    )
+    assert "STR-CONTRACT-003" in ids(sc.check_script(source, PATH))
+
+
+def test_dataclass_output_passes() -> None:
+    """짝 — 제대로 dataclass 를 내보내면 안 걸린다."""
+    assert "STR-CONTRACT-003" not in ids(sc.check_script(GOOD, PATH))
+
+
 def test_output_type_from_return_result_argument() -> None:
     """반환 어노테이션이 없으면 `returnResult()` 의 인자에서 찾는다."""
     source = (
@@ -447,6 +568,39 @@ def test_two_scripts_each_declare_args_independently() -> None:
     assert registry.field_set(a.dataclasses["Args"].key) != registry.field_set(
         b.dataclasses["Args"].key
     )
+
+
+def test_engine_state_fields_come_from_the_single_source() -> None:
+    """정본은 `model` 하나다 — 복제해 두면 엔진 제공 필드가 늘 때 `STR-BAN-004` 오탐이 난다."""
+    assert sc.ENGINE_STATE_FIELDS is model.ENGINE_STATE_FIELDS
+    assert refs._ENGINE_STATE_FIELDS is model.ENGINE_STATE_FIELDS
+    assert set(state.ENGINE_FIELDS) == set(model.ENGINE_STATE_FIELDS)
+
+
+def test_a_new_engine_state_field_needs_no_declaration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """정본에 필드가 하나 늘면 스크립트 검사도 **곧바로** 따라온다."""
+    grown = frozenset(model.ENGINE_STATE_FIELDS | {"__attempt"})
+    monkeypatch.setattr(sc, "ENGINE_STATE_FIELDS", grown)
+    source = _with_body("    n = args.state.__attempt\n")
+    assert only(sc.check_script(source, PATH), "STR-BAN") == []
+
+
+def test_extract_contract_never_reports_check_script_does() -> None:
+    """`extract_contract` 의 두 번째 반환값은 언제나 빈 목록이다 — 검증은 `check_script` 다.
+
+    이걸 통과로 오해하면 위반을 통째로 놓친다.
+    """
+    broken = (
+        "from dataclasses import dataclass\n\n\n"
+        "@dataclass\nclass Args:\n    input: dict\n    junk: str\n\n\n"
+        "def run_node(args):\n    return args.input\n"
+    )
+    contract, findings = sc.extract_contract(broken, PATH)
+    assert findings == []
+    assert contract.output_type == ""
+    assert ids(sc.check_script(broken, PATH)) != []
 
 
 def test_registered_specs_carry_origin() -> None:
