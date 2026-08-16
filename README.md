@@ -16,11 +16,33 @@ Spec (JSON)  →  Pipeline (JSON)  →  Node (JSON)  →  Script (.py)
 Reckon / Action)의 본체는 전부 사용자가 공급하는 스크립트이고, lintomata 가 파는 것은
 **파이프라인 엔진과 스키마**다.
 
+## 이름
+
+`lint` + `automata`. **이건 lint 다** — 실행 파이프라인이 아니라서 복구·재시도·되돌아가기가 없고,
+실패는 수습 대상이 아니라 **산출물**이다. 그리고 실행 파이프라인 자체가 **상태머신**이다.
+
 ## 설치와 사용
 
 ```bash
-uv sync
-uv run lintomata --help
+# 전역 설치
+uv tool install git+https://github.com/zilhak/lintomata
+
+# 저장소에서
+git clone https://github.com/zilhak/lintomata && cd lintomata
+uv sync && uv run lintomata --help
+```
+
+**노드 스크립트가 외부 패키지를 쓰면 lintomata 환경에 함께 설치한다** — 격리하지 않는다
+(ESLint 플러그인이 ESLint 와 같은 `node_modules` 를 쓰는 것과 같다):
+
+```bash
+uv tool install git+https://github.com/zilhak/lintomata --with selectolax
+```
+
+등록소는 **프로젝트마다 하나** 두는 것을 권한다:
+
+```bash
+export LINTOMATA_HOME=$PROJECT_ROOT/.lintomata
 ```
 
 ```
