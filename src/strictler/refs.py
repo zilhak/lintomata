@@ -23,9 +23,18 @@ env 값 안의 `~` 에도 그대로 적용된다. 그래서 전개가 **3단계*
 
 **전개 후 `${` 가 남아 있으면 오류다.** 경로 해석 시점엔 모든 참조가 풀려 있어야 한다.
 리터럴 경로 조각으로 통과시키면 나중에 "파일 없음"으로 원인이 뭉개진다.
+**둘을 규칙으로 가른다** (MODULES.md R2-6): 문법이 깨진 것(`${X}` / 닫히지 않은 `${`)은
+`STR-REF-006`, **문법은 정상인데 안 풀린 것**(`${config.y}`)은 `STR-REF-007` 이다.
+`-006` 의 가이드("네임스페이스를 반드시 붙입니다")를 이미 네임스페이스가 붙은 참조에
+주면 AI 가 엉뚱한 곳을 고친다 — **규칙을 나누는 기준은 증상이 아니라 고치는 방법이다.**
 
 **여기서 나는 것은 전부 `error` 다.** 경로 규칙 위반도 미정의 환경변수도 위반이 아니라
 **도구가 못 돈 것**이므로 `StrictlerError` 로 던진다 (`schema.md` 9절).
+
+**규칙 문구는 `rules` 가 만든다** (MODULES.md R2-7). 예전엔 `rules.md` 의 guide 를
+손으로 복제했는데, 그러면 문서와 코드가 갈라진다. `rules` 는 `errors` 에만 의존하는
+최하층이라 여기서 써도 순환이 생기지 않는다. 이 모듈이 직접 쓰는 문자열은
+**규칙 문구가 아니라 구체값**(어느 환경변수인지, 어떤 경로였는지)뿐이다.
 """
 
 from __future__ import annotations
@@ -36,6 +45,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, NoReturn
 
+from strictler import rules
 from strictler.errors import Finding, StrictlerError
 from strictler.model import ID_PREFIXES, EntryKind
 
@@ -63,9 +73,9 @@ PLACEHOLDER_RE: str = r"\$\{(?P<ns>[a-z]+)\.(?P<name>[^}]+)\}"
 _PLACEHOLDER_C = re.compile(PLACEHOLDER_RE)
 """`PLACEHOLDER_RE` 컴파일본."""
 
-_BRACE_C = re.compile(r"\$\{(?P<body>[^{}]*)\}")
+_BRACE_C = re.compile(r"\$\{[^{}]*\}")
 """`${...}` **전부**를 잡는다. 네임스페이스가 없는 것까지 걸러내야 하므로
-`PLACEHOLDER_RE` 보다 넓게 훑고 나서 대조한다."""
+`PLACEHOLDER_RE` 보다 넓게 훑고 나서 `_wellformed` 로 대조한다."""
 
 _ENGINE_STATE_FIELDS: frozenset[str] = frozenset({"__startedAt"})
 """`__` 접두를 쓸 수 있는 것은 엔진 제공 필드뿐이다 (`schema.md` 8절).
@@ -79,16 +89,34 @@ _KIND_LABEL: dict[EntryKind, str] = {
 }
 
 
-def _fail(message: str, rule_id: str = "") -> NoReturn:
-    """오류 하나로 `StrictlerError` 를 던진다.
+def _fail(
+    rule_id: str,
+    *,
+    detail: str = "",
+    fields: dict[str, object] | None = None,
+) -> NoReturn:
+    """규칙 하나로 `StrictlerError` 를 던진다.
 
     **위반이 아니라 오류다.** 경로 규칙 위반·미정의 환경변수는 lint 결과가 아니라
     도구가 못 돈 것이므로 `Finding(status="error")` 로 싣는다.
+
+    **규칙 문구(message + guide)는 `rules.finding()` 이 만든다** — 여기서 손으로
+    복제하지 않는다 (MODULES.md R2-7). `detail` 은 규칙 테이블에 슬롯이 없는
+    **구체값**만 담는다 (어느 환경변수였는지, 전개 결과가 무엇이었는지).
     """
-    raise StrictlerError(
-        message,
-        [Finding(status="error", rule_id=rule_id, message=message)],
-    )
+    item = rules.finding(rule_id, status="error", fields=fields)
+    message = f"{detail}\n{item.message}" if detail else item.message
+    raise StrictlerError(message, [item.model_copy(update={"message": message})])
+
+
+def _fail_plain(message: str) -> NoReturn:
+    """규칙 id 가 붙지 않는 오류.
+
+    **규칙이 없는 자리에만 쓴다.** "참조가 아니다"(`nd_abc`) 나 "자리가 다르다"
+    (`${env.HOME}` 를 `${ref....}` 자리에) 는 참조 문법이 깨진 것이 아니라서
+    `STR-REF-006` 에 해당하지 않는다 — 억지로 묶으면 가이드가 엉뚱해진다.
+    """
+    raise StrictlerError(message, [Finding(status="error", message=message)])
 
 
 class Placeholder:
@@ -136,49 +164,45 @@ def collect_placeholders(value: str) -> list[Placeholder]:
     found: list[Placeholder] = []
     for m in _BRACE_C.finditer(value):
         raw = m.group(0)
-        parsed = _PLACEHOLDER_C.fullmatch(raw)
+        parsed = _wellformed(raw)
         if parsed is None:
-            _fail_malformed(raw, m.group("body"))
-        ns = parsed.group("ns")
-        name = parsed.group("name")
-        if ns not in NAMESPACES:
-            _fail_unknown_namespace(raw, ns)
-        found.append(Placeholder(ns, name, raw, m.start(), m.end()))
+            _fail_malformed(raw)
+        found.append(Placeholder(parsed[0], parsed[1], raw, m.start(), m.end()))
     return found
 
 
-def _fail_malformed(raw: str, body: str) -> NoReturn:
-    """`${...}` 인데 `${ns.name}` 형태가 아닌 것들을 종류별로 갈라 알려준다.
+def _wellformed(raw: str) -> tuple[str, str] | None:
+    """`${...}` 하나가 **문법상 온전한 참조**인지 본다 → `(ns, name)` 또는 `None`.
 
-    셋 다 `STR-REF-006`(malformed-reference) 이다 — 네임스페이스 없음 / 모름 /
-    이름 비었음. 종류만 갈라 문구를 다르게 준다.
+    온전하다 = `${<허용 네임스페이스>.<빈 문자열이 아닌 이름>}`.
+    `None` 이면 `STR-REF-006`(malformed) 이고, 값이 나오면 문법은 정상이다 —
+    그때부터 남은 문제는 "안 풀렸다"(`STR-REF-007`) 거나 "자리가 다르다" 뿐이다.
     """
-    ns, sep, name = body.partition(".")
-    if not sep:
-        _fail(
-            f"참조에 네임스페이스가 없습니다: {raw}\n"
-            f"참조는 네임스페이스를 반드시 붙입니다 — "
-            f"${{env.X}} / ${{config.X}} / ${{state.X}} / ${{ref.<id>}} 넷뿐입니다. "
-            f'네임스페이스가 없으면 "미정의 환경변수인지 config 오타인지" 구분할 수 없어 '
-            f"에러가 뭉개집니다.",
-            rule_id="STR-REF-006",
-        )
-    if ns not in NAMESPACES:
-        _fail_unknown_namespace(raw, ns)
-    _fail(
-        f"참조의 이름이 비어 있습니다: {raw}\n"
-        f"`${{{ns}.<이름>}}` 형태로 이름을 적으세요.",
-        rule_id="STR-REF-006",
-    )
+    parsed = _PLACEHOLDER_C.fullmatch(raw)
+    if parsed is None or parsed.group("ns") not in NAMESPACES:
+        return None
+    return parsed.group("ns"), parsed.group("name")
 
 
-def _fail_unknown_namespace(raw: str, ns: str) -> NoReturn:
-    allowed = ", ".join(sorted(NAMESPACES))
-    _fail(
-        f"모르는 네임스페이스입니다: {raw} (네임스페이스: {ns!r})\n"
-        f"쓸 수 있는 네임스페이스는 {allowed} 넷뿐입니다.",
-        rule_id="STR-REF-006",
-    )
+def _fail_malformed(raw: str) -> NoReturn:
+    """`${...}` 인데 `${ns.name}` 형태가 아닌 것 — `STR-REF-006`.
+
+    네임스페이스 없음 / 모름 / 이름 비었음 셋이 전부 이 규칙이다 (`rules.md`
+    `STR-REF-006` 의 "잡는 것" 열이 셋을 그대로 열거한다). 셋을 코드에서 다시
+    갈라 문구를 지어내지 않는다 — 규칙 문구는 `rules` 가 갖고 있고, 여기서
+    보태는 것은 `{ref}` 슬롯에 넣을 **문제의 참조 원문**뿐이다.
+    """
+    _fail("STR-REF-006", fields={"ref": raw})
+
+
+def _fail_unresolved(raw: str, original: str) -> NoReturn:
+    """문법은 정상인데 이 자리까지 전개되지 않고 살아남은 참조 — `STR-REF-007`.
+
+    `STR-REF-006` 이 아니다 (MODULES.md R2-6). `${config.y}` 는 네임스페이스가
+    이미 붙어 있으므로 `-006` 의 가이드를 주면 AI 가 엉뚱한 곳을 고친다.
+    고쳐야 할 것은 **전개 순서 내지 빠진 config 값**이다.
+    """
+    _fail("STR-REF-007", detail=f"원본: {original!r}", fields={"ref": raw})
 
 
 def is_ref(value: str) -> bool:
@@ -204,28 +228,44 @@ def parse_ref(value: str, expected: EntryKind | None = None) -> tuple[EntryKind,
     정해지지 않은 호출부(목록 조회 등)는 그대로 쓰면 된다 (MODULES.md R1-5).
     """
     if not is_ref(value):
-        _fail(
-            f"`${{ref.<id>}}` 형태가 아닙니다: {value!r}\n"
-            f"참조는 값 전체가 참조 하나여야 합니다 (예: ${{ref.nd_e5f6a7b8}})."
-        )
+        _fail_not_ref(value)
     entry_id = value[len("${ref.") : -1]
     kind: EntryKind | None = next(
         (k for prefix, k in ID_PREFIXES.items() if entry_id.startswith(prefix)), None
     )
     if kind is None:
-        known = " ".join(f"`{p}`={_KIND_LABEL[k]}" for p, k in ID_PREFIXES.items())
+        known = " / ".join(_KIND_LABEL[k] for k in ID_PREFIXES.values())
         _fail(
-            f"모르는 id 접두입니다: {entry_id}\n종류는 id 접두가 말해줍니다 — {known}",
-            rule_id="STR-REG-003",
+            "STR-REG-003",
+            fields={"expected": f"{known} 중 하나", "given": f"{entry_id} (모르는 접두)"},
         )
     if expected is not None and kind != expected:
         _fail(
-            f"이 자리에는 {_KIND_LABEL[expected]} 가 와야 합니다. "
-            f"준 것: {_KIND_LABEL[kind]} ({entry_id})\n"
-            f"(접두 `sc_`=스크립트 `nd_`=노드 `pl_`=파이프라인 `sp_`=Spec)",
-            rule_id="STR-REG-003",
+            "STR-REG-003",
+            fields={"expected": _KIND_LABEL[expected], "given": f"{_KIND_LABEL[kind]} ({entry_id})"},
         )
     return kind, entry_id
+
+
+def _fail_not_ref(value: object) -> NoReturn:
+    """`${ref.<id>}` 자리에 그게 아닌 것이 왔다 — **두 갈래로 갈린다.**
+
+    1. **문법이 깨진 참조** (`${ref.}` / `${vars.x}` / `${BUTTON}`) → `STR-REF-006`.
+       `rules.md` `STR-REF-006` 이 열거한 세 경우 그 자체다. 예전엔 `is_ref()` 가
+       `False` 를 돌려주는 바람에 형태 판별 이전 단계에서 **id 없이 튕겼다** —
+       같은 입력이 `collect_placeholders` 로 가면 `-006` 이 붙는데 `parse_ref` 로
+       가면 id 가 사라지는 비대칭이었다.
+    2. **문법은 멀쩡한데 참조가 아니거나 자리가 다른 것** (`nd_abc`, `${env.HOME}`)
+       → 규칙 없음. 고칠 곳이 "참조 문법" 이 아니므로 `-006` 으로 묶지 않는다.
+    """
+    if isinstance(value, str):
+        m = _BRACE_C.fullmatch(value)
+        if m is not None and _wellformed(value) is None:
+            _fail_malformed(value)
+    _fail_plain(
+        f"`${{ref.<id>}}` 형태가 아닙니다: {value!r}\n"
+        f"참조는 값 전체가 참조 하나여야 합니다 (예: ${{ref.nd_e5f6a7b8}})."
+    )
 
 
 def expand_env(value: str, env: Mapping[str, str]) -> str:
@@ -235,12 +275,7 @@ def expand_env(value: str, env: Mapping[str, str]) -> str:
 
 def _env_lookup(name: str, env: Mapping[str, str]) -> str:
     if name not in env:
-        _fail(
-            f"정의되지 않은 환경변수입니다: ${{env.{name}}}\n"
-            f"`${{env.{name}}}` 가 가리키는 환경변수를 실행 환경에 정의하세요. "
-            f"머신·CI 마다 값이 달라도 되도록 경로를 환경변수로 뺀 것입니다.",
-            rule_id="STR-PATH-002",
-        )
+        _fail("STR-PATH-002", detail=f"문제의 참조: ${{env.{name}}}")
     return env[name]
 
 
@@ -252,7 +287,8 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
         `~` 전개  →  `${env.X}` 전개  →  `~` 재전개  →  절대경로 검증
 
     어기면 `STR-PATH-001`(전개 후에도 상대경로) / `-002`(env 미정의) /
-    `-003`(env 값이 상대경로), 잔여 참조는 `STR-REF-006`.
+    `-003`(env 값이 상대경로). 잔여 참조는 **문법이 깨졌으면 `STR-REF-006`,
+    문법은 정상인데 안 풀렸으면 `STR-REF-007`** 이다 (R2-6).
 
     `~` 를 허용하는 이유: 상대경로가 아니라 cwd 와 무관하게 홈으로 결정되는
     규약이므로 전개하면 절대경로다. `${env.HOME}` 의 설탕 문법.
@@ -265,11 +301,7 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
     `refs` 는 그 검사에 쓸 기제(`expand_path`)만 제공한다.
     """
     if not value:
-        _fail(
-            "경로가 비어 있습니다.\n"
-            "모든 경로는 절대경로여야 합니다. `~` 또는 `${env.X}` 를 쓰세요.",
-            rule_id="STR-PATH-001",
-        )
+        _fail("STR-PATH-001", detail="경로가 비어 있습니다.")
 
     # ① `~` 전개 — `~` 와 `~user` 를 `os.path.expanduser` 가 처리한다.
     tilde = os.path.expanduser(value)
@@ -282,12 +314,7 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
         raw = _env_lookup(name, env)
         resolved = os.path.expanduser(raw)
         if _is_relative_marker(resolved) or (at_start and not os.path.isabs(resolved)):
-            _fail(
-                f"환경변수 값 자체가 상대경로입니다: ${{env.{name}}} = {raw!r}\n"
-                f"환경변수 값이 절대경로여야 합니다. `PROJECT_ROOT=./foo` 같은 값은 "
-                f"cwd 의존을 되살립니다.",
-                rule_id="STR-PATH-003",
-            )
+            _fail("STR-PATH-003", detail=f"${{env.{name}}} = {raw!r}")
         return resolved
 
     expanded = _substitute(
@@ -304,23 +331,23 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
     # ⑤ 절대경로 검증 — 아니면 무조건 에러.
     if not os.path.isabs(expanded):
         _fail(
-            f"전개 후에도 절대경로가 아닙니다: {expanded!r} (원본: {value!r})\n"
-            f"모든 경로는 절대경로여야 합니다. `~` 또는 `${{env.X}}` 를 쓰세요. "
-            f"cwd 에 의존하는 경로는 쓸 수 없습니다.",
-            rule_id="STR-PATH-001",
+            "STR-PATH-001",
+            detail=f"전개 결과: {expanded!r} (원본: {value!r})",
         )
     return Path(expanded)
 
 
 def _fail_if_unresolved(expanded: str, original: str) -> None:
-    """전개가 끝난 경로에 `${` 가 남았으면 오류다.
+    """전개가 끝난 경로에 `${` 가 남았으면 오류다. **둘로 갈린다** (R2-6).
 
-    남은 참조를 리터럴 경로 조각으로 통과시키면 나중에 "파일 없음" 으로 원인이
-    뭉개진다. 닫히지 않은 `${` (예: `/opt/${env.HOME/x`) 도 같은 이유로 오류다 —
-    이쪽은 `${...}` 로 인식조차 되지 않아 `collect_placeholders` 를 그냥 통과한다.
+    | 남은 것 | 규칙 | 고칠 곳 |
+    |---|---|---|
+    | `${env.HOME/x` — 닫히지 않음 | `STR-REF-006` | 참조 문법 |
+    | `${X}` / `${vars.y}` — env 값이 끌고 들어온 깨진 참조 | `STR-REF-006` | 참조 문법 |
+    | `${config.y}` — 문법 정상, 안 풀림 | **`STR-REF-007`** | 전개 순서·빠진 config |
 
-    둘 다 `STR-REF-006`(malformed-reference) 로 낸다. 이 자리에서 쓸 수 없는
-    참조라는 점이 같다.
+    닫히지 않은 `${` 는 `${...}` 로 인식조차 되지 않아 `collect_placeholders` 를
+    그냥 통과하므로 여기서 따로 잡는다.
     """
     at = expanded.find("${")
     if at < 0:
@@ -328,19 +355,11 @@ def _fail_if_unresolved(expanded: str, original: str) -> None:
     rest = expanded[at:]
     close = rest.find("}")
     if close < 0:
-        _fail(
-            f"닫히지 않은 참조입니다: {rest!r} (원본: {original!r})\n"
-            f"`${{env.X}}` 처럼 `}}` 로 닫으세요. 닫히지 않으면 참조로 인식되지 않아 "
-            f"리터럴 경로 조각으로 남습니다.",
-            rule_id="STR-REF-006",
-        )
-    _fail(
-        f"경로에 전개되지 않은 참조가 남았습니다: {rest[: close + 1]} (원본: {original!r})\n"
-        f"경로 해석 시점엔 모든 참조가 풀려 있어야 합니다. `${{config.X}}` / "
-        f"`${{state.X}}` 는 경로로 넘기기 전에 전개하세요 — 리터럴로 통과시키면 "
-        f"나중에 '파일 없음' 으로 원인이 뭉개집니다.",
-        rule_id="STR-REF-006",
-    )
+        _fail("STR-REF-006", detail=f"닫히지 않았습니다 (원본: {original!r})", fields={"ref": rest})
+    raw = rest[: close + 1]
+    if _wellformed(raw) is None:
+        _fail("STR-REF-006", detail=f"원본: {original!r}", fields={"ref": raw})
+    _fail_unresolved(raw, original)
 
 
 def _is_relative_marker(value: str) -> bool:
@@ -381,17 +400,8 @@ def _config_lookup(name: str, config: Mapping[str, Any], target: str) -> Any:
     if name in config:
         return config[name]
     if target:
-        _fail(
-            f"`${{config.{name}}}` 를 찾을 수 없습니다 (target: {target}).\n"
-            f"`${{config.X}}` 는 `targets.<현재target>` 에서 먼저 찾고 없으면 공통에서 "
-            f"찾습니다. 둘 다 없습니다: {name}",
-            rule_id="STR-CMP-004",
-        )
-    _fail(
-        f"`${{config.{name}}}` 를 찾을 수 없습니다.\n"
-        f"파이프라인이 요구하는 config 를 Spec 의 `plan` 항목에서 채우세요. 누락: {name}",
-        rule_id="STR-CONFIG-001",
-    )
+        _fail("STR-CMP-004", detail=f"현재 target: {target}", fields={"name": name})
+    _fail("STR-CONFIG-001", fields={"names": name})
 
 
 def expand_state(value: Any, state: Mapping[str, Any]) -> Any:
@@ -409,17 +419,11 @@ def _state_lookup(name: str, state: Mapping[str, Any]) -> Any:
     if name.startswith("__") and name not in _ENGINE_STATE_FIELDS:
         known = ", ".join(sorted(_ENGINE_STATE_FIELDS))
         _fail(
-            f"`__` 접두는 엔진 제공 필드 전용입니다: ${{state.{name}}}\n"
-            f"엔진이 주는 것은 {known} 뿐입니다. 다른 이름을 쓰세요.",
-            rule_id="STR-STATE-001",
+            "STR-STATE-001",
+            detail=f"문제의 참조: ${{state.{name}}} (엔진이 주는 것은 {known} 뿐)",
         )
     if name not in state:
-        _fail(
-            f"참조한 상태가 없습니다: ${{state.{name}}}\n"
-            f"노드의 `Args.state` 필드마다 파이프라인 상태 이름을 매핑해야 합니다. "
-            f"누락: {name}",
-            rule_id="STR-STATE-002",
-        )
+        _fail("STR-STATE-002", fields={"names": name})
     return state[name]
 
 

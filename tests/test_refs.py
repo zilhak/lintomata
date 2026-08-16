@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import getpass
 import os
+import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from strictler.errors import StrictlerError
+from strictler import rules
+from strictler.errors import Finding, StrictlerError
 from strictler.refs import (
     NAMESPACES,
     Placeholder,
@@ -27,6 +30,115 @@ from strictler.refs import (
 
 def _rule_ids(exc: pytest.ExceptionInfo[StrictlerError]) -> list[str]:
     return [f.rule_id for f in exc.value.findings]
+
+
+# ── `rules` 대역 ─────────────────────────────────────────────────────────────
+#
+# `refs` 는 규칙 문구를 손으로 복제하지 않고 `rules.finding()` 에서 받는다
+# (MODULES.md R2-7). 그런데 `rules.py` 는 Step 1-b 담당이라 이 worktree 에서는
+# 아직 stub 이다 → **`RULES` 가 비어 있을 때만** 최소 대역을 끼운다.
+# merge 후 실제 구현이 들어오면 아래는 통째로 비활성이 되고 테스트는 진짜
+# `rules.finding()` 을 상대로 돈다.
+
+_STUB_RULES: dict[str, tuple[str, str]] = {
+    # id: (message, guide) — `rules.md` 2절 원문 그대로
+    "STR-PATH-001": (
+        "전개 후 절대경로가 아니다",
+        "모든 경로는 절대경로여야 합니다. `~` 또는 `${env.X}` 를 쓰세요. "
+        "cwd 에 의존하는 경로는 쓸 수 없습니다",
+    ),
+    "STR-PATH-002": (
+        "참조한 환경변수가 정의돼 있지 않다",
+        "`${env.X}` 가 가리키는 환경변수를 실행 환경에 정의하세요. "
+        "머신·CI 마다 값이 달라도 되도록 경로를 환경변수로 뺀 것입니다",
+    ),
+    "STR-PATH-003": (
+        "환경변수 값 자체가 상대경로다",
+        "환경변수 값이 절대경로여야 합니다. `PROJECT_ROOT=./foo` 같은 값은 cwd 의존을 되살립니다",
+    ),
+    "STR-REF-006": (
+        "참조 문법이 깨졌다 — 네임스페이스가 없거나(`${X}`), "
+        "모르는 네임스페이스거나(`${vars.X}`), 이름이 비었다(`${env.}`)",
+        "참조는 네임스페이스를 반드시 붙입니다 — "
+        "`${env.X}` / `${config.X}` / `${state.X}` / `${ref.<id>}` 넷뿐입니다. "
+        '네임스페이스가 없으면 "미정의 환경변수인지 config 오타인지" 구분할 수 없어 '
+        "에러가 뭉개집니다. 문제의 참조: {ref}",
+    ),
+    "STR-REF-007": (
+        "참조 문법은 정상인데 이 자리에 도달하기 전에 전개되지 않았다 "
+        "(`${config.y}` 가 경로 해석까지 살아남음)",
+        "이 자리에서는 모든 참조가 이미 풀려 있어야 합니다. 전개되지 않은 참조를 "
+        '리터럴로 통과시키면 나중에 "파일 없음" 으로 원인이 뭉개집니다. '
+        "`config` 선언에 빠진 값이 없는지, 전개 순서가 맞는지 확인하세요. 문제의 참조: {ref}",
+    ),
+    "STR-STATE-001": (
+        "사용자 상태 이름에 `__` 접두를 썼다",
+        "`__` 접두는 엔진 제공 필드 전용입니다 (`__startedAt` 등). 다른 이름을 쓰세요",
+    ),
+    "STR-STATE-002": (
+        "노드가 요구하는 상태가 `states` 에 매핑되지 않았다",
+        "노드의 `Args.state` 필드마다 파이프라인 상태 이름을 매핑해야 합니다. 누락: {names}",
+    ),
+    "STR-CONFIG-001": (
+        "`required: true` 인 config 를 Spec 이 안 채웠다",
+        "파이프라인이 요구하는 config 를 Spec 의 `plan` 항목에서 채우세요. 누락: {names}",
+    ),
+    "STR-CMP-004": (
+        "target 이 요구하는 config 가 `targets.<name>` 에도 공통에도 없다",
+        "`${config.X}` 는 `targets.<현재target>` 에서 먼저 찾고 없으면 공통에서 찾습니다. "
+        "둘 다 없습니다: {name}",
+    ),
+    "STR-REG-003": (
+        "`${ref.<id>}` 의 접두가 그 자리가 요구하는 종류와 다르다",
+        "이 자리에는 {expected} 가 와야 합니다. 준 것: {given} "
+        "(접두 `sc_`=스크립트 `nd_`=노드 `pl_`=파이프라인 `sp_`=Spec)",
+    ),
+}
+
+_SLOT_C = re.compile(r"(?<!\$)\{(\w+)\}")
+"""`{ref}` 는 슬롯, `${env.X}` 는 슬롯이 아니다 (R1-4 — `str.format` 을 쓸 수 없는 이유)."""
+
+
+def _stub_render(rule_id: str, **fields: object) -> str:
+    message, guide = _STUB_RULES[rule_id]
+    text = f"{message}\n{guide}"
+    declared = set(_SLOT_C.findall(text))
+    missing = declared - set(fields)
+    extra = set(fields) - declared
+    assert not missing, f"{rule_id}: 슬롯 값 누락 {sorted(missing)}"
+    assert not extra, f"{rule_id}: 선언되지 않은 필드 {sorted(extra)}"
+    return _SLOT_C.sub(lambda m: str(fields[m.group(1)]), text)
+
+
+def _stub_finding(
+    rule_id: str,
+    *,
+    status: str = "error",
+    path: str = "",
+    node: str = "",
+    cause: Any = None,
+    fields: dict[str, object] | None = None,
+) -> Finding:
+    return Finding(
+        status=status,  # type: ignore[arg-type]
+        path=path,
+        node=node,
+        rule_id=rule_id,
+        message=_stub_render(rule_id, **(fields or {})),
+        cause=cause,
+    )
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _rules_backend() -> Any:
+    if rules.RULES:  # Step 1-b 의 실제 구현이 merge 됐다 — 대역이 필요 없다
+        yield
+        return
+    patch = pytest.MonkeyPatch()
+    patch.setattr(rules, "render", _stub_render)
+    patch.setattr(rules, "finding", _stub_finding)
+    yield
+    patch.undo()
 
 
 # ── 네임스페이스 ─────────────────────────────────────────────────────────────
@@ -156,6 +268,53 @@ def test_parse_ref_unknown_prefix_rejected() -> None:
 def test_parse_ref_on_non_ref_rejected() -> None:
     with pytest.raises(StrictlerError):
         parse_ref("${env.HOME}")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "${ref.}",  # 이름 비었음
+        "${vars.x}",  # 모르는 네임스페이스
+        "${BUTTON}",  # 네임스페이스 없음
+    ],
+)
+def test_parse_ref_malformed_is_ref_006(value: str) -> None:
+    """`parse_ref` 로 들어와도 `STR-REF-006` 이 붙는다.
+
+    이 셋은 `rules.md` `STR-REF-006` 이 열거한 세 경우 **그 자체**다.
+    `is_ref()` 가 `False` 를 돌려준다는 이유로 형태 판별 이전 단계에서 id 없이
+    튕기면, 같은 입력이 `collect_placeholders` 로 가면 `-006` 이 붙는데
+    `parse_ref` 로 가면 id 가 사라지는 비대칭이 생긴다.
+    """
+    with pytest.raises(StrictlerError) as exc:
+        parse_ref(value)
+    assert _rule_ids(exc) == ["STR-REF-006"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "nd_abc",  # 참조가 아니다
+        "${env.HOME}",  # 문법은 멀쩡한데 자리가 다르다
+    ],
+)
+def test_parse_ref_non_reference_is_not_ref_006(value: str) -> None:
+    """성격이 다른 둘은 `-006` 으로 묶지 않는다.
+
+    문법이 깨진 게 아니라서 "네임스페이스를 반드시 붙입니다" 가이드를 주면
+    AI 가 엉뚱한 곳을 고친다. 규칙 없이 나가는 것이 맞다.
+    """
+    with pytest.raises(StrictlerError) as exc:
+        parse_ref(value)
+    assert _rule_ids(exc) == [""]
+
+
+def test_parse_ref_malformed_message_comes_from_rules() -> None:
+    """문구를 손으로 복제하지 않고 `rules` 에서 받는다 (R2-7)."""
+    with pytest.raises(StrictlerError) as exc:
+        parse_ref("${vars.x}")
+    expected = rules.finding("STR-REF-006", fields={"ref": "${vars.x}"}).message
+    assert exc.value.message.endswith(expected)
 
 
 # ── `${env.X}` 전개 ──────────────────────────────────────────────────────────
@@ -302,28 +461,42 @@ def test_expand_path_env_value_tilde_user(template: str) -> None:
 # ── 잔여 `${` — 경로 해석 시점엔 모든 참조가 풀려 있어야 한다 ────────────────
 
 
-def test_expand_path_leftover_config_ref_is_ref_006() -> None:
-    """전개 안 된 `${config.X}` 를 리터럴 조각으로 통과시키지 않는다."""
+def test_expand_path_leftover_config_ref_is_ref_007() -> None:
+    """전개 안 된 `${config.X}` 를 리터럴 조각으로 통과시키지 않는다.
+
+    **`-006` 이 아니라 `-007` 이다** (R2-6): 문법은 완전히 정상이고 잘못된 건
+    전개 순서다. 규칙을 나누는 기준은 "증상" 이 아니라 "고치는 방법" 이다.
+    """
     with pytest.raises(StrictlerError) as exc:
         expand_path("/x/${config.y}/z", {})
-    assert _rule_ids(exc) == ["STR-REF-006"]
+    assert _rule_ids(exc) == ["STR-REF-007"]
 
 
-def test_expand_path_leftover_state_ref_is_ref_006() -> None:
+def test_expand_path_leftover_state_ref_is_ref_007() -> None:
     with pytest.raises(StrictlerError) as exc:
         expand_path("/x/${state.phase}/z", {})
-    assert _rule_ids(exc) == ["STR-REF-006"]
+    assert _rule_ids(exc) == ["STR-REF-007"]
 
 
-def test_expand_path_leftover_ref_at_start_is_ref_006_not_path_001() -> None:
+def test_expand_path_leftover_ref_at_start_is_ref_007_not_path_001() -> None:
     """앞자리에 남은 참조는 '상대경로' 가 아니라 '잔여 참조' 로 진단해야 한다."""
     with pytest.raises(StrictlerError) as exc:
         expand_path("${config.root}/z", {})
-    assert _rule_ids(exc) == ["STR-REF-006"]
+    assert _rule_ids(exc) == ["STR-REF-007"]
+
+
+def test_unresolved_message_names_the_reference_and_not_the_malformed_guide() -> None:
+    """`-007` 은 `-006` 의 가이드를 주면 안 된다 — 그게 규칙을 나눈 이유다."""
+    with pytest.raises(StrictlerError) as exc:
+        expand_path("/x/${config.y}/z", {})
+    assert "${config.y}" in exc.value.message
+    assert "네임스페이스를 반드시 붙입니다" not in exc.value.message
+    expected = rules.finding("STR-REF-007", fields={"ref": "${config.y}"}).message
+    assert exc.value.message.endswith(expected)
 
 
 def test_expand_path_unclosed_brace_is_ref_006() -> None:
-    """닫히지 않은 `${` 는 참조로 인식조차 되지 않는다 — 그래서 따로 잡는다."""
+    """닫히지 않은 `${` 는 **문법이 깨진 것**이므로 `-006` 이다 — `-007` 과 갈린다."""
     with pytest.raises(StrictlerError) as exc:
         expand_path("/opt/${env.HOME/x", {"HOME": "/home/u"})
     assert _rule_ids(exc) == ["STR-REF-006"]
@@ -333,6 +506,17 @@ def test_expand_path_unclosed_brace_from_env_value_is_ref_006() -> None:
     """환경변수 값이 `${` 를 끌고 들어와도 잡힌다."""
     with pytest.raises(StrictlerError) as exc:
         expand_path("${env.ROOT}/x", {"ROOT": "/srv/${config.a"})
+    assert _rule_ids(exc) == ["STR-REF-006"]
+
+
+@pytest.mark.parametrize("injected", ["${vars.a}", "${X}", "${env.}"])
+def test_expand_path_malformed_from_env_value_is_ref_006(injected: str) -> None:
+    """env 값이 **닫혀 있지만 깨진** 참조를 끌고 들어온 경우도 `-006` 이다.
+
+    이쪽은 원본에 없던 참조라 `collect_placeholders` 를 통과해 버린다.
+    """
+    with pytest.raises(StrictlerError) as exc:
+        expand_path("${env.ROOT}/x", {"ROOT": f"/srv/{injected}"})
     assert _rule_ids(exc) == ["STR-REF-006"]
 
 
@@ -417,3 +601,31 @@ def test_expand_state_unmapped_is_state_002() -> None:
 
 def test_expand_state_leaves_other_namespaces_alone() -> None:
     assert expand_state("${config.x}", {}) == "${config.x}"
+
+
+# ── 회귀 방지 — `-007` 을 전개기까지 확대하지 않는다 ─────────────────────────
+#
+# `expand_config`/`expand_state` 가 **다른 네임스페이스를 남기는 것은 정상**이다
+# (합성 순서 때문에 그게 맞다). 잔여 검사는 최종 관문인 `expand_path` 만 한다 —
+# 여기까지 `STR-REF-007` 을 확대하면 합성 자체가 불가능해진다.
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["${env.HOME}/x", "/x/${state.phase}/z", "${env.R}/${state.p}/a"],
+)
+def test_expand_config_leaves_unresolved_others_without_error(value: str) -> None:
+    assert expand_config(value, {}) == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["${env.HOME}/x", "/x/${config.y}/z", "${config.r}/${env.H}/a"],
+)
+def test_expand_state_leaves_unresolved_others_without_error(value: str) -> None:
+    assert expand_state(value, {}) == value
+
+
+def test_expand_env_leaves_unresolved_others_without_error() -> None:
+    """`expand_env` 도 마찬가지다 — 경로 검증은 `expand_path` 의 몫이다."""
+    assert expand_env("${env.R}/${config.y}", {"R": "/srv"}) == "/srv/${config.y}"
