@@ -1603,3 +1603,61 @@ def test_env_전개는_config_와_state_뒤에_온다(project: Project) -> None:
 
     assert errors(result.findings) == []
     assert result.outcomes["page"].value.url == "https://example.test/login"
+
+
+# ── 라이브러리 — 못 풀면 그 노드는 돌리지 않는다 ─────────────────────────────
+
+PERCEIVE_WITH_LIB = """
+    from dataclasses import dataclass
+
+    from strictler_lib import buttons
+
+    @dataclass
+    class Scene:
+        url: str
+
+    @dataclass
+    class Percept:
+        count: int
+
+    @dataclass
+    class Args:
+        input: Scene
+
+    def runNode(args: Args) -> Percept:
+        return returnResult(Percept(count=buttons.count(args.input.url)))
+"""
+
+
+def test_라이브러리를_못_풀면_그_노드는_로드에서_빠진다(project: Project) -> None:
+    """★ **못 푼 채로 돌리지 않는다** — 비교 엔진(`compare._prepare`)과 같은 처리다.
+
+    억지로 로드하면 스크립트가 `ImportError` 로 죽으면서 *"배선이 없습니다"* 라는
+    **거짓 안내**가 진짜 원인(파일이 없다) 위에 덮인다. 여파는 `not_run` 이다.
+
+    노드 파일의 `info.name`(`detect-buttons`)과 파이프라인의 노드 id(`detectButtons`)를
+    일부러 다르게 뒀다 — **파이프라인 문맥의 이름은 노드 id 하나**여야 한다.
+    """
+    script = project.script("perceive", PERCEIVE_WITH_LIB)
+    node_file = write_json(
+        project.root / "nodes" / "detect.json",
+        {
+            "info": {"name": "detect-buttons", "description": "버튼 인식"},
+            "type": "perceive",
+            "script": str(script),
+            "libraries": {"buttons": str(project.root / "libraries" / "없다.py")},
+        },
+    )
+    path = project.pipeline(
+        "lib", nodes=[{"id": "detectButtons", "source": str(node_file)}]
+    )
+    pipeline = project.load_pipeline(path)
+
+    loaded, findings = runtime._load_nodes(
+        pipeline, {}, store=project.store, env=project.env, path="p"
+    )
+
+    assert "detectButtons" not in loaded
+    broken = [item for item in findings if item.status == "error"]
+    assert [item.rule_id for item in broken] == ["STR-REF-001"]
+    assert [item.node for item in broken] == ["detectButtons"]

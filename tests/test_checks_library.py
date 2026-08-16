@@ -14,7 +14,7 @@ from textwrap import dedent
 import pytest
 
 from strictler.checks import library as lib
-from strictler.errors import StrictlerError
+from strictler.errors import Finding, StrictlerError
 from strictler.model import Node
 from strictler.store.entries import Store
 
@@ -241,3 +241,61 @@ def test_resolve_는_상대경로를_STR_PATH_001_로_짚는다(tmp_path: Path) 
         env={},
     )
     assert [item.rule_id for item in findings] == ["STR-PATH-001"]
+
+
+def test_resolve_는_node_를_채우지_않는다(tmp_path: Path) -> None:
+    """부르는 쪽이 **노드 id** 로 채운다 — 여기서 `info.name` 을 박으면 두 이름이 된다."""
+    _, findings = lib.resolve_libraries(
+        node_of("/abs/s.py", {"buttons": str(tmp_path / "없다.py")}),
+        store=Store(tmp_path / "home"),
+        env={},
+    )
+    assert [item.node for item in findings] == [""]
+
+
+# ── 실행 시점 — `engine.drive` 가 얹는 것 ────────────────────────────────────
+
+
+def test_drive_는_발신처가_뭘_달고_와도_노드_id_로_찍는다(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """★ `or` 가 아니라 **덮어쓰기**다.
+
+    파이프라인 문맥에서 한 노드를 가리키는 이름은 노드 id 하나여야 한다. 두 이름으로
+    찍히면 같은 노드인지 알 수 없고, `not run` 전파도 노드 id 문자열로 대조하므로
+    여파가 통째로 어긋난다.
+    """
+    from strictler.engine import drive as drive_loop
+
+    monkeypatch.setattr(
+        lib, "resolve_libraries", lambda node, *, store, env: ({}, [Finding(status="error", node="detect", message="못 풀었다")])
+    )
+    _, findings = drive_loop.resolve_libraries(
+        node_of("/abs/s.py", {}),
+        store=Store(tmp_path / "home"),
+        env={},
+        path="pl.json",
+        node_id="detectButtons",
+    )
+    assert [item.node for item in findings] == ["detectButtons"]
+
+
+def test_drive_는_등록소_라이브러리의_해시를_대조한다(tmp_path: Path) -> None:
+    """등록은 **검증 결과를 재사용하는 기제**다 — 내용이 바뀌었으면 그 재사용이 무효다."""
+    from strictler.engine import drive as drive_loop
+
+    source = tmp_path / "buttons.py"
+    source.write_text("def go():\n    return 1\n", encoding="utf-8")
+    store = Store(tmp_path / "home")
+    entry = store.add("library", source)
+    store.path_of(entry.id).write_text("def go():\n    return 2\n", encoding="utf-8")
+
+    _, findings = drive_loop.resolve_libraries(
+        node_of("/abs/s.py", {"buttons": "${ref." + entry.id + "}"}),
+        store=store,
+        env={},
+        path="pl.json",
+        node_id="detectButtons",
+    )
+    assert [item.rule_id for item in findings] == ["STR-REG-001"]
+    assert [item.node for item in findings] == ["detectButtons"]

@@ -983,6 +983,57 @@ def test_recheck_resolved_runs_script_checks_on_target_scripts(
     assert set(stub.seen_types) == {(str(p), "perceive") for p in scripts.values()}
 
 
+def test_recheck_resolved_는_target_스크립트의_라이브러리_배선도_본다(
+    tmp_path, monkeypatch, store
+):
+    """★ **어느 스크립트가 도는지가 config 로 갈리면 요구하는 슬롯도 갈린다.**
+
+    등록 시점엔 `${config.buttonScript}` 가 안 풀려 슬롯을 알 수조차 없다
+    (`check_pipeline` 은 통과한다). 여기서 안 보면 **배선 안 된 슬롯이 그대로
+    실행에 들어가** 스크립트가 `ImportError` 로 죽는다 — 원인이 뭉개지는 그 경로다.
+    """
+    pipeline, config, stub, scripts = compare_project(
+        tmp_path, monkeypatch, {"legacy": "int", "v2": "int"}
+    )
+    stub.by_path[str(scripts["v2"])].library_slots = ("buttons",)
+
+    assert pipe.check_pipeline(pipeline, "p.json", store=store, env={})[1] == []
+
+    findings = pipe.recheck_resolved(
+        pipeline, config, store=store, env={}, source_path="p.json"
+    )
+    assert ids(findings) == ["STR-LIB-001"]
+    # 노드의 `info.name` 은 `detect` 다. **파이프라인 문맥의 이름은 노드 id 하나다.**
+    assert findings[0].node == "detectButtons"
+
+
+def test_recheck_resolved_는_라이브러리_결과에_노드_id_를_덮어쓴다(
+    tmp_path, monkeypatch, store
+):
+    """`or` 가 아니라 **덮어쓰기**여야 한다.
+
+    노드 검사 쪽이 `info.name` 을 달고 오면 같은 노드가 리포트에 두 이름으로 찍히고
+    (`detect` / `detectButtons`), `not run` 전파는 노드 id 로 대조하므로 여파가
+    통째로 어긋난다. 그래서 **발신처가 뭘 달고 오든** 여기서 노드 id 로 통일한다.
+    """
+    from strictler.checks import node as node_checks
+
+    pipeline, config, _, _ = compare_project(
+        tmp_path, monkeypatch, {"legacy": "int", "v2": "int"}
+    )
+    monkeypatch.setattr(
+        node_checks,
+        "check_libraries",
+        lambda *a, **k: [Finding(status="error", node="detect", message="배선이 이상하다")],
+    )
+
+    findings = pipe.recheck_resolved(
+        pipeline, config, store=store, env={}, source_path="p.json"
+    )
+    # target 두 벌을 돌아도 노드 무관한 결과는 한 번만 남는다 (`dedupe`).
+    assert [item.node for item in findings] == ["detectButtons"]
+
+
 def test_recheck_resolved_reports_config_that_no_target_fills(
     tmp_path, monkeypatch, store
 ):

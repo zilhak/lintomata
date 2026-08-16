@@ -28,7 +28,11 @@ EXAMPLE_ROOT = Path(__file__).resolve().parent.parent / "examples" / "home-check
 def registered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> dict[str, str]:
-    """`detect_buttons` 를 `${ref.sc_...}` 배선으로 등록한다. `{"home","node","script"}`."""
+    """`detect_buttons` 를 전부 `${ref....}` 배선으로 등록한다.
+
+    `{"home","node","script","library","work"}`. **라이브러리도 등록소에서 푼다** —
+    노드 스크립트와 같은 규칙으로 해시를 봐야 하는 자리이기 때문이다.
+    """
     home = tmp_path / "home"
     work = tmp_path / "work"
     shutil.copytree(EXAMPLE_ROOT, work)
@@ -42,17 +46,29 @@ def registered(
         assert code == 0, out
         return out.split()[0]
 
+    library_id = add("library", work / "libraries" / "buttons.py")
     script_id = add("script", work / "scripts" / "perceive_buttons.py")
     node_file = work / "nodes" / "detect_buttons.json"
     node_file.write_text(
-        node_file.read_text("utf-8").replace(
+        node_file.read_text("utf-8")
+        .replace(
             "${env.STRICTLER_EXAMPLE_ROOT}/scripts/perceive_buttons.py",
             "${ref." + script_id + "}",
+        )
+        .replace(
+            "${env.STRICTLER_EXAMPLE_ROOT}/libraries/buttons.py",
+            "${ref." + library_id + "}",
         ),
         encoding="utf-8",
     )
     node_id = add("node", node_file)
-    return {"home": str(home), "node": node_id, "script": script_id, "work": str(work)}
+    return {
+        "home": str(home),
+        "node": node_id,
+        "script": script_id,
+        "library": library_id,
+        "work": str(work),
+    }
 
 
 def run(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict]:
@@ -102,6 +118,38 @@ def test_등록소_노드_파일을_고치면_STR_REG_001(
 
     assert code == 2
     assert rules_of(report) == {"STR-REG-001"}
+
+
+def test_등록소_라이브러리를_고치면_STR_REG_001(
+    registered: dict[str, str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """★ 라이브러리도 **같은 자리에서** 본다 — 판정 로직의 본체가 거기 있다.
+
+    노드 스크립트만 대조하면 *"공용 함수를 라이브러리로 뺀 것"* 만으로 해시 대조가
+    통째로 우회된다. 그래서 하네스는 `engine.drive.resolve_libraries` 로 푼다 —
+    `checks.library.resolve_libraries` 를 직접 부르면 **해시를 안 보게 되고**,
+    그게 이 파일이 막은 결함(`7110842`)의 재발이다.
+    """
+    tamper(Path(registered["home"]) / "libraries" / f"{registered['library']}.py")
+
+    code, report = run(capsys, "node", "test", registered["node"])
+
+    assert code == 2
+    assert rules_of(report) == {"STR-REG-001"}
+    assert report["summary"]["pass"] == 0
+
+
+def test_라이브러리_등록을_지우면_STR_REG_002(
+    registered: dict[str, str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """배선이 가리키는 것이 사라진 것도 스크립트와 같은 규칙으로 나온다."""
+    assert cli.main(["library", "remove", registered["library"]]) == 1
+    capsys.readouterr()
+
+    code, report = run(capsys, "node", "test", registered["node"])
+
+    assert code == 2
+    assert "STR-REG-002" in rules_of(report)
 
 
 def test_스크립트_등록을_지우면_STR_REG_002(

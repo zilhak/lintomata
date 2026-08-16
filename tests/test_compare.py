@@ -1009,3 +1009,49 @@ def test_비교의_params_에_남은_참조도_STR_REF_007_이다(tmp_path):
     errs = [f for f in result.findings if f.status == "error"]
     assert {f.rule_id for f in errs} == {"STR-REF-007"}
     assert_four_states(pipeline, result)
+
+
+# ── 라이브러리 — 값 검증과 **같은 처리** ─────────────────────────────────────
+
+
+def test_라이브러리를_못_풀면_그_노드는_준비에서_빠진다(tmp_path):
+    """★ 한쪽만 고치면 또 갈린다 — `runtime._load_nodes` 와 같은 처리여야 한다.
+
+    못 푼 채로 target 별 스크립트까지 풀어 두면 그 노드가 그대로 실행에 들어가고,
+    스크립트가 `ImportError` 로 죽으면서 *"배선이 없습니다"* 라는 **거짓 안내**가
+    진짜 원인(파일이 없다) 위에 덮인다.
+    """
+    script = write(tmp_path, "detect.py", DETECT.format(ptype="int", expr="args.params.bump"))
+    path = tmp_path / "detect.json"
+    path.write_text(
+        json.dumps(
+            {
+                "info": {"name": "detect-buttons", "description": "버튼 인식"},
+                "type": "perceive",
+                "script": str(script),
+                "libraries": {"buttons": str(tmp_path / "없다.py")},
+            }
+        ),
+        encoding="utf-8",
+    )
+    pipeline = build_pipeline(
+        [{"id": "detectButtons", "source": str(path), "params": {"bump": 1}}],
+        ["alpha", "beta"],
+        ["detectButtons"],
+    )
+
+    prepared, findings = compare._prepare(
+        pipeline,
+        ["alpha", "beta"],
+        {"alpha": {}, "beta": {}},
+        store=Store(tmp_path / "home"),
+        env={"HOME": str(tmp_path)},
+        path="cmp.json",
+    )
+
+    assert prepared is not None
+    assert "detectButtons" not in prepared.scripts
+    broken = [item for item in findings if item.status == "error"]
+    assert [item.rule_id for item in broken] == ["STR-REF-001"]
+    # 파이프라인 문맥의 이름은 노드 id 하나다 — `info.name` 은 `detect-buttons` 다.
+    assert [item.node for item in broken] == ["detectButtons"]
