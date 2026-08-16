@@ -10,35 +10,165 @@ AI 를 껴서 output 을 잘못 내놓으면 **타입 계약에 걸려 그냥 �
 
 **pydantic 경계 검증이 실제 값을 만나는 자리**가 여기와 단위테스트 하네스 둘뿐이다.
 
-⚠ stub. Step 3 에서 구현한다.
+여기서 나가는 실패는 전부 **오류**(`error`)다 — 위반이 아니다. 스크립트가 예외를
+내는 것도, 선언한 타입과 다른 값을 내놓는 것도 *기획과 다르다* 가 아니라
+*도구가 못 돈 것*이다 (`schema.md` 9절).
 """
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
+import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Mapping
 
-from strictler.checks.script import ScriptContract
-from strictler.errors import Finding
-from strictler.typesys.registry import TypeRegistry
+from pydantic import BaseModel, ValidationError
+
+from strictler.checks.script import RESULT_FN, ScriptContract
+from strictler.errors import Finding, StrictlerError
+from strictler.typesys.primitives import PRIMITIVES, TypeRef, element_type, is_list
+from strictler.typesys.registry import TypeKey, TypeRegistry
 
 __all__ = [
+    "ENTRYPOINT",
     "load_script",
     "build_args",
     "invoke",
     "validate_input",
     "validate_output",
+    "as_mapping",
 ]
+
+
+ENTRYPOINT = "runNode"
+"""진입점 이름은 고정이다 (`schema.md` 6절). 엔진이 찾는 것은 이 이름 하나뿐이고,
+출력은 스크립트가 `returnResult()` 로 내보낸 것이 그대로 반환값이 된다."""
+
+
+def _return_result(value: Any) -> Any:
+    """`returnResult()` — 출력 함수. **엔진이 스크립트에 넣어 준다.**
+
+    이름이 고정인 두 심볼 중 하나인데(`runNode` / `returnResult`), `runNode` 는
+    스크립트가 **정의**하는 것이고 이쪽은 스크립트가 **호출**하는 것이다.
+    어디에도 정의가 없으면 모든 스크립트가 `NameError` 로 죽으므로 로드 시점에
+    모듈 전역에 심는다 — `import` 한 줄을 모든 스크립트에 강요하지 않기 위해서다.
+
+    하는 일은 **값을 그대로 돌려주는 것뿐**이다. 여기서 뭘 하기 시작하면 그게
+    "내장 동작" 이 된다 — 타입 검증은 `validate_output` 의 몫이다.
+    """
+    return value
+
+
+# ── 로드 ─────────────────────────────────────────────────────────────────────
 
 
 def load_script(path: Path) -> ModuleType:
     """스크립트 파일을 모듈로 로드한다.
 
     노드 스크립트는 PEP 723 헤더로 자기 의존성을 선언할 수 있다 — 스크립트 하나가
-    자기완결 파일이 된다 (`CLAUDE.md` 구현 언어 절).
+    자기완결 파일이 된다 (`CLAUDE.md` 구현 언어 절). 의존성 격리는 `uv run` 이
+    바깥에서 해주므로 여기서는 그냥 로드한다.
+
+    모듈 이름은 **경로 해시**로 만든다. 파일 이름을 그대로 쓰면 서로 다른
+    파이프라인의 같은 이름 스크립트가 `sys.modules` 에서 충돌한다.
+
+    **`returnResult` 를 모듈 전역에 심어 준다** — 스크립트가 정의하지 않는 고정
+    이름이기 때문이다. 스크립트가 자기 것을 정의하거나 import 하면 그쪽이 이긴다
+    (exec 이 나중이므로).
     """
-    raise NotImplementedError("Step 3에서 구현")
+    tag = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+    name = f"strictler_node_{tag}"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise StrictlerError(
+            f"스크립트를 모듈로 읽을 수 없습니다: {path}\n"
+            "노드 스크립트는 `.py` 파일 하나여야 합니다."
+        )
+    module = importlib.util.module_from_spec(spec)
+    setattr(module, RESULT_FN, _return_result)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException as exc:  # noqa: BLE001 - 사용자 코드는 무엇이든 던질 수 있다
+        sys.modules.pop(name, None)
+        raise StrictlerError(
+            f"스크립트를 로드하다 예외가 났습니다: {path}\n"
+            f"{type(exc).__name__}: {exc}\n"
+            "모듈 최상위(import·상수 계산 등)에서 터진 것입니다. "
+            "노드 스크립트는 import 만으로 부작용이 없어야 하고, 실제 동작은 "
+            "`runNode(args)` 안에 두세요."
+        ) from exc
+    return module
+
+
+# ── 값 조립 ──────────────────────────────────────────────────────────────────
+
+
+def as_mapping(value: Any) -> dict[str, Any]:
+    """dataclass 인스턴스 / pydantic 모델 / 매핑을 **얕은 dict** 로 본다.
+
+    중첩은 재귀 시점에 다시 이 함수를 거치므로 여기서 깊이 펼치지 않는다 —
+    깊이 펼치면 `bytes` 같은 값까지 건드리게 된다.
+    """
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, BaseModel):
+        return {name: getattr(value, name) for name in type(value).model_fields}
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {f.name: getattr(value, f.name) for f in dataclasses.fields(value)}
+    raise StrictlerError(
+        f"dataclass 로 볼 수 없는 값입니다: {value!r} ({type(value).__name__})\n"
+        "노드 사이를 오가는 값은 스크립트가 선언한 dataclass 여야 합니다 "
+        "(`schema.md` 7절 — 복합 타입은 무조건 dataclass)."
+    )
+
+
+def _instantiate(
+    module: ModuleType, type_name: str, raw: Any, contract: ScriptContract, where: str
+) -> Any:
+    """스크립트가 선언한 dataclass 하나를 값으로 만든다.
+
+    **이 스크립트의 선언을 기준으로** 필드를 골라 담는다 — 병합 클래스가 끌고 온
+    여분 필드는 여기서 자연히 떨어진다 (`schema.md` 7절: 병합은 표현 층에서만).
+    """
+    spec = contract.dataclasses.get(type_name)
+    cls = getattr(module, type_name, None)
+    if spec is None or cls is None:
+        raise StrictlerError(
+            f"스크립트에 dataclass `{type_name}` 이 없습니다: {contract.path} ({where})\n"
+            "`Args` 가 선언한 타입 이름과 실제 클래스 이름이 같아야 합니다."
+        )
+    data = as_mapping(raw)
+    kwargs: dict[str, Any] = {}
+    for field in spec.fields:
+        if field.name not in data:
+            raise StrictlerError(
+                f"`{type_name}.{field.name}` 에 채울 값이 없습니다 "
+                f"({where}, {contract.path})\n"
+                f"들어온 값의 필드: {', '.join(sorted(data)) or '(없음)'}. "
+                "선언한 필드는 전부 채워져야 합니다 — `Optional` 이 없으므로 "
+                "비워 둘 자리가 없습니다."
+            )
+        kwargs[field.name] = _coerce(module, field.type, data[field.name], contract, where)
+    return cls(**kwargs)
+
+
+def _coerce(
+    module: ModuleType, ref: TypeRef, value: Any, contract: ScriptContract, where: str
+) -> Any:
+    """선언된 타입에 맞춰 값을 이 스크립트의 어휘로 옮긴다."""
+    if is_list(ref):
+        if not isinstance(value, (list, tuple)):
+            raise StrictlerError(
+                f"`{ref}` 자리에 리스트가 아닌 값이 왔습니다: {value!r} ({where})"
+            )
+        return [_coerce(module, element_type(ref), item, contract, where) for item in value]
+    if ref.name in PRIMITIVES:
+        return value
+    return _instantiate(module, ref.name, value, contract, where)
 
 
 def build_args(
@@ -53,8 +183,53 @@ def build_args(
 
     **세 필드는 쓰는 것만 선언한다** — 입력이 없는 Vantage 는 `input` 필드를
     아예 두지 않으므로, 선언에 없는 필드는 채우지 않는다.
+
+    반대로 **선언한 필드는 반드시 채운다.** `input` 을 선언했는데 배선이 없으면
+    그건 오류다 — 빈 껍데기를 만들어 넣는 것은 `Optional` 금지의 취지에 어긋난다.
     """
-    raise NotImplementedError("Step 3에서 구현")
+    args_spec = contract.dataclasses.get("Args")
+    args_cls = getattr(module, "Args", None)
+    if args_spec is None or args_cls is None:
+        raise StrictlerError(
+            f"`Args` dataclass 를 찾을 수 없습니다: {contract.path}\n"
+            "모든 노드 스크립트는 `Args` 라는 이름의 dataclass 를 선언하고 "
+            "`runNode(args: Args)` 형태여야 합니다."
+        )
+
+    sources: dict[str, Any] = {
+        "input": input_value,
+        "params": dict(params or {}),
+        "state": _state_fields(contract, state or {}),
+    }
+
+    kwargs: dict[str, Any] = {}
+    for field in args_spec.fields:
+        if field.name not in sources:
+            raise StrictlerError(
+                f"`Args` 에 모르는 필드가 있습니다: {field.name!r} ({contract.path})\n"
+                "`Args` 의 필드는 `input` / `params` / `state` 뿐입니다."
+            )
+        value = sources[field.name]
+        if field.name == "input" and value is None:
+            raise StrictlerError(
+                f"`Args.input` 을 선언했는데 앞단 값이 없습니다: {contract.path}\n"
+                "파이프라인의 이 노드에 `inputs` 배선을 넣거나, 입력을 안 쓰면 "
+                "`Args` 에서 `input` 필드를 지우세요 (쓰는 것만 선언합니다)."
+            )
+        kwargs[field.name] = _coerce(
+            module, field.type, value, contract, f"Args.{field.name}"
+        )
+    return args_cls(**kwargs)
+
+
+def _state_fields(contract: ScriptContract, state: Mapping[str, Any]) -> dict[str, Any]:
+    """`Args.state` 에 담을 것만 고른다.
+
+    `__startedAt` 같은 엔진 제공 필드는 스크립트가 선언할 수 없으므로
+    (`STR-STATE-001`) 여기서 떨군다 — 그건 `${state.__startedAt}` 로 `params` 에서
+    참조하는 자리다.
+    """
+    return {name: state[name] for name in contract.state_names if name in state}
 
 
 def invoke(module: ModuleType, args: Any) -> Any:
@@ -63,7 +238,25 @@ def invoke(module: ModuleType, args: Any) -> Any:
     스크립트가 예외를 내면 그건 **오류**다 — 위반이 아니다 (`schema.md` 9절).
     호출자가 `Finding(status="error")` 로 바꾼다.
     """
-    raise NotImplementedError("Step 3에서 구현")
+    entry = getattr(module, ENTRYPOINT, None)
+    if entry is None or not callable(entry):
+        raise StrictlerError(
+            f"진입점 `{ENTRYPOINT}(args)` 가 없습니다: {getattr(module, '__file__', '?')}\n"
+            "진입점 이름은 전 노드 타입 공통으로 고정입니다."
+        )
+    try:
+        return entry(args)
+    except BaseException as exc:  # noqa: BLE001 - 사용자 코드는 무엇이든 던질 수 있다
+        raise StrictlerError(
+            f"`{ENTRYPOINT}` 가 예외를 냈습니다: "
+            f"{getattr(module, '__file__', '?')}\n"
+            f"{type(exc).__name__}: {exc}\n"
+            "스크립트 예외는 위반이 아니라 **오류**입니다 — 기획과 다른 것이 아니라 "
+            "검사 자체가 못 돈 것입니다. 스크립트를 고치세요."
+        ) from exc
+
+
+# ── 경계 검증 ────────────────────────────────────────────────────────────────
 
 
 def validate_input(
@@ -75,7 +268,10 @@ def validate_input(
     node: str,
 ) -> list[Finding]:
     """앞단에서 온 값이 이 노드의 `Args.input` 선언에 맞는지 (pydantic 경계 검증)."""
-    raise NotImplementedError("Step 3에서 구현")
+    if not contract.input_type:
+        return []  # 입력을 안 받는 노드 — 볼 것이 없다
+    return _validate(contract, contract.input_type, value, registry, path=path, node=node,
+                     where="`Args.input`", hint="앞단 노드의 출력이")
 
 
 def validate_output(
@@ -88,7 +284,49 @@ def validate_output(
 ) -> list[Finding]:
     """반환값이 선언된 출력 타입에 맞는지.
 
-    Action 이면 여기서 **값 동일성**(input == output)까지 볼 수 있다 —
-    다만 그 검사의 정식 자리는 단위테스트다 (`STR-TEST-005`).
+    Action 의 **값 동일성**(input == output)은 여기서 보지 않는다 —
+    그 검사의 자리는 단위테스트다 (`STR-TEST-005`).
     """
-    raise NotImplementedError("Step 3에서 구현")
+    if not contract.output_type:
+        return []  # `STR-CONTRACT-003` 이 등록 시점에 이미 잡았다
+    return _validate(contract, contract.output_type, value, registry, path=path, node=node,
+                     where="반환 타입", hint="`returnResult()` 로 내보낸 값이")
+
+
+def _validate(
+    contract: ScriptContract,
+    type_name: str,
+    value: Any,
+    registry: TypeRegistry,
+    *,
+    path: str,
+    node: str,
+    where: str,
+    hint: str,
+) -> list[Finding]:
+    """실제 값을 선언된 타입에 맞춰 본다.
+
+    **규칙 id 가 없다.** `rules.md` 에 "실행 중 값이 선언된 타입과 다르다" 를 담는
+    규칙이 없기 때문이다 — 배선 불일치(`STR-TYPE-004`)는 등록 시점의 *선언끼리*
+    대조이지 값 대조가 아니다. 대신 자연어 가이드를 붙여 낸다.
+    """
+    try:
+        registry.to_value(TypeKey(contract.path, type_name), value)
+    except ValidationError as exc:
+        return [
+            Finding(
+                status="error",
+                path=path,
+                node=node,
+                message=(
+                    f"{where}(`{type_name}`) 과 실제 값이 맞지 않습니다: "
+                    f"{contract.path}\n"
+                    f"{exc}\n"
+                    f"{hint} 선언된 dataclass 와 같은 필드·타입을 가져야 합니다. "
+                    "값이 아니라 선언이 틀렸다면 스크립트의 dataclass 를 고치세요."
+                ),
+            )
+        ]
+    except StrictlerError as exc:
+        return [Finding(status="error", path=path, node=node, message=exc.message)]
+    return []

@@ -6,12 +6,15 @@
 `run_spec` 이 `kind` 를 보고 값 검증/비교로 디스패치하는 구조는 그대로다
 (`schema.md` 3·12절). 디스패치는 **함수 호출 시점의 지역 import** 로 한다.
 
-⚠ stub. Step 3 이전에 확정된 파일이다 — Step 3-a/3-b 어느 쪽도 이 파일을 고치지 않는다.
+⚠ Step 3 이전에 확정된 파일이다 — 여기 있는 것은 **자료구조뿐이고 로직이 없다.**
+필드를 추가해야 하면 conductor 를 거친다 (Step 3-a·3-b 의 파일 교집합이 되기 때문).
 """
 
 from __future__ import annotations
 
-from strictler.errors import Status
+from typing import Any
+
+from strictler.errors import Finding, Status
 
 __all__ = ["NodeOutcome", "RunResult"]
 
@@ -27,7 +30,13 @@ class NodeOutcome:
     """
 
     def __init__(self, node_id: str, status: Status) -> None:
-        raise NotImplementedError("Step 3에서 구현")
+        self.node_id = node_id
+        self.status: Status = status
+        self.value: Any = None
+        self.findings: list[Finding] = []
+
+    def __repr__(self) -> str:  # pragma: no cover - 디버깅 편의
+        return f"NodeOutcome({self.node_id!r}, {self.status!r})"
 
 
 class RunResult:
@@ -37,4 +46,8 @@ class RunResult:
     """
 
     def __init__(self) -> None:
-        raise NotImplementedError("Step 3에서 구현")
+        self.outcomes: dict[str, NodeOutcome] = {}
+        self.findings: list[Finding] = []
+
+    def __repr__(self) -> str:  # pragma: no cover - 디버깅 편의
+        return f"RunResult(outcomes={sorted(self.outcomes)}, findings={len(self.findings)})"
