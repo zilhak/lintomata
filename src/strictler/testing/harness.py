@@ -74,6 +74,7 @@ from strictler import refs, rules
 from strictler.checks import pipeline as pipeline_checks
 from strictler.checks.node import check_node, findings_of, load_node, resolve_script, shape_findings
 from strictler.checks.script import ScriptContract
+from strictler.engine import drive as drive_loop
 from strictler.engine import exec as node_exec
 from strictler.engine.runtime import VERDICT_PASSED
 from strictler.errors import Finding, StrictlerError
@@ -197,11 +198,17 @@ def run_node_test(
     node_path: Path | None
 
     if node_id:
+        # 해시를 **대조부터** 한다. 정본이 흔들렸으면 그것과 무엇을 비교해도 무의미하고,
+        # 그 상태에서 `STR-TEST-008` 을 내면 엉뚱한 곳(테스트의 `node` 필드)을 고치게 된다.
+        node_path, findings = drive_loop.resolve_entry(
+            _ref(node_id), "node", store=store, env=env, path=node_id
+        )
+        if node_path is None:
+            return findings
         mismatch = check_requested_node(node_test.node, node_id, store=store, env=env)
         if mismatch:
             return mismatch
         label = node_id
-        node_path = store.path_of(node_id)
     else:
         node_path, findings = _resolve_node_file(node_test.node, store=store, env=env)
     if node_path is None:
@@ -210,6 +217,14 @@ def run_node_test(
     node, load_findings = load_node(_read_json(node_path), str(node_path))
     if node is None:
         return load_findings
+
+    # 스크립트도 마찬가지다 — **실제로 돌리는 것이 그 파일**이므로 여기가 마지막 관문이다.
+    # 삭제된 id 는 `resolve_script` 가 `STR-REG-002` 로 짚는다.
+    tampered = drive_loop.verify_hash(
+        node.script, store=store, path=label, node_id=node.info.name
+    )
+    if tampered:
+        return tampered
 
     contract, static = check_node(node, str(node_path), store=store, env=env)
     if static:
@@ -306,30 +321,34 @@ def _resolve_node_file(
 ) -> tuple[Path | None, list[Finding]]:
     """테스트가 가리키는 노드 파일을 찾는다.
 
-    `${ref.nd_...}` 면 등록소에서, 경로면 경로 규칙으로. 없으면 `STR-REG-002`
-    (등록소에 없음) / `STR-REF-002`(파일 없음) — 후자는 *"`source` 가 가리키는 노드를
-    찾을 수 없다"* 와 같은 자리이므로 그 규칙을 그대로 쓴다.
+    `${ref.nd_...}` 면 **등록소 해석을 `engine.drive` 에 맡긴다** — `check` 와 같은
+    함수를 써야 등록소 무결성 판정이 갈리지 않는다 (R4-1 이 겪은 사고가 그것이다).
+    거기서 `STR-REG-002`(삭제된 id) / `STR-REG-001`(등록 이후 직접 수정) 이 나온다.
+
+    경로면 경로 규칙으로 푼다. 없으면 `STR-REF-002` — *"`source` 가 가리키는 노드를
+    찾을 수 없다"* 와 같은 자리이므로 그 규칙을 그대로 쓴다. **등록소 밖 파일에는
+    대조할 해시가 없다.**
     """
     if refs.is_ref(value):
-        try:
-            refs.parse_ref(value, "node")
-        except StrictlerError as exc:
-            return None, findings_of(exc, path=value)
-        entry_id = value[len("${ref.") : -1]
-        try:
-            store.show(entry_id)
-        except StrictlerError:
-            return None, [rules.finding("STR-REG-002", path=value, fields={"id": entry_id})]
-        path = store.path_of(entry_id)
-    else:
-        try:
-            path = refs.expand_path(value, env)
-        except StrictlerError as exc:
-            return None, findings_of(exc, path=value)
+        return drive_loop.resolve_entry(value, "node", store=store, env=env, path=value)
+
+    try:
+        path = refs.expand_path(value, env)
+    except StrictlerError as exc:
+        return None, findings_of(exc, path=value)
 
     if not path.is_file():
         return None, [rules.finding("STR-REF-002", path=value, fields={"source": str(path)})]
     return path, []
+
+
+def _ref(entry_id: str) -> str:
+    """id 를 참조 문법으로 되돌린다 — `engine.drive` 의 입구가 `${ref.<id>}` 라서다.
+
+    `node test <id>` 로 부르면 id 를 직접 받지만, 해석·해시 대조는 `check` 와
+    **같은 함수**를 써야 한다. 여기서 대조를 새로 짜면 두 벌이 되어 갈린다.
+    """
+    return "${ref." + entry_id + "}"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
