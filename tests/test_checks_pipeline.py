@@ -17,6 +17,7 @@ import pytest
 
 from strictler import rules
 from strictler.checks import pipeline as pipe
+from strictler.errors import Finding
 from strictler.model import Pipeline
 from strictler.store.entries import Store
 from tests._fakes import ScriptStub, contract, stub_reachability
@@ -131,7 +132,7 @@ def wired(nodes, contracts, node_types=None):
     registry, findings = pipe.build_registry(list(contracts.values()), "p.json")
     assert findings == [] and registry is not None
     return pipe.check_wiring_types(
-        make(nodes=nodes), contracts, registry, "p.json", node_types=node_types
+        make(nodes=nodes), contracts, registry, "p.json", node_types=node_types or {}
     )
 
 
@@ -173,10 +174,22 @@ def test_wiring_reports_missing_declaration():
     assert "선언 없음" in findings[0].message
 
 
+def test_check_wiring_types_requires_node_types():
+    """`node_types` 는 **필수 인자**다 (MODULES.md R3-5).
+
+    없으면 어느 노드가 Action 인지 알 방법이 없어 투명성 구현이 원리적으로 불가능하다.
+    기본값을 두면 부르는 쪽이 조용히 빠뜨린다.
+    """
+    contracts = {"x": contract("x.py", output_fields={"count": "int"})}
+    registry, _ = pipe.build_registry(list(contracts.values()), "p.json")
+    with pytest.raises(TypeError):
+        pipe.check_wiring_types(make(nodes=[n("x")]), contracts, registry, "p.json")
+
+
 def test_action_is_transparent_verdict_is_identical_with_and_without_it():
     """★ `X ──▶ Action ──▶ Y` 와 `X ──▶ Y` 의 판정이 **같아야** 한다.
 
-    Action 자신의 선언은 대조에 끼지 않는다 — 끼면 "어디에나 끼워 넣는다" 가
+    상·하단 대조에서 Action 을 건너뛴다 — 안 그러면 "어디에나 끼워 넣는다" 가
     타입 체계와 충돌한다.
     """
     x = contract("x.py", output_fields={"count": "int"})
@@ -193,6 +206,11 @@ def test_action_is_transparent_verdict_is_identical_with_and_without_it():
 
 
 def test_action_transparency_does_not_hide_a_real_mismatch():
+    """상·하단이 안 맞으면 Action 을 껴도 **판정(통과/위반)이 같다.**
+
+    Finding 목록이 완전히 같을 것까지 요구하지는 않는다 — Action 자신의 계약도
+    대조 대상이라(R3-3) 낀 배선에서는 결과가 더 나올 수 있다.
+    """
     x = contract("x.py", output_fields={"count": "int"})
     y = contract("y.py", input_fields={"label": "str"})
     click = contract("click.py", input_fields={"count": "int"}, output_fields={"count": "int"})
@@ -203,11 +221,33 @@ def test_action_transparency_does_not_hide_a_real_mismatch():
         {"x": x, "click": click, "y": y},
         node_types={"x": "sense", "click": "action", "y": "reckon"},
     )
-    assert ids(direct) == ids(through) == ["STR-TYPE-004"]
+    assert bool(direct) == bool(through) is True
+    assert set(ids(direct)) == set(ids(through)) == {"STR-TYPE-004"}
+    assert "y" in {item.node for item in through}
 
 
-def test_action_transparency_holds_without_node_types_for_a_valid_action():
-    """`node_types` 를 못 받아도 판정이 달라지면 안 된다.
+def test_action_contract_itself_is_checked_against_its_producer():
+    """★ R3-3 — 투명하다는 것은 **타입검사 면제가 아니다.**
+
+    `X.out={count}` / `Action.in=out={junk}` / `Y.in={count}` 는 상·하단만 보면
+    통과지만, Action 스크립트는 실제로 그 데이터를 `Args.input` 으로 받는다.
+    실행 시점 계약 위반이 될 것을 등록 시점에 잡는다.
+    """
+    x = contract("x.py", output_fields={"count": "int"})
+    y = contract("y.py", input_fields={"count": "int"})
+    click = contract("click.py", input_fields={"junk": "str"}, output_fields={"junk": "str"})
+
+    findings = wired(
+        [n("x"), n("click", inputs={"v": "x"}), n("y", inputs={"v": "click"})],
+        {"x": x, "click": click, "y": y},
+        node_types={"x": "sense", "click": "action", "y": "reckon"},
+    )
+    assert ids(findings) == ["STR-TYPE-004"]
+    assert findings[0].node == "click"
+
+
+def test_action_transparency_holds_with_an_empty_node_types_map():
+    """어느 노드가 Action 인지 모르는 채로 대조해도 판정이 달라지면 안 된다.
 
     올바른 Action 은 `input == output`(`STR-CONTRACT-006`)이므로 건너뛰든
     엣지를 그대로 대조하든 결론이 같다.
@@ -223,11 +263,35 @@ def test_action_transparency_holds_without_node_types_for_a_valid_action():
 
 
 def test_action_chain_is_skipped_all_the_way_up():
+    """Action 이 여러 개 이어져도 상·하단 대조는 **끝까지 거슬러 올라간다.**
+
+    셋(`X.out` · 각 Action 의 `in`/`out` · `Y.in`)이 전부 같은 정의이므로
+    낀 배선과 안 낀 배선의 판정이 같다.
+    """
     x = contract("x.py", output_fields={"count": "int"})
     y = contract("y.py", input_fields={"count": "int"})
-    # 중간 Action 들이 **엉뚱한 타입**을 선언해도 상·하단 계약이 맞으면 통과다.
-    a1 = contract("a1.py", output_fields={"junk": "str"})
-    a2 = contract("a2.py", output_fields={"junk": "str"})
+    a1 = contract("a1.py", input_fields={"count": "int"}, output_fields={"count": "int"})
+    a2 = contract("a2.py", input_fields={"count": "int"}, output_fields={"count": "int"})
+    nodes = [
+        n("x"),
+        n("a1", inputs={"v": "x"}),
+        n("a2", inputs={"v": "a1"}),
+        n("y", inputs={"v": "a2"}),
+    ]
+    findings = wired(
+        nodes,
+        {"x": x, "a1": a1, "a2": a2, "y": y},
+        node_types={"x": "sense", "a1": "action", "a2": "action", "y": "reckon"},
+    )
+    assert findings == []
+
+
+def test_action_chain_still_carries_the_upstream_definition_to_the_far_end():
+    """중간 Action 이 여럿이어도 `Y.in` 은 **`X.out` 과** 대조된다."""
+    x = contract("x.py", output_fields={"count": "int"})
+    y = contract("y.py", input_fields={"label": "str"})
+    a1 = contract("a1.py", input_fields={"count": "int"}, output_fields={"count": "int"})
+    a2 = contract("a2.py", input_fields={"count": "int"}, output_fields={"count": "int"})
     findings = wired(
         [
             n("x"),
@@ -238,7 +302,8 @@ def test_action_chain_is_skipped_all_the_way_up():
         {"x": x, "a1": a1, "a2": a2, "y": y},
         node_types={"x": "sense", "a1": "action", "a2": "action", "y": "reckon"},
     )
-    assert findings == []
+    assert ids(findings) == ["STR-TYPE-004"]
+    assert findings[0].node == "y"
 
 
 # ── 상태 ─────────────────────────────────────────────────────────────────────
@@ -377,6 +442,57 @@ def test_config_values_inject_defaults_before_refs_sees_them():
     )
     assert findings == []
     assert resolved == {"settleMs": 2000, "url": "https://x"}
+
+
+def test_config_default_is_checked_against_its_own_declaration():
+    """주입한 `default` 도 대조를 받는다 — 안 보면 `{"type":"str", "default":{…}}` 가 샌다.
+
+    default 는 주입되는 순간 그 검사가 쓰는 진짜 config 값이다.
+    """
+    resolved, findings = pipe.check_config_values(
+        make(
+            config={
+                "buttonScript": {
+                    "type": "str",
+                    "required": False,
+                    "default": {"legacy": "/abs/l.py"},
+                }
+            }
+        ),
+        {},
+        "p.json",
+        env={},
+    )
+    assert ids(findings) == ["STR-CONFIG-002"]
+    assert findings[0].node == "default"
+    assert resolved == {"buttonScript": {"legacy": "/abs/l.py"}}
+
+
+def test_config_default_also_obeys_the_path_flag():
+    _, findings = pipe.check_config_values(
+        make(config={"script": {"type": "str", "required": False, "default": "./rel.py"}, }),
+        {},
+        "p.json",
+        env={},
+    )
+    assert findings == []
+
+    _, with_flag = pipe.check_config_values(
+        make(
+            config={
+                "script": {
+                    "type": "str",
+                    "required": False,
+                    "default": "./rel.py",
+                    "path": True,
+                }
+            }
+        ),
+        {},
+        "p.json",
+        env={},
+    )
+    assert ids(with_flag) == ["STR-PATH-004"]
 
 
 def test_config_required_missing_is_config_001():
@@ -700,58 +816,6 @@ def test_check_pipeline_duplicate_node_id_is_reported(tmp_path, monkeypatch, sto
     assert any("중복" in item.message for item in findings)
 
 
-def test_check_pipeline_gathers_target_contracts_when_they_resolve(
-    tmp_path, monkeypatch, store
-):
-    """★ 노드도 그래프도 **한 벌**이다 — target 별로 갈리는 것은 스크립트와 그 값뿐.
-
-    등록 시점에 알 수 있는 값은 파이프라인이 선언한 `default` 뿐이므로, 그걸로
-    세 스크립트가 전부 풀릴 때에만 `STR-CMP-002` 를 판정한다.
-    셋 중 **하나만** 어긋나도 위반이다 — 짝지어 비교하는 것이 아니다.
-    """
-    stub = ScriptStub()
-    scripts = {}
-    for target, out in (("legacy", "int"), ("v2", "int"), ("v3", "str")):
-        src = tmp_path / f"{target}_buttons.py"
-        src.write_text("def runNode(args): ...\n", encoding="utf-8")
-        stub.put(str(src), contract(str(src), output_fields={"count": out}))
-        scripts[target] = src
-    stub.install(monkeypatch)
-    stub_reachability(monkeypatch)
-
-    node_file = tmp_path / "detect.json"
-    node_file.write_text(
-        json.dumps(
-            {
-                "info": {"name": "detect", "description": "d"},
-                "type": "perceive",
-                "script": "${config.buttonScript}",
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    pipeline = Pipeline.model_validate(
-        {
-            "info": {"name": "cmp", "description": "d", "kind": "compare"},
-            "states": {"values": ["idle"], "initial": "idle"},
-            # `${config.X}` 는 `targets.<현재 target>` 을 먼저 본다 (`schema.md` 12절).
-            "config": {
-                "targets": {
-                    "type": "str",
-                    "required": False,
-                    "default": {t: {"buttonScript": str(p)} for t, p in scripts.items()},
-                }
-            },
-            "nodes": [n("detectButtons", source=str(node_file))],
-            "targets": ["legacy", "v2", "v3"],
-            "compare": ["detectButtons"],
-        }
-    )
-    _, findings = pipe.check_pipeline(pipeline, "p.json", store=store, env={})
-    assert ids(findings) == ["STR-CMP-002"]
-
-
 def test_check_pipeline_defers_unresolvable_target_scripts_without_complaining(
     tmp_path, monkeypatch, store
 ):
@@ -785,6 +849,206 @@ def test_check_pipeline_defers_unresolvable_target_scripts_without_complaining(
     )
     _, findings = pipe.check_pipeline(pipeline, "p.json", store=store, env={})
     assert findings == []
+
+
+# ── recheck_resolved — Spec 실행 시점 재검 ──────────────────────────────────
+
+
+def compare_project(tmp_path, monkeypatch, outs):
+    """`script` 가 `${config.buttonScript}` 인 비교 파이프라인 한 벌.
+
+    `outs` = `{target: 출력 필드 타입}`. 스크립트가 target 마다 다른 것이 설계다 —
+    그 값을 채우는 것은 **Spec** 이므로 등록 시점엔 아무도 모른다.
+    """
+    stub = ScriptStub()
+    scripts = {}
+    for target, out in outs.items():
+        src = tmp_path / f"{target}_buttons.py"
+        src.write_text("def runNode(args): ...\n", encoding="utf-8")
+        stub.put(str(src), contract(str(src), output_fields={"count": out}))
+        scripts[target] = src
+    stub.install(monkeypatch)
+    stub_reachability(monkeypatch)
+
+    node_file = tmp_path / "detect.json"
+    node_file.write_text(
+        json.dumps(
+            {
+                "info": {"name": "detect", "description": "d"},
+                "type": "perceive",
+                "script": "${config.buttonScript}",
+            }
+        ),
+        encoding="utf-8",
+    )
+    pipeline = Pipeline.model_validate(
+        {
+            "info": {"name": "cmp", "description": "d", "kind": "compare"},
+            "states": {"values": ["idle"], "initial": "idle"},
+            "config": {"buttonScript": {"type": "str", "required": True, "path": True}},
+            "nodes": [n("detectButtons", source=str(node_file))],
+            "targets": list(outs),
+            "compare": ["detectButtons"],
+        }
+    )
+    # `${config.X}` 는 `targets.<현재 target>` 을 먼저 본다 (`schema.md` 12절).
+    config = {"targets": {t: {"buttonScript": str(p)} for t, p in scripts.items()}}
+    return pipeline, config, stub, scripts
+
+
+def test_recheck_resolved_flags_target_type_divergence(tmp_path, monkeypatch, store):
+    """★ R3-4 — `STR-CMP-002` 는 **Spec 실행 시점**에 난다.
+
+    등록 시점에는 어느 스크립트가 도는지 알 수 없어 판정 자체가 불가능하다.
+    셋 중 **하나만** 어긋나도 위반이다 — 짝지어 비교하는 것이 아니다.
+    """
+    pipeline, config, _, _ = compare_project(
+        tmp_path, monkeypatch, {"legacy": "int", "v2": "int", "v3": "str"}
+    )
+    assert pipe.check_pipeline(pipeline, "p.json", store=store, env={})[1] == []
+
+    findings = pipe.recheck_resolved(
+        pipeline, config, store=store, env={}, source_path="p.json"
+    )
+    assert ids(findings) == ["STR-CMP-002"]
+    assert findings[0].node == "detectButtons"
+
+
+def test_recheck_resolved_passes_when_every_target_agrees(tmp_path, monkeypatch, store):
+    pipeline, config, _, _ = compare_project(
+        tmp_path, monkeypatch, {"legacy": "int", "v2": "int", "v3": "int"}
+    )
+    assert (
+        pipe.recheck_resolved(pipeline, config, store=store, env={}, source_path="p.json")
+        == []
+    )
+
+
+def test_recheck_resolved_runs_script_checks_on_target_scripts(
+    tmp_path, monkeypatch, store
+):
+    """★ R3-4 부수 — 비교 파이프라인의 스크립트도 계약·금지 검사를 받아야 한다.
+
+    등록 시점엔 파일이 정해지지 않아 `checks.script` 가 한 번도 안 돌았다.
+    """
+    pipeline, config, stub, scripts = compare_project(
+        tmp_path, monkeypatch, {"legacy": "int", "v2": "int"}
+    )
+    stub.findings[str(scripts["v2"])] = [
+        Finding(status="violation", rule_id="STR-BAN-002", message="랜덤을 썼습니다.")
+    ]
+
+    findings = pipe.recheck_resolved(
+        pipeline, config, store=store, env={}, source_path="p.json"
+    )
+    assert ids(findings) == ["STR-BAN-002"]
+    assert findings[0].node == "detectButtons"
+    # 노드 타입을 같이 넘겨야 Reckon·Action 형식 검사가 성립한다.
+    assert set(stub.seen_types) == {(str(p), "perceive") for p in scripts.values()}
+
+
+def test_recheck_resolved_reports_config_that_no_target_fills(
+    tmp_path, monkeypatch, store
+):
+    pipeline, _, _, _ = compare_project(tmp_path, monkeypatch, {"legacy": "int", "v2": "int"})
+    findings = pipe.recheck_resolved(
+        pipeline, {}, store=store, env={}, source_path="p.json"
+    )
+    assert ids(findings) == ["STR-CMP-004", "STR-CMP-004"]
+
+
+def verify_project(tmp_path, monkeypatch, *, detect_input, state_fields=None):
+    """`script` 를 `${config.detectScript}` 로 받는 **값 검증** 파이프라인."""
+    stub = ScriptStub()
+    scripts = {}
+    for name in ("capture", "detect"):
+        src = tmp_path / f"{name}.py"
+        src.write_text("def runNode(args): ...\n", encoding="utf-8")
+        scripts[name] = src
+    stub.put(str(scripts["capture"]), contract(str(scripts["capture"]), output_fields={"html": "str"}))
+    stub.put(
+        str(scripts["detect"]),
+        contract(
+            str(scripts["detect"]),
+            input_fields=detect_input,
+            output_fields={"count": "int"},
+            state_fields=state_fields,
+        ),
+    )
+    stub.install(monkeypatch)
+    stub_reachability(monkeypatch)
+
+    node_files = {}
+    for name, script in (("capture", str(scripts["capture"])), ("detect", "${config.detectScript}")):
+        path = tmp_path / f"{name}.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "info": {"name": name, "description": "d"},
+                    "type": "sense" if name == "capture" else "perceive",
+                    "script": script,
+                }
+            ),
+            encoding="utf-8",
+        )
+        node_files[name] = path
+
+    pipeline = make(
+        config={"detectScript": {"type": "str", "required": True, "path": True}},
+        nodes=[
+            n("capture", source=str(node_files["capture"])),
+            n("detect", inputs={"html": "capture"}, source=str(node_files["detect"])),
+        ],
+    )
+    return pipeline, {"detectScript": str(scripts["detect"])}
+
+
+def test_recheck_resolved_rechecks_wiring_with_the_script_spec_chose(
+    tmp_path, monkeypatch, store
+):
+    """값 검증 파이프라인도 `${config.X}` 스크립트를 쓸 수 있다 — 그때 배선을 다시 본다."""
+    (tmp_path / "ok").mkdir()
+    (tmp_path / "bad").mkdir()
+    ok, ok_config = verify_project(tmp_path / "ok", monkeypatch, detect_input={"html": "str"})
+    assert (
+        pipe.recheck_resolved(ok, ok_config, store=store, env={}, source_path="p.json")
+        == []
+    )
+
+    bad, bad_config = verify_project(
+        tmp_path / "bad", monkeypatch, detect_input={"html": "int"}
+    )
+    findings = pipe.recheck_resolved(
+        bad, bad_config, store=store, env={}, source_path="p.json"
+    )
+    assert ids(findings) == ["STR-TYPE-004"]
+
+
+def test_recheck_resolved_rechecks_state_mapping(tmp_path, monkeypatch, store):
+    """계약은 스크립트가 정해져야 나온다 — 상태 매핑 누락도 그때 드러난다."""
+    pipeline, config = verify_project(
+        tmp_path, monkeypatch, detect_input={"html": "str"}, state_fields={"stop": "bool"}
+    )
+    findings = pipe.recheck_resolved(
+        pipeline, config, store=store, env={}, source_path="p.json"
+    )
+    assert ids(findings) == ["STR-STATE-002"]
+
+
+def test_recheck_resolved_does_not_silently_pass_an_unfilled_script(
+    tmp_path, monkeypatch, store
+):
+    """등록 시점의 "아직 모름" 은 실행 시점엔 더 채울 사람이 없다."""
+    pipeline, _ = verify_project(tmp_path, monkeypatch, detect_input={"html": "str"})
+    findings = pipe.recheck_resolved(
+        pipeline,
+        {"detectScript": "${config.somethingElse}"},
+        store=store,
+        env={},
+        source_path="p.json",
+    )
+    assert [item.status for item in findings] == ["error"]
+    assert "안 풀렸습니다" in findings[0].message
 
 
 # ── 슬롯 계약 ────────────────────────────────────────────────────────────────

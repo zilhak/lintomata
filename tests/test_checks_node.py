@@ -21,7 +21,7 @@ from strictler.checks import node as node_checks
 from strictler.errors import StrictlerError
 from strictler.model import Node
 from strictler.store.entries import Store
-from tests._fakes import FakeContract, ScriptStub
+from tests._fakes import FakeContract, ScriptStub, contract, stub_reachability
 
 
 @pytest.fixture()
@@ -271,6 +271,108 @@ def test_check_registration_runs_node_checks_with_the_declared_type(
     )
     assert checks.check_registration("node", node_file, store) == []
     assert stub.seen_types == [(str(src), "action")]
+
+
+def test_check_registration_accepts_a_well_formed_pipeline(tmp_path, store, monkeypatch):
+    """★ R3-14 — CLI 가 쓸 유일한 진입점의 **정상 경로**.
+
+    파이프라인 파일 하나를 주면 참조된 노드들을 전부 로드·검사하고 빈 목록을 낸다.
+    빈 목록일 때만 등록소에 저장되므로, 여기가 깨지면 정상적인 파이프라인이 등록조차
+    안 된다.
+    """
+    stub = ScriptStub()
+    scripts = {}
+    for name, fields in (
+        ("capture", {"output_fields": {"html": "str"}}),
+        ("detect", {"input_fields": {"html": "str"}, "output_fields": {"count": "int"}}),
+    ):
+        src = tmp_path / f"{name}.py"
+        src.write_text("def runNode(args): ...\n", encoding="utf-8")
+        stub.put(str(src), contract(str(src), **fields))
+        scripts[name] = src
+    stub.install(monkeypatch)
+    stub_reachability(monkeypatch)
+
+    node_files = {}
+    for name, kind in (("capture", "sense"), ("detect", "perceive")):
+        path = tmp_path / f"{name}.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "info": {"name": name, "description": "d"},
+                    "type": kind,
+                    "script": str(scripts[name]),
+                }
+            ),
+            encoding="utf-8",
+        )
+        node_files[name] = path
+
+    pipeline_file = tmp_path / "flow.json"
+    pipeline_file.write_text(
+        json.dumps(
+            {
+                "info": {"name": "flow", "description": "d", "kind": "verify"},
+                "states": {"values": ["idle"], "initial": "idle"},
+                "nodes": [
+                    {"id": "capture", "source": str(node_files["capture"])},
+                    {
+                        "id": "detect",
+                        "source": str(node_files["detect"]),
+                        "inputs": {"html": "capture"},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert checks.check_registration("pipeline", pipeline_file, store) == []
+    assert set(stub.seen_types) == {
+        (str(scripts["capture"]), "sense"),
+        (str(scripts["detect"]), "perceive"),
+    }
+
+
+def test_check_registration_reports_a_broken_pipeline(tmp_path, store, monkeypatch):
+    """같은 진입점이 배선 결함을 그대로 실어 낸다 — 빈 목록이 아니면 저장되지 않는다."""
+    stub = ScriptStub()
+    src = tmp_path / "detect.py"
+    src.write_text("def runNode(args): ...\n", encoding="utf-8")
+    stub.put(str(src), contract(str(src), output_fields={"count": "int"}))
+    stub.install(monkeypatch)
+    stub_reachability(monkeypatch)
+
+    node_file = tmp_path / "detect.json"
+    node_file.write_text(
+        json.dumps(
+            {
+                "info": {"name": "detect", "description": "d"},
+                "type": "perceive",
+                "script": str(src),
+            }
+        ),
+        encoding="utf-8",
+    )
+    pipeline_file = tmp_path / "flow.json"
+    pipeline_file.write_text(
+        json.dumps(
+            {
+                "info": {"name": "flow", "description": "d", "kind": "verify"},
+                "states": {"values": ["idle"], "initial": "idle"},
+                "nodes": [
+                    {
+                        "id": "detect",
+                        "source": str(node_file),
+                        "inputs": {"html": "ghost"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert ids(checks.check_registration("pipeline", pipeline_file, store)) == [
+        "STR-REF-003"
+    ]
 
 
 def test_check_registration_reports_bad_spec_shape(tmp_path, store):

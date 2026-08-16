@@ -13,8 +13,11 @@
 | 사용자 상태 이름에 `__` 접두가 없는지 | `STR-STATE-001` |
 | `config` 선언의 `type` 이 primitive 집합에 속하는지 | `STR-TYPE-005` |
 | `kind: compare` 일 때 `compare` 가 가리키는 노드가 실재하는지 | `STR-REF-005` |
-| `kind: compare` 일 때 **target 별 스크립트가 같은 input/output/state 타입을 선언했는지** | `STR-CMP-002` |
 | `targets` 가 2개 이상인지 | `STR-CMP-003` |
+
+**target 별 스크립트 대조(`STR-CMP-002`)는 등록 시점에 못 한다** — 스크립트를 가르는
+`${config.X}` 를 채우는 것이 Spec 이기 때문이다. 그 검사와, 그때야 정해지는 스크립트의
+계약·금지 검사는 **Spec 실행 시점의 `recheck_resolved`** 가 한다 (MODULES.md R3-4).
 
 실행 시점의 config 채움(`STR-CONFIG-001`~`003`)과 `path: true` 검증(`STR-PATH-004`)도
 여기 산다 — **`config` 를 선언한 것이 파이프라인이므로 그 값을 판정하는 것도 여기다**
@@ -30,6 +33,9 @@
 `check_wiring_types` 는 **Action 을 건너뛰고 상·하단 계약을 대조**한다.
 그래서 "Action 을 어디에나 끼워 넣는다" 가 타입 체계와 충돌하지 않는다 —
 낀 배선과 안 낀 배선의 판정이 **같아야** 하기 때문이다.
+
+다만 **투명 = 타입검사 면제가 아니다.** `X.out == Action.in` 도 함께 대조한다
+(`STR-CONTRACT-006` 이 `input == output` 을 이미 강제하므로 셋이 전부 같아진다).
 
 ### `transitions` 는 시간만 다룬다
 
@@ -73,6 +79,8 @@ __all__ = [
     "check_config_decls",
     "check_compare",
     "check_config_values",
+    "build_registry",
+    "recheck_resolved",
 ]
 
 
@@ -174,7 +182,8 @@ def check_wiring_types(
     contracts: dict[str, ScriptContract],
     registry: TypeRegistry,
     source_path: str,
-    node_types: Mapping[str, NodeType] | None = None,
+    *,
+    node_types: Mapping[str, NodeType],
 ) -> list[Finding]:
     """배선된 두 노드의 **선언된 정의가 동일한지** (`STR-TYPE-004`).
 
@@ -183,25 +192,27 @@ def check_wiring_types(
     이름이 달라도 구조가 같으면 같은 타입이다 — 판정은 `TypeRegistry` 가 한다.
 
     **Action 은 투명하다** — `X ──▶ Action ──▶ Y` 는 실은 `X ──▶ Y` 이므로
-    Action 을 건너뛰고 상·하단의 계약을 대조한다. Action 자신의 선언은 **대조에
-    끼지 않는다**. 그래야 "Action 을 낀 배선과 안 낀 배선의 판정이 같다" 가 성립한다
-    (Action 의 input==output 은 `STR-CONTRACT-006` 이 노드 등록 시에 이미 강제했다).
+    상·하단 계약을 대조할 때 Action 을 건너뛴다. 그래야 "Action 을 낀 배선과
+    안 낀 배선의 판정이 같다" 가 성립한다.
 
-    `node_types` 를 주지 않으면 건너뛸 대상을 알 수 없으므로 엣지를 그대로 대조한다 —
+    **투명하다는 것은 타입검사 면제가 아니다** (MODULES.md R3-3). Action 스크립트도
+    그 데이터를 실제로 `Args.input` 으로 받으므로 **`X.out == Action.in` 도 대조한다.**
+    `input == output`(`STR-CONTRACT-006`)이 노드 등록 시 이미 강제됐으니 이걸 더하면
+    셋이 전부 같아진다 = `schema.md` 5절 "상단과 하단이 하나의 노드".
+    정적으로 잡을 수 있는 불일치를 실행 시점 계약 위반으로 미룰 이유가 없다.
+
+    `node_types` 가 비어 있으면 건너뛸 대상을 알 수 없으므로 엣지를 그대로 대조한다 —
     올바른 Action(input==output)이라면 두 방식의 판정이 같다.
     """
     findings: list[Finding] = []
     by_id = {pn.id: pn for pn in pipeline.nodes}
-    types: Mapping[str, NodeType] = node_types or {}
 
     for consumer in pipeline.nodes:
-        if types.get(consumer.id) == "action":
-            continue  # 투명 — 이 자리에서 대조하지 않는다
         downstream = contracts.get(consumer.id)
         if downstream is None:
             continue
         for producer_id in consumer.inputs.values():
-            real = _skip_actions(producer_id, by_id, types)
+            real = _skip_actions(producer_id, by_id, node_types)
             if real is None:
                 continue
             upstream = contracts.get(real)
@@ -442,6 +453,12 @@ def check_config_values(
     비교 파이프라인의 `targets.<이름>` 오버레이도 같은 선언으로 검사한다.
     required 는 **공통에 있거나 모든 target 에 있으면** 충족된 것으로 본다 —
     target 별로 갈리는 값이 바로 그 자리이기 때문이다 (`schema.md` 12절).
+
+    **주입한 `default` 도 같은 대조를 받는다** (`node="default"` 로 표시).
+    default 는 주입되는 순간 그 검사가 쓰는 진짜 config 값이므로, Spec 이 채운 값만
+    보고 default 를 안 보면 `{"type": "str", "default": {…}}` 같은 선언이 조용히
+    통과한다. `STR-TYPE-005` 는 `type` **표기**가 어휘 밖일 때의 자리라
+    (guide 가 어휘를 고치라고 말한다) 값 불일치에는 `STR-CONFIG-002` 가 맞다.
     """
     findings: list[Finding] = []
     resolved: dict[str, Any] = {}
@@ -481,6 +498,9 @@ def check_config_values(
             resolved[name] = values[name]
         elif decl.default is not None:
             resolved[name] = decl.default
+            findings.extend(
+                _check_one_value(name, decl, decl.default, "default", source_path, env)
+            )
         elif decl.required and not present_everywhere:
             findings.append(
                 rules.finding("STR-CONFIG-001", path=source_path, fields={"names": name})
@@ -733,7 +753,6 @@ def check_pipeline(
     findings: list[Finding] = []
     contracts: dict[str, ScriptContract] = {}
     node_types: dict[str, NodeType] = {}
-    loaded: dict[str, Node] = {}
 
     seen: set[str] = set()
     for pn in pipeline.nodes:
@@ -759,7 +778,6 @@ def check_pipeline(
         findings.extend(node_findings)
         if node is None:
             continue
-        loaded[pn.id] = node
         node_types[pn.id] = node.type
         contract, contract_findings = node_checks.check_node(
             node, source_path, store=store, env=env
@@ -802,13 +820,10 @@ def check_pipeline(
             )
         )
 
-    findings.extend(
-        check_compare(
-            pipeline,
-            _contracts_by_target(pipeline, loaded, store=store, env=env),
-            source_path,
-        )
-    )
+    # target 별 계약은 **여기서 모을 수 없다** — 스크립트를 가르는 `${config.X}` 를
+    # 채우는 것이 Spec 이기 때문이다. `STR-CMP-002` 는 `recheck_resolved` 가 낸다
+    # (MODULES.md R3-4). 여기서 보는 것은 config 와 무관한 `STR-REF-005`/`-CMP-003` 다.
+    findings.extend(check_compare(pipeline, {}, source_path))
 
     findings.extend(
         reachability.check_reachability(
@@ -887,39 +902,159 @@ def _load_referenced_node(
     return node_checks.load_node(raw, str(path))
 
 
-def _contracts_by_target(
+# ── Spec 실행 시점 재검 ──────────────────────────────────────────────────────
+
+
+def recheck_resolved(
     pipeline: Pipeline,
-    loaded: Mapping[str, Node],
+    config: Mapping[str, Any],
     *,
     store: Store,
     env: Mapping[str, str],
-) -> dict[str, dict[str, ScriptContract]]:
-    """`kind: compare` 일 때 target 별 계약을 모은다.
+    source_path: str,
+) -> list[Finding]:
+    """**config 가 풀린 뒤** 다시 도는 검사 — `schema.md` 13절의 세 번째 시점.
 
-    target 별 스크립트는 `${config.X}` 로 갈리고 그 값은 **Spec 이 채운다**.
-    등록 시점에 알 수 있는 것은 파이프라인이 선언한 `default` 뿐이므로, 그걸로
-    풀리는 것만 모은다. 안 풀리는 것은 **오류가 아니라 "아직 모름"** 이다 —
-    실행 시점에 진짜 값으로 다시 검사한다.
+    등록 시점(`check_pipeline`)에는 알 수 없는 것이 하나 있다: **어느 스크립트가
+    도는가**. 비교 파이프라인은 `script` 자리에 `${config.buttonScript}` 를 쓰고
+    그 값을 Spec 이 채우기 때문이다 (`schema.md` 12절). 그래서 등록 시점에는
+
+    - target 별 스크립트가 같은 input/output/state 를 선언했는지(`STR-CMP-002`)를
+      **판정할 수 없고**,
+    - 그 스크립트들이 계약·금지 검사(`checks.script`)를 **한 번도 안 받는다.**
+
+    이 함수가 그 자리다 (MODULES.md R3-4). engine 이 Spec 실행 시점에 부른다.
+    하는 일: target 별 스크립트 `check_script` → 계약 수집 → `check_compare` →
+    계약이 모인 뒤의 `check_wiring_types` · `check_state_mapping` 재검.
+
+    `config` 는 **`check_config_values` 가 default 를 이미 주입한 것**이어야 한다.
+    비교 파이프라인이면 `targets.<이름>` 오버레이도 그대로 들어 있어야 한다 —
+    그게 target 별로 스크립트를 가르는 자리다.
     """
-    if pipeline.info.kind != "compare":
-        return {}
-    defaults = {
-        name: decl.default
-        for name, decl in pipeline.config.items()
-        if decl.default is not None
-    }
-    gathered: dict[str, dict[str, ScriptContract]] = {}
-    for target in pipeline.targets:
+    findings: list[Finding] = []
+    loaded: dict[str, Node] = {}
+    node_types: dict[str, NodeType] = {}
+
+    for pn in pipeline.nodes:
+        node, node_findings = _load_referenced_node(
+            pn.source, store=store, env=env, source_path=source_path, node_id=pn.id
+        )
+        findings.extend(node_findings)
+        if node is None:
+            continue
+        loaded[pn.id] = node
+        node_types[pn.id] = node.type
+
+    # 값 검증 파이프라인에도 `${config.X}` 스크립트가 올 수 있다 — target 이 없을 뿐이다.
+    targets = list(pipeline.targets) if pipeline.info.kind == "compare" else [""]
+    by_target: dict[str, dict[str, ScriptContract]] = {}
+    for target in targets:
         for node_id, node in loaded.items():
-            path, resolve_findings = node_checks.resolve_script(
-                node, store=store, env=env, config=defaults, target=target
+            contract, gathered = _resolved_contract(
+                node,
+                node_id=node_id,
+                target=target,
+                config=config,
+                store=store,
+                env=env,
+                source_path=source_path,
             )
-            if path is None or resolve_findings:
-                continue
-            try:
-                source = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            contract, _ = script_checks.extract_contract(source, str(path))
-            gathered.setdefault(target, {})[node_id] = contract
-    return gathered
+            findings.extend(gathered)
+            if contract is not None:
+                by_target.setdefault(target, {})[node_id] = contract
+
+    if pipeline.info.kind == "compare":
+        findings.extend(check_compare(pipeline, by_target, source_path))
+
+    contracts = _representative(targets, by_target)
+    registry, registry_findings = build_registry(list(contracts.values()), source_path)
+    findings.extend(registry_findings)
+    if registry is not None:
+        findings.extend(
+            check_wiring_types(
+                pipeline, contracts, registry, source_path, node_types=node_types
+            )
+        )
+    findings.extend(check_state_mapping(pipeline, contracts, source_path))
+    return dedupe(findings)
+
+
+def _resolved_contract(
+    node: Node,
+    *,
+    node_id: str,
+    target: str,
+    config: Mapping[str, Any],
+    store: Store,
+    env: Mapping[str, str],
+    source_path: str,
+) -> tuple[ScriptContract | None, list[Finding]]:
+    """이 target 에서 실제로 도는 스크립트를 풀어 검사하고 계약을 뽑는다."""
+    path, raw_findings = node_checks.resolve_script(
+        node, store=store, env=env, config=config, target=target
+    )
+    findings = [
+        item.model_copy(
+            update={"path": item.path or source_path, "node": item.node or node_id}
+        )
+        for item in raw_findings
+    ]
+    if path is None:
+        if not findings:
+            # `resolve_script` 는 안 풀린 `${config.X}` 를 "아직 모름" 으로 넘긴다.
+            # 등록 시점엔 옳지만 실행 시점에는 더 채울 사람이 없다.
+            findings.append(
+                Finding(
+                    status="error",
+                    path=source_path,
+                    node=node_id,
+                    message=(
+                        f"실행 시점인데 노드의 `script` 가 아직 안 풀렸습니다: "
+                        f"{node.script!r}\n"
+                        "Spec 의 `config`(또는 `targets.<이름>`)에서 이 값을 채우세요."
+                    ),
+                )
+            )
+        return None, findings
+
+    try:
+        source = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        findings.append(
+            Finding(
+                status="error",
+                path=source_path,
+                node=node_id,
+                message=(
+                    f"스크립트를 읽을 수 없습니다: {path} ({exc})\n"
+                    "노드 스크립트는 Python 소스이고 UTF-8 이어야 합니다."
+                ),
+            )
+        )
+        return None, findings
+
+    findings.extend(
+        item.model_copy(update={"node": item.node or node_id})
+        for item in script_checks.check_script(source, str(path), node.type)
+    )
+    contract, extracted = script_checks.extract_contract(source, str(path))
+    findings.extend(
+        item.model_copy(update={"node": item.node or node_id}) for item in extracted
+    )
+    return contract, findings
+
+
+def _representative(
+    targets: list[str], by_target: Mapping[str, dict[str, ScriptContract]]
+) -> dict[str, ScriptContract]:
+    """노드마다 **한 벌**의 계약 — 첫 target 것.
+
+    배선 타입과 상태 매핑은 노드에 귀속되어 target 간 공통이다 — 갈리면 그건
+    `STR-CMP-002` 가 이미 냈다. 여기서 target 마다 다시 대조하면 같은 배선 결함이
+    target 수만큼 쌓여 원인이 묻힌다.
+    """
+    contracts: dict[str, ScriptContract] = {}
+    for target in targets:
+        for node_id, contract in by_target.get(target, {}).items():
+            contracts.setdefault(node_id, contract)
+    return contracts
