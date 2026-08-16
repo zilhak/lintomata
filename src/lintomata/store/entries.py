@@ -34,6 +34,7 @@ from lintomata.refs import PLACEHOLDER_RE
 __all__ = [
     "SUBDIRS",
     "CACHE_SUBDIR",
+    "BYTECODE_SUBDIR",
     "TEST_SUFFIX",
     "RegistryEntry",
     "RegistryIndex",
@@ -60,6 +61,15 @@ CACHE_SUBDIR = "cache"
 **등록소 파일 옆이 아니라 따로 둔다** — `scripts/` 안에 부속 파일을 흘리면
 "등록소 폴더에는 등록된 것만 있다"가 깨진다. 무엇을 담는지는 등록소가 모른다.
 **언제 버려도 되는 파생물**이다: 지워도 다음 실행이 다시 만든다.
+"""
+
+BYTECODE_SUBDIR = "__pycache__"
+"""파이썬이 바이트코드를 흘리는 자리. **등록소는 여기에 아무것도 만들지 않는다** —
+엔진이 소스에서 직접 컴파일하기 때문이다 (`engine.exec.compile_source`).
+
+그래도 이름을 아는 이유는 **옛 버전이 남겨 둔 것을 걷어내야** 하기 때문이다.
+pyc 의 무효화 기준은 원본의 mtime + 크기뿐이라, 남아 있는 채로 등록소 파일이
+바뀌면 옛 바이트코드가 실행되어 **거짓 통과**가 난다 (`schema.md` 2절).
 """
 
 _EXTENSIONS: dict[str, str] = {
@@ -379,6 +389,7 @@ class Store:
         # 내용이 바뀌었으므로 옛 캐시는 키(해시)가 안 맞아 어차피 안 쓰인다.
         # 그래도 걷어낸다 — 등록소에 못 쓰는 파일을 남겨 두지 않는다.
         self.cache_path(entry_id).unlink(missing_ok=True)
+        self.purge_bytecode(entry.kind, entry_id)
         entry.hash = hash_file(path)
         entry.registered_at = _now_iso()
         entry.refs = _collect_refs(text)
@@ -408,6 +419,7 @@ class Store:
         if test_path is not None:
             test_path.unlink(missing_ok=True)
         self.cache_path(entry_id).unlink(missing_ok=True)
+        self.purge_bytecode(entry.kind, entry_id)
         self.save_index(index)
 
     # ── 조회 ────────────────────────────────────────────────────────────────
@@ -483,6 +495,24 @@ class Store:
         정하고, 등록소는 자리와 수명만 관리한다. 항목이 사라지면 함께 사라진다.
         """
         return self.home / CACHE_SUBDIR / f"{entry_id}.json"
+
+    def purge_bytecode(self, kind: EntryKind, entry_id: str) -> None:
+        """이 항목에 딸린 `__pycache__/<id>.*.pyc` 를 걷는다 (`schema.md` 2절).
+
+        **엔진은 pyc 를 만들지 않는다**(`engine.exec.compile_source`). 여기서 지우는
+        것은 **옛 버전이 남겨 둔 것**이다 — 남아 있으면 등록소 파일이 바뀌었는데도
+        mtime + 크기가 우연히 같을 때 옛 바이트코드가 실행되어 **거짓 통과**가 난다.
+        `update` / `remove` 가 계약 캐시를 걷는 자리와 같은 이유다:
+        **등록소에 못 쓰는 파일을 남겨 두지 않는다.**
+
+        인터프리터 태그(`cpython-312`)를 따지지 않고 `<id>.*.pyc` 를 전부 쓸어낸다 —
+        다른 파이썬으로 만들어진 것도 남겨 둘 이유가 없다.
+        """
+        directory = self.home / SUBDIRS[kind] / BYTECODE_SUBDIR
+        if not directory.is_dir():
+            return
+        for stale in directory.glob(f"{entry_id}.*.pyc"):
+            stale.unlink(missing_ok=True)
 
     def path_of(self, entry_id: str) -> Path:
         """등록소 안의 실제 파일 경로."""

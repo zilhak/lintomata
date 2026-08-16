@@ -38,6 +38,7 @@ from lintomata.typesys.registry import TypeKey, TypeRegistry
 __all__ = [
     "ENTRYPOINT",
     "load_script",
+    "compile_source",
     "build_args",
     "invoke",
     "validate_input",
@@ -68,6 +69,30 @@ def _return_result(value: Any) -> Any:
 # ── 로드 ─────────────────────────────────────────────────────────────────────
 
 
+def compile_source(module: ModuleType, path: Path) -> None:
+    """파일을 **소스에서 컴파일해** 모듈 네임스페이스에 실행한다.
+
+    ★ **바이트코드 캐시를 쓰지 않는다** (`schema.md` 2절). `spec.loader.exec_module`
+    를 쓰면 파이썬이 `__pycache__/*.pyc` 를 만들고 다음 로드 때 그것을 읽는데,
+    pyc 의 무효화 기준은 **원본의 mtime + 크기**뿐이다. 이 도구는 그 기준을 못 믿어서
+    **내용 해시**로 검증 결과를 재사용하는데(`checks/contracts.py`), 그 밑에서
+    mtime 기반 캐시가 돌면 **원본은 바뀌었는데 옛 바이트코드가 실행되어 거짓 통과**가
+    난다 — 리포트가 검사하지 않은 것을 통과라고 말하는 자리다.
+
+    두 방향을 같이 막는다: 소스에서 직접 컴파일하므로 **기존 pyc 를 읽지 않고**,
+    `sys.dont_write_bytecode` 로 로드 도중의 **쓰기도 막는다**(스크립트가 최상단에서
+    import 하는 것들까지). 전역 상태이므로 **끝나면 원래 값으로 되돌린다.**
+
+    바이트로 읽어 넘긴다 — 인코딩 선언(`# -*- coding: -*-`)은 `compile` 이 본다.
+    """
+    saved = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        exec(compile(path.read_bytes(), str(path), "exec"), module.__dict__)
+    finally:
+        sys.dont_write_bytecode = saved
+
+
 def load_script(path: Path, libraries: Mapping[str, Path] | None = None) -> ModuleType:
     """스크립트 파일을 모듈로 로드한다.
 
@@ -88,6 +113,9 @@ def load_script(path: Path, libraries: Mapping[str, Path] | None = None) -> Modu
     로드 **직전에** `lintomata_lib.<슬롯>` 으로 심고 로드가 끝나면 **걷는다** —
     `_installed_libraries` 참조. `sys.path` 는 건드리지 않는다: 형제 파일 import 를
     되게 만드는 것이 아니라, **배선된 것만** 그 네임스페이스로 들어오게 하는 것이다.
+
+    본문은 `spec.loader.exec_module` 이 아니라 `compile_source` 로 돌린다 —
+    **바이트코드 캐시를 읽지도 쓰지도 않기 위해서다.** 이유는 거기에 적혀 있다.
     """
     tag = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
     name = f"lintomata_node_{tag}"
@@ -102,7 +130,7 @@ def load_script(path: Path, libraries: Mapping[str, Path] | None = None) -> Modu
     sys.modules[name] = module
     try:
         with _installed_libraries(libraries or {}):
-            spec.loader.exec_module(module)
+            compile_source(module, path)
     except BaseException as exc:  # noqa: BLE001 - 사용자 코드는 무엇이든 던질 수 있다
         sys.modules.pop(name, None)
         raise LintomataError(_load_failure(path, exc)) from exc
@@ -155,7 +183,8 @@ def _load_library(path: Path) -> ModuleType:
     """라이브러리 파일 하나를 모듈로. **`returnResult` 는 심지 않는다** — 노드가 아니다.
 
     이름은 스크립트와 같은 규칙(경로 해시)이라 서로 다른 경로의 같은 파일명이
-    `sys.modules` 에서 충돌하지 않는다.
+    `sys.modules` 에서 충돌하지 않는다. 로드 방식도 같다 — **바이트코드 캐시를
+    쓰지 않는다**(`compile_source`). 라이브러리도 등록소가 해시로 관리하는 파일이다.
     """
     tag = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
     name = f"lintomata_library_{tag}"
@@ -168,7 +197,7 @@ def _load_library(path: Path) -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     try:
-        spec.loader.exec_module(module)
+        compile_source(module, path)
     except BaseException as exc:  # noqa: BLE001 - 사용자 코드는 무엇이든 던질 수 있다
         sys.modules.pop(name, None)
         raise LintomataError(
