@@ -1090,8 +1090,14 @@ def _resolved_contract(
     )
     # 라이브러리 배선도 여기서 다시 본다 — **어느 스크립트가 도는지가 config 로
     # 갈리므로** 요구하는 슬롯도 갈릴 수 있다 (`schema.md` 6.5·12절).
+    #
+    # ★ **`node` 를 덮어쓴다 — `or` 가 아니다.** 파이프라인 문맥에서 한 노드를
+    # 가리키는 이름은 **노드 id 하나**다. 노드 검사 쪽이 `info.name` 을 달고 오면
+    # 같은 노드가 리포트에 두 이름(`detect-buttons` / `detectButtons`)으로 찍혀
+    # 같은 것인지 알 수 없고, `not run` 전파도 노드 id 로 대조하므로 여파가 어긋난다.
+    # `engine.drive.resolve_libraries` 가 실행 시점에 하는 것과 **같은 규칙**이다.
     findings.extend(
-        item.model_copy(update={"node": item.node or node_id})
+        item.model_copy(update={"node": node_id})
         for item in node_checks.check_libraries(
             node, contract, source_path, store=store, env=env
         )

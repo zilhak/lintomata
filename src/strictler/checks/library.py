@@ -119,6 +119,12 @@ def check_wiring(
 
     ⚠ 배선 **값**(참조가 실재하는지, 라이브러리가 맞는지)은 여기서 보지 않는다 —
     `resolve_libraries` 의 일이다. 여기는 이름만 대조한다.
+
+    ★ **`node` 를 채우지 않는다** — 부르는 쪽이 채운다. 이 모듈은 노드 등록에서도
+    파이프라인 안에서도 불리는데, 파이프라인 문맥에서 노드를 가리키는 이름은
+    **노드 id** 다. 여기서 `info.name` 을 박으면 같은 노드가 리포트에 두 이름으로
+    찍히고(`detect-buttons` / `detectButtons`), `not run` 전파는 노드 id 로 대조하므로
+    **여파까지 어긋난다.** 스크립트 검사 결과가 `node` 를 비워 두는 것과 같은 규칙이다.
     """
     required = list(contract.library_slots)
     wired = list(node.libraries)
@@ -130,7 +136,6 @@ def check_wiring(
             rules.finding(
                 "STR-LIB-001",
                 path=path,
-                node=node.info.name,
                 fields={"names": ", ".join(missing)},
             )
         )
@@ -140,7 +145,6 @@ def check_wiring(
             rules.finding(
                 "STR-LIB-002",
                 path=path,
-                node=node.info.name,
                 fields={"names": ", ".join(extra)},
             )
         )
@@ -168,12 +172,17 @@ def resolve_libraries(
 
     **못 푼 슬롯은 결과에서 빠진다.** 그 자리에서 진행하지 않는 것이고, 억지로 빈
     모듈을 넣으면 스크립트가 `AttributeError` 로 터져 원인이 뭉개진다.
+    → **부르는 쪽은 error 가 하나라도 있으면 그 노드를 돌리지 않는다.** 억지로 로드하면
+    스크립트가 `ImportError` 로 죽으면서 *"배선이 없다"* 는 **거짓 안내**가 진짜 원인
+    (파일이 없다) 위에 덮인다.
+
+    ★ **`node` 는 채우지 않는다** — `check_wiring` 과 같은 이유다.
     """
     resolved: dict[str, Path] = {}
     findings: list[Finding] = []
 
     for slot, value in node.libraries.items():
-        found, gathered = _resolve_one(value, slot=slot, node=node, store=store, env=env)
+        found, gathered = _resolve_one(value, slot=slot, store=store, env=env)
         findings.extend(item.model_copy(update={"path": item.path or ""}) for item in gathered)
         if found is not None:
             resolved[slot] = found
@@ -181,15 +190,13 @@ def resolve_libraries(
 
 
 def _resolve_one(
-    value: str, *, slot: str, node: Node, store: Store, env: Mapping[str, str]
+    value: str, *, slot: str, store: Store, env: Mapping[str, str]
 ) -> tuple[Path | None, list[Finding]]:
-    """배선 값 하나를 파일로. 자리 표시(`path`)는 부르는 쪽이 채운다."""
-    who = node.info.name
+    """배선 값 하나를 파일로. 자리 표시(`path`·`node`)는 부르는 쪽이 채운다."""
     if not isinstance(value, str):  # pragma: no cover - pydantic 이 이미 막는다
         return None, [
             Finding(
                 status="error",
-                node=who,
                 message=f"`libraries.{slot}` 가 문자열이 아닙니다: {value!r}",
             )
         ]
@@ -198,28 +205,24 @@ def _resolve_one(
         try:
             _, entry_id = refs.parse_ref(value, "library")
         except StrictlerError as exc:
-            return None, _findings_of(exc, node=who)
+            return None, _findings_of(exc)
         try:
             store.show(entry_id)
         except StrictlerError:
-            return None, [
-                rules.finding("STR-REG-002", node=who, fields={"id": entry_id})
-            ]
+            return None, [rules.finding("STR-REG-002", fields={"id": entry_id})]
         path = store.path_of(entry_id)
     else:
         try:
             path = refs.expand_path(value, env)
         except StrictlerError as exc:
-            return None, _findings_of(exc, node=who)
+            return None, _findings_of(exc)
 
     if not path.is_file():
-        return None, [
-            rules.finding("STR-REF-001", node=who, fields={"script": str(path)})
-        ]
+        return None, [rules.finding("STR-REF-001", fields={"script": str(path)})]
     return path, []
 
 
-def _findings_of(exc: StrictlerError, *, node: str) -> list[Finding]:
+def _findings_of(exc: StrictlerError) -> list[Finding]:
     """`refs` 가 던진 규칙 실린 예외를 `Finding` 목록으로.
 
     지역 import — `checks.node` 가 이 모듈을 쓰므로 top-level 이면 순환이다
@@ -227,7 +230,7 @@ def _findings_of(exc: StrictlerError, *, node: str) -> list[Finding]:
     """
     from strictler.checks.node import findings_of
 
-    return findings_of(exc, path="", node=node)
+    return findings_of(exc, path="")
 
 
 def _namespace_uses(tree: ast.Module) -> list[str]:

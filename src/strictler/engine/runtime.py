@@ -651,6 +651,11 @@ def _load_nodes(
             node, store=store, env=env, path=path, node_id=pn.id
         )
         findings.extend(library_findings)
+        if any(item.status == "error" for item in library_findings):
+            # **못 푼 채로 돌리지 않는다.** 스크립트를 못 푼 경우와 같은 처리다 —
+            # 억지로 로드하면 스크립트가 `ImportError` 로 죽으면서 *"배선이 없다"* 는
+            # **거짓 안내**가 원인(파일이 없다) 위에 덮인다. 여파는 `not_run` 이다.
+            continue
         loaded[pn.id] = _NodeRun(node, script_path, contract, libraries)
 
     return loaded, findings

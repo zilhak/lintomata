@@ -264,6 +264,12 @@ def _prepare(
             node, store=store, env=env, path=path, node_id=pn.id
         )
         findings.extend(library_findings)
+        if any(item.status == "error" for item in library_findings):
+            # 값 검증(`runtime._load_nodes`)과 **같은 처리다.** 한쪽만 고치면 갈린다 —
+            # 못 푼 채로 로드하면 스크립트가 `ImportError` 로 죽으면서 거짓 안내가
+            # 원인 위에 덮인다. 준비 안 된 노드는 `_mark_unprepared` 가 error 로
+            # 확정하고 여파는 `drive.finalize` 가 `not_run` 으로 표기한다.
+            continue
         prepared.libraries[pn.id] = libraries
         for target in targets:
             resolved, gathered = _resolve_one(

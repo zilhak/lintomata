@@ -294,6 +294,10 @@ def check_libraries(
     등록된 것도 다시 보지만 그건 스크립트도 마찬가지다(`check_script`) — 노드 등록은
     *"이 노드가 지금 성립하는가"* 를 묻는 자리이고, 그 답은 참조하는 파일들의 현재
     내용에 달려 있다.
+
+    ★ **`node` 를 채우지 않는다.** 스크립트 검사 결과와 같은 규칙이다 — 파이프라인
+    안에서 불리면 그쪽이 **노드 id** 를 채운다. 여기서 `info.name` 을 박으면 같은
+    노드가 리포트에 두 이름으로 찍힌다.
     """
     # 지역 import — `checks.library` 가 이 모듈의 `findings_of` 를 쓴다.
     from strictler.checks import library as library_checks
@@ -310,8 +314,7 @@ def check_libraries(
     known = store.declared_dependencies()
     for path in resolved.values():
         findings.extend(
-            item.model_copy(update={"node": item.node or node.info.name})
-            for item in library_checks.check_library(
+            library_checks.check_library(
                 _read_script(path), str(path), known_dependencies=known
             )
         )

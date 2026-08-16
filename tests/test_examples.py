@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -377,3 +378,67 @@ def test_fresh_등록소에_전부_등록하고_id_로_돈다(
     code, out = run(capsys, "node", "test", ids["detect_buttons"])
     assert code == 0, out
     assert ids["detect_buttons"] in out
+
+
+# ── 7. 배선된 라이브러리를 못 풀면 — 라벨 하나, 거짓 안내 없음, 여파는 not run ──
+
+
+@pytest.fixture()
+def broken_library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """예제를 tmp 로 복사하고 **배선된 라이브러리 파일만 지운다.**
+
+    예제 원본을 건드리지 않으려고 복사한다. 반환값은 복사본 루트.
+    """
+    root = tmp_path / "example"
+    shutil.copytree(EXAMPLE_ROOT, root, ignore=shutil.ignore_patterns("__pycache__"))
+    (root / "libraries" / "buttons.py").unlink()
+    monkeypatch.setenv("STRICTLER_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("STRICTLER_EXAMPLE_ROOT", str(root))
+    monkeypatch.setenv("STRICTLER_EXAMPLE_OUT", str(tmp_path / "out"))
+    return root
+
+
+def test_라이브러리를_못_풀면_노드_id_하나로_찍히고_실행되지_않는다(
+    broken_library: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """★ 세 가지를 한 번에 고정한다 (Gate 4 지적).
+
+    1. **라벨이 노드 id 하나다** — 등록 검사에서 온 `info.name`(`detect-buttons`) 과
+       구동에서 온 노드 id(`detectButtons`) 로 **같은 노드가 두 번** 찍히면
+       같은 것인지 알 수 없고, `not run` 전파는 노드 id 로 대조하므로 여파도 어긋난다
+    2. **그 노드를 돌리지 않는다** — 억지로 로드하면 스크립트가 `ImportError` 로 죽으며
+       *"배선이 없습니다"* 라는 **거짓 안내**가 진짜 원인(파일이 없다) 위에 덮인다
+    3. 여파는 `not_run` 이다
+    """
+    code, report = run_json(
+        capsys, "check", str(broken_library / "specs" / "home_ok.json")
+    )
+
+    assert code == 2
+    errors = [item for item in report["results"] if item["status"] == "error"]
+    assert [item["node"] for item in errors] == ["detectButtons"]
+    assert rule_ids(report) == {"STR-REF-001"}
+    # 노드 `info.name` 으로는 아무것도 찍히지 않는다.
+    assert all(item["node"] != "detect-buttons" for item in report["results"])
+    # **거짓 안내가 없다** — 배선은 있고 파일이 없는 것이다.
+    assert "배선이 없습니다" not in json.dumps(report, ensure_ascii=False)
+    assert "ImportError" not in json.dumps(report, ensure_ascii=False)
+
+    not_run = {item["node"]: item["cause"] for item in report["results"] if item["status"] == "not_run"}
+    assert not_run == {"checkButtons": {"node": "detectButtons", "reason": "data_dependency"}}
+
+
+def test_비교_파이프라인도_같은_형태로_낸다(
+    broken_library: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**한쪽만 고치면 또 갈린다** — 값 검증과 비교가 같은 처리를 받는다."""
+    code, report = run_json(
+        capsys, "check", str(broken_library / "specs" / "compare_ok.json")
+    )
+
+    assert code == 2
+    errors = [item for item in report["results"] if item["status"] == "error"]
+    assert [item["node"] for item in errors] == ["buttons"]
+    assert rule_ids(report) == {"STR-REF-001"}
+    assert all(item["node"] != "compare-buttons" for item in report["results"])
+    assert "배선이 없습니다" not in json.dumps(report, ensure_ascii=False)

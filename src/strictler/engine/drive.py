@@ -141,14 +141,18 @@ def resolve_libraries(
 
     ★ **값 검증·비교·단위테스트 셋이 전부 이 함수를 쓴다.** 셋이 각자 풀면 갈리고,
     갈린 쪽만 무단 수정된 라이브러리를 그냥 돌린다 (R4-1 이 겪은 사고가 그것이다).
+
+    ★ **`node` 는 파이프라인의 노드 id 로 **덮어쓴다** — `or` 가 아니다.**
+    등록 검사에서 온 결과는 노드의 `info.name` 을 달고 오는데, 파이프라인 문맥에서
+    한 노드를 가리키는 이름은 **노드 id 하나**여야 한다. 그러지 않으면 같은 노드가
+    리포트에 두 이름으로 찍혀 같은 것인지 알 수 없고, `not run` 전파도 노드 id
+    문자열로 대조하므로 **여파가 통째로 어긋난다**.
     """
     from strictler.checks import library as library_checks
 
     resolved, raw = library_checks.resolve_libraries(node, store=store, env=env)
     findings = [
-        item.model_copy(
-            update={"path": item.path or path, "node": item.node or node_id}
-        )
+        item.model_copy(update={"path": item.path or path, "node": node_id})
         for item in raw
     ]
     for value in node.libraries.values():
