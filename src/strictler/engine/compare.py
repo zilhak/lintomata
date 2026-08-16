@@ -27,6 +27,10 @@
 하나만 어긋나도 위반. **"동일하다"는 정말로 동일하다는 뜻이다** — 허용 오차도 무시
 필드도 엔진에 두지 않는다. 정규화는 스크립트가 알아서 한다. **엔진은 `==` 만 안다.**
 
+**★ `engine.runtime` 을 import 하지 마라.** 공용 결과 타입(`RunResult`/`NodeOutcome`)은
+`engine.result` 에 있다. `runtime` 이 `kind` 를 보고 이쪽으로 디스패치하므로,
+반대 방향 import 를 만들면 순환이 된다.
+
 ⚠ stub. Step 3 에서 구현한다.
 """
 
@@ -34,7 +38,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from strictler.engine.runtime import RunResult
+from strictler.engine.result import RunResult
 from strictler.model import Pipeline
 from strictler.report import CompareReport
 from strictler.store.entries import Store

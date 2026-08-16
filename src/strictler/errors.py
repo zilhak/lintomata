@@ -22,11 +22,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-__all__ = ["Status", "NotRunCause", "Finding", "StrictlerError"]
+__all__ = ["Status", "NotRunReason", "NotRunCause", "Finding", "StrictlerError"]
 
 
 Status = Literal["pass", "violation", "not_run", "error"]
 """결과 4상태. 이 넷이 전부다."""
+
+
+NotRunReason = Literal["data_dependency", "state_unreachable"]
+"""not run 전파 경로. **정확히 둘이다** (`schema.md` 9절)."""
 
 
 class NotRunCause(BaseModel):
@@ -42,8 +46,8 @@ class NotRunCause(BaseModel):
     node: str
     """원인이 된 노드 id."""
 
-    reason: str
-    """`data_dependency` | `state_unreachable`."""
+    reason: NotRunReason
+    """`data_dependency` | `state_unreachable`. **이 둘 외의 값은 없다.**"""
 
 
 class Finding(BaseModel):

@@ -18,6 +18,11 @@
 **증거 캡처는 하지 않는다.** 위반은 정상 결과이므로 수습할 것이 없다 —
 lint 가 스크린샷을 남기지 않는 것과 같다.
 
+**★ `engine.compare` 를 top-level 로 import 하지 마라.** 공용 결과 타입은
+`engine.result` 에 있고 `compare` 도 거기에만 의존한다. `kind: compare` 디스패치는
+`run_plan_item` **안에서 지역 import** 로 한다 — 양방향 top-level import 는
+`ImportError` 로 터진다.
+
 ⚠ stub. Step 3 에서 구현한다.
 """
 
@@ -25,33 +30,13 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from strictler.errors import Finding, Status
+from strictler.engine.result import NodeOutcome, RunResult
+from strictler.errors import Finding
 from strictler.model import Pipeline, Spec
 from strictler.report import Report
 from strictler.store.entries import Store
 
 __all__ = ["NodeOutcome", "RunResult", "run_spec", "run_plan_item", "run_pipeline", "propagate_not_run", "topo_order"]
-
-
-class NodeOutcome:
-    """노드 하나의 실행 결과.
-
-    필드: `node_id`, `status`(`Status`), `value`(출력값 — 통과했을 때만),
-    `findings`(그 노드가 낸 결과들).
-    """
-
-    def __init__(self, node_id: str, status: Status) -> None:
-        raise NotImplementedError("Step 3에서 구현")
-
-
-class RunResult:
-    """파이프라인 한 벌의 실행 결과.
-
-    필드: `outcomes`(`dict[str, NodeOutcome]`), `findings`(`list[Finding]`).
-    """
-
-    def __init__(self) -> None:
-        raise NotImplementedError("Step 3에서 구현")
 
 
 def run_spec(
@@ -83,6 +68,14 @@ def run_plan_item(
     """`plan` 항목 하나를 실행한다. `kind` 를 보고 값 검증/비교로 갈린다.
 
     `path` 필드는 `"login.json > plan[0] > login-flow"` 형태로 여기서 만들어진다.
+
+    **`kind: compare` 분기는 여기서 지역 import 로 한다:**
+
+    ```python
+    from strictler.engine.compare import run_compare_pipeline
+    ```
+
+    top-level 로 올리면 `runtime` ↔ `compare` 순환이 된다.
     """
     raise NotImplementedError("Step 3에서 구현")
 

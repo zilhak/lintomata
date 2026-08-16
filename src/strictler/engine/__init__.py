@@ -11,12 +11,18 @@
 
 - `state` — 상태머신. **전이는 런타임이 수행하고 노드는 읽기만 한다**
 - `exec` — 스크립트 하나를 로드·실행하고 input/output 을 검증
+- `result` — `runtime` 과 `compare` 가 **둘 다** 쓰는 실행 결과 자료구조
 - `runtime` — 값 검증 파이프라인 구동, not run 전파, Spec 단위 실행
 - `compare` — 비교 파이프라인 구동 (target 별 실행·취합·동등 비교)
+
+**`runtime` 과 `compare` 는 서로를 import 하지 않는다.** 공용 타입은 `result` 에 있고
+`runtime → compare` 디스패치는 `run_plan_item` 안의 지역 import 로 한다.
 
 ⚠ stub. Step 3 에서 구현한다.
 """
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from strictler.engine.result import NodeOutcome, RunResult
+
+__all__ = ["NodeOutcome", "RunResult"]
