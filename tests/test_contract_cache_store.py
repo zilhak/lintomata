@@ -89,6 +89,7 @@ def registered(
         ids[spec.name] = add("spec", spec)
 
     ids["__home__"] = str(home)
+    ids["__work__"] = str(work)
     return ids
 
 
@@ -97,10 +98,12 @@ def check(capsys: pytest.CaptureFixture[str], spec_id: str) -> tuple[int, dict]:
     return code, json.loads(capsys.readouterr().out)
 
 
-@pytest.mark.parametrize(
-    ("spec", "expected"),
-    [("home_ok.json", 0), ("home_broken.json", 1), ("compare_ok.json", 0)],
-)
+RUNNABLE = [("home_ok.json", 0), ("home_broken.json", 1), ("compare_ok.json", 0)]
+"""돌려볼 Spec 과 그 종료 코드. **값 검증과 비교를 둘 다 태운다** —
+캐시를 한쪽에만 붙이면 두 파이프라인 종류의 동작이 갈린다 (R4-1 이 실제로 겪었다)."""
+
+
+@pytest.mark.parametrize(("spec", "expected"), RUNNABLE)
 def test_두_번째_실행이_첫_실행과_같다(
     registered: dict[str, str],
     capsys: pytest.CaptureFixture[str],
@@ -115,18 +118,26 @@ def test_두_번째_실행이_첫_실행과_같다(
     assert first == second
 
 
+@pytest.mark.parametrize(("spec", "expected"), RUNNABLE)
 def test_두_번째_실행은_스크립트를_다시_파싱하지_않는다(
     registered: dict[str, str],
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
+    spec: str,
+    expected: int,
 ) -> None:
-    """`schema.md` 2절: *등록은 검증 결과를 재사용하는 기제다.*"""
-    check(capsys, registered["home_ok.json"])  # 캐시를 채운다
+    """`schema.md` 2절: *등록은 검증 결과를 재사용하는 기제다.*
+
+    ★ **비교 파이프라인(`compare_ok`)도 함께 태운다.** 값 검증에만 캐시를 붙이고
+    비교를 빠뜨려도 결과는 같으므로 리포트 대조로는 안 잡힌다 — R4-1 이 겪은
+    비대칭이 정확히 그 모양이었다. 여기서 **파싱 횟수로** 고정한다.
+    """
+    check(capsys, registered[spec])  # 캐시를 채운다
 
     counter = Counter(monkeypatch)
-    code, _ = check(capsys, registered["home_ok.json"])
+    code, _ = check(capsys, registered[spec])
 
-    assert code == 0
+    assert code == expected
     assert counter.calls == []
 
 
@@ -149,19 +160,31 @@ def test_캐시_파일이_등록소_안에_쌓인다(
 
 
 def test_캐시_포맷_버전이_다르면_버린다(
-    registered: dict[str, str], capsys: pytest.CaptureFixture[str]
+    registered: dict[str, str],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """strictler 를 올려 추출 방식이 바뀌면 옛 캐시는 무효다."""
-    first_code, first = check(capsys, registered["home_ok.json"])
+    """strictler 를 올려 추출 방식이 바뀌면 옛 캐시는 무효다.
 
-    for path in (Path(registered["__home__"]) / CACHE_SUBDIR).glob("sc_*.json"):
+    ⚠ **리포트가 같은지로 물 수 없다.** 버전을 무시하고 옛 캐시를 그대로 써도
+    같은 파일에서 나온 계약이라 리포트는 어차피 같다 — 버전 가드를 통째로 지워도
+    통과해 버린다. 그래서 **다시 파싱했는지**를 본다.
+    """
+    check(capsys, registered["home_ok.json"])
+
+    cached = sorted((Path(registered["__home__"]) / CACHE_SUBDIR).glob("sc_*.json"))
+    assert cached != []
+    for path in cached:
         payload = json.loads(path.read_text("utf-8"))
         payload["version"] = CACHE_VERSION + 1
         path.write_text(json.dumps(payload), encoding="utf-8")
 
-    second_code, second = check(capsys, registered["home_ok.json"])
-    assert (first_code, second_code) == (0, 0)
-    assert first == second
+    counter = Counter(monkeypatch)
+    code, _ = check(capsys, registered["home_ok.json"])
+
+    assert code == 0
+    # 버전이 다른 캐시는 없는 것으로 쳤다 — 전부 다시 뽑았다.
+    assert len(counter.calls) == len(cached)
 
 
 def test_깨진_캐시는_없는_캐시다(
@@ -222,6 +245,23 @@ def test_항목을_지우면_캐시도_사라진다(
 
     # 종료 코드 1 은 "참조가 깨졌다" 는 표시다 — 삭제는 막지 않는다 (`schema.md` 2절).
     assert cli.main(["script", "remove", entry_id]) == 1
+    capsys.readouterr()
+
+    assert not cached.exists()
+
+
+def test_항목을_고치면_캐시도_사라진다(
+    registered: dict[str, str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`update` 도 마찬가지다. 해시가 달라져 어차피 안 읽히지만 **남겨 두지 않는다.**"""
+    check(capsys, registered["home_ok.json"])
+    entry_id = registered["perceive_buttons.py"]
+    cached = Path(registered["__home__"]) / CACHE_SUBDIR / f"{entry_id}.json"
+    assert cached.is_file()
+
+    source = Path(registered["__work__"]) / "scripts" / "perceive_buttons.py"
+    source.write_text(source.read_text("utf-8") + "\n# 주석 한 줄\n", encoding="utf-8")
+    assert cli.main(["script", "update", entry_id, str(source)]) == 0
     capsys.readouterr()
 
     assert not cached.exists()
