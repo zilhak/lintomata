@@ -434,18 +434,23 @@ def test_update_marks_dependents_validation_broken(
     findings = graph.revalidate(store, sc_id)
 
     assert called == [nd_id, pl_id, sp_id]  # 전이적으로, 아래에서 위로
-    assert [f.rule_id for f in findings] == ["STR-REG-005"]
+    # 깨진 파이프라인 자신 + 그것을 참조해 **덩달아 못 돌게 된 Spec** (R5-4).
+    assert [f.rule_id for f in findings] == ["STR-REG-005", "STR-REG-005"]
     assert findings[0].path == pl_id
+    assert findings[1].path == sp_id
     # 실패한 규칙 id 가 메시지에 실려 나간다. 대역이든 실제 구현이든 성립한다 —
     # `STR-REG-005` 의 guide 자체가 `{rule}` 슬롯을 갖기 때문이다 (`rules.md`).
     assert "STR-TYPE-004" in findings[0].message
+    assert pl_id in findings[1].message
 
     # 인덱스에 남아 있어야 이후 `list` 에서 드러난다.
     reloaded = {e.id: e for e in Store().list()}
     assert reloaded[pl_id].broken == "validation"
     assert reloaded[pl_id].broken_detail == "STR-TYPE-004"
     assert reloaded[nd_id].broken == ""
+    # 전이는 **파생값이라 저장하지 않는다** — 아래가 고쳐지면 그 자리에서 사라져야 한다.
     assert reloaded[sp_id].broken == ""
+    assert graph.entries[sp_id].broken == "validation"
 
 
 def test_revalidate_calls_finding_with_the_fields_dict(
@@ -471,7 +476,11 @@ def test_revalidate_calls_finding_with_the_fields_dict(
     RefGraph.build(store).revalidate(store, sc_id)
     # `STR-REG-005` 의 슬롯은 `{id}`·`{rule}` 둘이다. `path` 와 `{id}` 는 값이 같아도
     # 별개 채널이라 둘 다 넘겨야 한다 (계약 개정 R1-2).
-    assert calls == [("STR-REG-005", {"id": _pl_id, "rule": "STR-TYPE-004"})]
+    # 전이분(R5-4)도 같은 규약을 지킨다 — 슬롯 둘을 딕셔너리로만 넘긴다.
+    assert calls[0] == ("STR-REG-005", {"id": _pl_id, "rule": "STR-TYPE-004"})
+    assert [rule_id for rule_id, _ in calls] == ["STR-REG-005", "STR-REG-005"]
+    assert set(calls[1][1]) == {"id", "rule"}
+    assert calls[1][1]["id"] == _sp_id
 
 
 def test_revalidate_clears_a_stale_validation_mark(
@@ -582,8 +591,9 @@ def test_revalidate_finding_carries_its_rule_id(
     store: Store, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     findings = _revalidate_findings(store, tmp_path, monkeypatch)
-    assert [f.rule_id for f in findings] == ["STR-REG-005"]
-    assert _UNFILLED_SLOT_C.findall(findings[0].message) == []
+    # 깨진 것 하나 + 그것을 참조해 덩달아 깨진 상위 하나 (R5-4). **둘 다** 슬롯이 찬다.
+    assert [f.rule_id for f in findings] == ["STR-REG-005", "STR-REG-005"]
+    assert [_UNFILLED_SLOT_C.findall(f.message) for f in findings] == [[], []]
 
 
 def test_every_finding_site_in_store_is_exercised() -> None:

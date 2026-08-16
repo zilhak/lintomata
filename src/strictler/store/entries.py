@@ -32,6 +32,7 @@ from strictler.refs import PLACEHOLDER_RE
 
 __all__ = [
     "SUBDIRS",
+    "TEST_SUFFIX",
     "RegistryEntry",
     "RegistryIndex",
     "default_home",
@@ -62,6 +63,14 @@ _PREFIX_OF: dict[str, str] = {kind: prefix for prefix, kind in ID_PREFIXES.items
 """종류 → id 접두. `model.ID_PREFIXES` 의 역방향."""
 
 _INDEX_NAME = "registry.json"
+
+TEST_SUFFIX = ".test.json"
+"""노드 단위테스트 파일의 이름 규약 — `<노드파일>.test.json` (`schema.md` 14절).
+
+**등록 종류가 아니라 노드 정의 묶음의 일부다.** 종류는 `script`/`node`/`pipeline`/
+`spec` 넷으로 고정이고, 테스트는 *노드 파일 옆*에 사는 부속 파일이다.
+그래서 별도 id 를 받지 않고 **노드와 함께 복사되고 함께 지워진다** (R5-2).
+"""
 
 _PLACEHOLDER = re.compile(PLACEHOLDER_RE)
 """`${ns.name}` 스캐너. 여기서는 `ns == "ref"` 인 것만 본다."""
@@ -253,6 +262,7 @@ class Store:
             refs=_collect_refs(text),
         )
         shutil.copyfile(path, self._file_path(kind, entry_id))
+        self._sync_test(kind, entry_id, path)
         index.entries[entry_id] = entry
         self.save_index(index)
         return entry
@@ -297,6 +307,7 @@ class Store:
             )
 
         shutil.copyfile(path, self._file_path(entry.kind, entry_id))
+        self._sync_test(entry.kind, entry_id, path)
         entry.hash = hash_file(path)
         entry.registered_at = _now_iso()
         entry.refs = _collect_refs(text)
@@ -320,12 +331,50 @@ class Store:
                 "이미 삭제됐거나 오타입니다. `strictler <종류> list` 로 확인하세요."
             )
         self._file_path(entry.kind, entry_id).unlink(missing_ok=True)
+        # 테스트는 노드 정의 묶음의 일부다 — 노드가 사라지면 함께 사라진다.
+        test_path = self.test_path(entry.kind, entry_id)
+        if test_path is not None:
+            test_path.unlink(missing_ok=True)
         self.save_index(index)
 
     # ── 조회 ────────────────────────────────────────────────────────────────
 
     def _file_path(self, kind: EntryKind, entry_id: str) -> Path:
         return self.home / SUBDIRS[kind] / f"{entry_id}{_EXTENSIONS[kind]}"
+
+    def test_path(self, kind: EntryKind, entry_id: str) -> Path | None:
+        """등록소 안의 `<노드파일>.test.json` 경로. 노드가 아니면 `None`."""
+        if kind != "node":
+            return None
+        return self._file_path(kind, entry_id).with_suffix(TEST_SUFFIX)
+
+    def has_test(self, entry_id: str) -> bool:
+        """이 항목에 노드 단위테스트가 함께 등록돼 있는지."""
+        entry = self.show(entry_id)
+        path = self.test_path(entry.kind, entry_id)
+        return path is not None and path.is_file()
+
+    def _sync_test(self, kind: EntryKind, entry_id: str, source: Path) -> None:
+        """원본 옆의 `<노드파일>.test.json` 을 노드와 **함께** 복사한다 (R5-2).
+
+        `schema.md` 14절이 테스트를 *노드 파일 옆*으로 규정했으므로 이것은 노드
+        정의 묶음의 일부다 — 다섯 번째 등록 종류가 아니다. 함께 복사하지 않으면
+        `strictler node test <node-id>` 가 **사용자가 등록소 디렉터리에 손으로
+        파일을 넣어야만** 성립하는데, 등록소는 도구가 관리하는 영역이고
+        *"등록 후 원본을 지워도 된다"* 를 따르면 단위테스트를 다시 돌릴 방법이 없어진다.
+
+        **없으면 그냥 없는 것이다 — 오류가 아니다.** 기대값 없이 돌리지 않는
+        노드도 정상이다. 수정 시 원본에 테스트가 없어졌으면 등록소의 것도 걷는다 —
+        남겨두면 등록된 적 없는 테스트가 유령으로 돈다.
+        """
+        target = self.test_path(kind, entry_id)
+        if target is None:
+            return
+        candidate = source.with_suffix(TEST_SUFFIX)
+        if candidate.is_file():
+            shutil.copyfile(candidate, target)
+        else:
+            target.unlink(missing_ok=True)
 
     def path_of(self, entry_id: str) -> Path:
         """등록소 안의 실제 파일 경로."""

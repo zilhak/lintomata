@@ -94,6 +94,59 @@ class RefGraph:
                 )
         return findings
 
+    def propagate_broken(self) -> list[Finding]:
+        """**깨짐은 전이적이다** — 참조 대상이 깨졌으면 상위도 깨졌다 (R5-4).
+
+        Spec 의 등록 검사는 형태만 보므로, 그것이 참조하는 파이프라인이 `✕ 검증 깨짐`
+        이어도 Spec 재검증은 그냥 통과한다. **그러나 그 Spec 은 돌릴 수 없다** —
+        `spec list` 만 보는 사람에게 `○` 는 거짓말이다. `schema.md` 2절의
+        *"수정은 참조가 멀쩡한 채로 **검증만 조용히 무효화**한다"* 가 정확히 이 자리다.
+
+        참조 깨짐(삭제)도 같은 논리다 — 사라진 것을 참조하는 파이프라인을 참조하는
+        Spec 역시 돌릴 수 없다. 다만 **그 Spec 자신의 참조는 멀쩡하므로** 상위에
+        얹는 표시는 언제나 `"validation"`(검증 깨짐)이다. `"ref"` 는 자기가 직접
+        없는 id 를 가리킬 때만 붙는다.
+
+        **판정만 하고 저장하지 않는다.** 얹은 표시는 아래쪽 상태에서 매번 다시
+        계산되는 파생값이라, 저장하면 아래가 고쳐진 뒤에도 남아 거짓이 된다.
+        """
+        findings: list[Finding] = []
+        # 아래에서 위로 번지므로 더 번질 것이 없을 때까지 훑는다.
+        # 한 바퀴에 최소 하나는 새로 표시되므로 항목 수를 넘길 수 없다.
+        for _ in range(len(self.entries) + 1):
+            changed = False
+            for entry_id, entry in self.entries.items():
+                if entry.broken:
+                    continue
+                source = self._broken_dependency(entry)
+                if source is None:
+                    continue
+                dep_id, detail = source
+                entry.broken = "validation"
+                entry.broken_detail = detail
+                findings.append(
+                    rules.finding(
+                        "STR-REG-005",
+                        path=entry_id,
+                        fields={"id": entry_id, "rule": detail},
+                    )
+                )
+                changed = True
+            if not changed:
+                break
+        return findings
+
+    def _broken_dependency(self, entry: RegistryEntry) -> tuple[str, str] | None:
+        """이 항목이 참조하는 것 중 깨진 첫 번째 — `(id, 상위에 적을 이유)`."""
+        for ref_id in entry.refs:
+            dep = self.entries.get(ref_id)
+            if dep is None or not dep.broken:
+                continue
+            kind = "참조 깨짐" if dep.broken == "ref" else "검증 깨짐"
+            detail = f"{ref_id} {kind}"
+            return ref_id, f"{detail} ({dep.broken_detail})" if dep.broken_detail else detail
+        return None
+
     def revalidate(self, store: Store, entry_id: str) -> list[Finding]:
         """`entry_id` 수정 후 상위를 전이적으로 재검증한다 (`STR-REG-005`).
 
@@ -130,6 +183,9 @@ class RefGraph:
                 entry.broken = ""
                 entry.broken_detail = ""
         self._persist(store, touched)
+        # 전이는 **저장한 뒤에** 얹는다 — 파생값이라 인덱스에 굳으면 아래가 고쳐진
+        # 뒤에도 남는다. 여기서 내는 것은 이번 수정의 보고용이다 (R5-4).
+        findings.extend(self.propagate_broken())
         return findings
 
     def _persist(self, store: Store, entry_ids: list[str]) -> None:

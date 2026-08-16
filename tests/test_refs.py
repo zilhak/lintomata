@@ -20,6 +20,7 @@ from strictler.refs import (
     Placeholder,
     collect_placeholders,
     expand_config,
+    expand_all,
     expand_env,
     expand_path,
     expand_state,
@@ -548,6 +549,13 @@ _ERROR_PATHS: list[tuple[str, Callable[[], object]]] = [
     ),
     ("STR-STATE-001", lambda: expand_state("${state.__mine}", {"__mine": "x"})),
     ("STR-STATE-002", lambda: expand_state("${state.phase}", {})),
+    # `expand_all` — 스크립트에 넘기는 값의 잔여 참조 (R5-1)
+    (
+        "STR-REF-007",
+        lambda: expand_all(
+            {"p": "${ref.sc_deadbeef}/x"}, config={}, state={}, env={}
+        ),
+    ),
 ]
 
 _UNFILLED_SLOT_C = re.compile(r"(?<!\$)\{(\w+)\}")
@@ -595,3 +603,59 @@ def test_every_fail_site_in_refs_is_exercised() -> None:
     declared = set(_FAIL_SITE_C.findall(source))
     assert declared, "`_fail` 호출부를 하나도 못 찾았다 — 정규식이 낡았다"
     assert declared == {rule_id for rule_id, _ in _ERROR_PATHS}
+
+
+# ── expand_all — 스크립트에 넘기는 값 (R5-1) ─────────────────────────────────
+
+
+def test_expand_all_은_config_state_env_를_그_순서로_푼다() -> None:
+    """**순서가 계약이다.** config·state 값이 `${env.Y}` 를 품을 수 있으므로 env 가
+    마지막이다 — 반대로 하면 config 가 끌고 들어온 `${env.Y}` 가 그대로 남는다."""
+    out = expand_all(
+        {"page": "${config.pagePath}", "at": "${state.__startedAt}"},
+        config={"pagePath": "${env.ROOT}/targets/home.html"},
+        state={"__startedAt": 17},
+        env={"ROOT": "/srv/demo"},
+    )
+    assert out == {"page": "/srv/demo/targets/home.html", "at": 17}
+
+
+def test_expand_all_은_중첩_구조를_재귀한다() -> None:
+    out = expand_all(
+        {"paths": ["${env.ROOT}/a", {"deep": "${env.ROOT}/b"}]},
+        config={},
+        state={},
+        env={"ROOT": "/srv"},
+    )
+    assert out == {"paths": ["/srv/a", {"deep": "/srv/b"}]}
+
+
+def test_expand_all_은_타입을_보존한다() -> None:
+    """문자열 전체가 참조 하나면 값 자체를 준다 — `"2"` 가 아니라 `2`."""
+    out = expand_all({"n": "${config.n}"}, config={"n": 3}, state={}, env={})
+    assert out == {"n": 3}
+
+
+def test_expand_all_은_남은_참조를_STR_REF_007_로_잡는다() -> None:
+    """리터럴로 통과시키면 나중에 엉뚱한 오류로 원인이 뭉개진다."""
+    with pytest.raises(StrictlerError) as exc:
+        expand_all({"p": "${ref.sc_deadbeef}/x"}, config={}, state={}, env={})
+    assert _rule_ids(exc) == ["STR-REF-007"]
+
+
+def test_expand_all_의_미정의_env_는_STR_PATH_002() -> None:
+    with pytest.raises(StrictlerError) as exc:
+        expand_all({"p": "${env.NOPE}/x"}, config={}, state={}, env={})
+    assert _rule_ids(exc) == ["STR-PATH-002"]
+
+
+def test_expand_all_은_target_을_받는다() -> None:
+    """비교 파이프라인은 `targets.<이름>` 이 공통을 이긴다."""
+    out = expand_all(
+        {"s": "${config.script}"},
+        config={"script": "공통", "targets": {"v2": {"script": "브이투"}}},
+        state={},
+        env={},
+        target="v2",
+    )
+    assert out == {"s": "브이투"}

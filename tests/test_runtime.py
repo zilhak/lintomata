@@ -1503,3 +1503,103 @@ def test_이_모듈이_내는_모든_규칙의_슬롯이_채워진다() -> None:
     for rule_id, finding in made.items():
         assert finding.rule_id == rule_id
         assert "{" not in finding.message
+
+
+# ── R5-1. `params` 의 `${env.X}` 전개 ─────────────────────────────────────────
+
+READS_FILE = """
+    from dataclasses import dataclass
+
+    @dataclass
+    class Params:
+        pagePath: str
+
+    @dataclass
+    class Sensum:
+        source: str
+        html: str
+
+    @dataclass
+    class Args:
+        params: Params
+
+    def runNode(args: Args) -> Sensum:
+        with open(args.params.pagePath, encoding="utf-8") as fp:
+            return returnResult(Sensum(source=args.params.pagePath, html=fp.read()))
+"""
+
+
+def _env_in_config_pipeline(project: Project) -> Path:
+    """`config` 값이 `${env.X}` 를 품고, 그 값이 `params` 로 스크립트에 간다."""
+    project.node("read", "sense", project.script("read", READS_FILE))
+    return project.pipeline(
+        "envcfg",
+        config={"pagePath": {"type": "str", "required": True, "path": True}},
+        nodes=[
+            {
+                "id": "read",
+                "source": str(project.root / "nodes" / "read.json"),
+                "params": {"pagePath": "${config.pagePath}"},
+            }
+        ],
+    )
+
+
+def test_config_안의_env_참조가_스크립트까지_전개되어_간다(project: Project) -> None:
+    """**검증과 전달이 같은 문자열을 봐야 한다** (R5-1).
+
+    `checks/pipeline.py` 는 `expand_path` 로 전개해서 검증하는데 `params` 를
+    넘기는 자리가 `expand_env` 를 안 부르면, 규칙을 통과한 값이 스크립트에
+    도달하는 순간 **존재하지 않는 경로**가 된다. 증상이 `FileNotFoundError` 라
+    "대상 파일이 없다" 로 오독된다.
+    """
+    target = write(project.root / "targets" / "home.html", "<main>안녕</main>")
+    path = _env_in_config_pipeline(project)
+    project.env["DEMO_ROOT"] = str(project.root)
+
+    result = project.run(path, {"pagePath": "${env.DEMO_ROOT}/targets/home.html"})
+
+    assert errors(result.findings) == []
+    # 스크립트가 **받은 값** 자체가 전개된 절대경로여야 한다 — 열렸다는 것만으로는
+    # 부족하다 (스크립트가 스스로 전개했을 수도 있으므로).
+    assert result.outcomes["read"].value.source == str(target)
+    assert result.outcomes["read"].value.html == "<main>안녕</main>"
+    assert_four_states(project, path, result)
+
+
+def test_params_에_남은_참조는_STR_REF_007_이다(project: Project) -> None:
+    """전개 후에도 `${` 가 남으면 **리터럴로 통과시키지 않는다** (R5-1).
+
+    `expand_path` 와 같은 논리다 — 통과시키면 나중에 "파일 없음" 으로 원인이 뭉개진다.
+    """
+    path = _env_in_config_pipeline(project)
+
+    result = project.run(path, {"pagePath": "${ref.sc_deadbeef}/x.html"})
+
+    assert {f.rule_id for f in errors(result.findings)} == {"STR-REF-007"}
+    assert_four_states(project, path, result)
+
+
+def test_env_전개는_config_와_state_뒤에_온다(project: Project) -> None:
+    """합성 순서가 계약이다 — `config` → `state` → `env` (R5-1).
+
+    env 를 먼저 풀면 config 가 끌고 들어온 `${env.Y}` 가 그대로 남는다.
+    """
+    project.node("page", "vantage", project.script("page", VANTAGE))
+    path = project.pipeline(
+        "order",
+        config={"url": {"type": "str", "required": True}},
+        nodes=[
+            {
+                "id": "page",
+                "source": str(project.root / "nodes" / "page.json"),
+                "params": {"url": "${config.url}"},
+            }
+        ],
+    )
+    project.env["SITE"] = "https://example.test"
+
+    result = project.run(path, {"url": "${env.SITE}/login"})
+
+    assert errors(result.findings) == []
+    assert result.outcomes["page"].value.url == "https://example.test/login"

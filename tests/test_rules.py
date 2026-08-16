@@ -1,4 +1,4 @@
-"""`rules.py` — 규칙 테이블 58개와 `Finding` 생성 헬퍼."""
+"""`rules.py` — 규칙 테이블 60개와 `Finding` 생성 헬퍼."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ ID_RE = re.compile(r"^STR-[A-Z]+-\d{3}$")
 EXPECTED_COUNTS = {
     "PATH": 4,
     "REF": 7,
-    "GRAPH": 2,
+    "GRAPH": 3,
     "TYPE": 7,
     "CONTRACT": 7,
     "STATE": 7,
@@ -28,9 +28,9 @@ EXPECTED_COUNTS = {
 }
 
 
-def test_rule_count_is_59() -> None:
-    assert len(RULES) == 59
-    assert sum(EXPECTED_COUNTS.values()) == 59
+def test_rule_count_is_60() -> None:
+    assert len(RULES) == 60
+    assert sum(EXPECTED_COUNTS.values()) == 60
 
 
 def test_category_counts_match_rules_md() -> None:

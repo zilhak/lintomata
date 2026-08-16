@@ -327,7 +327,7 @@ def run_pipeline(
         machine=machine,
         runnable=loaded,
         run_node=lambda pn: _run_node(
-            pn, loaded[pn.id], machine, registry, config, path, result
+            pn, loaded[pn.id], machine, registry, config, env, path, result
         ),
         result=result,
     )
@@ -365,6 +365,7 @@ def _run_node(
     machine: StateMachine,
     registry: Any,
     config: Mapping[str, Any],
+    env: Mapping[str, str],
     path: str,
     result: RunResult,
 ) -> NodeOutcome:
@@ -388,7 +389,9 @@ def _run_node(
                 return _errored(node_id, mismatched)
 
         snapshot = machine.snapshot(pn.states)
-        params = refs.expand_state(refs.expand_config(pn.params, config), snapshot)
+        # `config` → `state` → `env` 순으로 끝까지 전개한다 (R5-1). env 를 빠뜨리면
+        # 검증은 전개된 절대경로를 보고 스크립트는 `${env.X}` 원문을 받는다.
+        params = refs.expand_all(pn.params, config=config, state=snapshot, env=env)
         args = node_exec.build_args(
             module, contract, input_value=input_value, params=params, state=snapshot
         )
@@ -414,21 +417,19 @@ def _run_node(
 def _ambiguous_input(pn: PipelineNode, producers: list[str], path: str) -> Finding:
     """서로 다른 앞단 노드를 둘 이상 받았다 — **어느 것이 `Args.input` 인지 모른다.**
 
-    `Args.input` 은 필드 **하나**이고 (`schema.md` 6절) `check_wiring_types` 는
-    `inputs` 하나하나를 그 하나와 대조한다. 그래서 서로 다른 앞단이 둘 이상이면
-    타입은 통과해도 값은 하나만 들어가고 나머지는 조용히 사라진다.
-    **조용히 하나를 고르면 거짓 리포트**가 되므로 오류로 낸다.
+    **정본은 등록 시점의 `checks.pipeline.check_ambiguous_input` 이다** (R5-3).
+    파이프라인 JSON 만 보면 판정이 끝나므로 실행까지 미룰 이유가 없다.
+    여기 남은 것은 **2선 방어**다 — 등록소를 거치지 않고 경로로 직접 가리킨
+    파이프라인처럼 등록 검사를 안 지난 것이 들어올 수 있다.
+
+    **규칙 id 를 붙인다.** 맨 `Finding` 으로 내면 리포트에서 기계적으로 특정할 수
+    없고, 같은 사실이 자리에 따라 다른 모양으로 나온다.
     """
-    return Finding(
-        status="error",
+    return rules.finding(
+        "STR-GRAPH-003",
         path=path,
         node=pn.id,
-        message=(
-            f"서로 다른 앞단 노드를 둘 이상 받았습니다: {', '.join(producers)}\n"
-            "`Args.input` 은 필드 하나라 값도 하나만 받을 수 있습니다. 앞단을 하나로 "
-            "줄이거나, 여럿을 합쳐야 한다면 그 합치는 일을 하는 노드를 앞에 두고 "
-            "그 출력을 받으세요."
-        ),
+        fields={"nodes": ", ".join(producers)},
     )
 
 

@@ -188,12 +188,12 @@ def build_pipeline(nodes: list[dict], targets: list[str], compare_ids: list[str]
     return Pipeline.model_validate(raw)
 
 
-def run(pipeline, config, tmp_path, store: Store | None = None):
+def run(pipeline, config, tmp_path, store: Store | None = None, env: dict | None = None):
     return compare.run_compare_pipeline(
         pipeline,
         config,
         store=store or Store(tmp_path / "home"),
-        env={"HOME": str(tmp_path)},
+        env=env or {"HOME": str(tmp_path)},
         started_at_ms=STARTED_AT,
         path="cmp.json > plan[0] > cmp",
     )
@@ -938,3 +938,74 @@ def test_값_검증_파이프라인을_받으면_오류(tmp_path):
     assert [f.status for f in result.findings] == ["error", "not_run"]
     assert "verify" in result.findings[0].message
     assert report.root == {}
+
+
+# ── R5-1. `params` 의 `${env.X}` 전개 — 값 검증과 **같은 자리, 같은 순서** ────
+
+READS_FILE = """\
+from dataclasses import dataclass
+
+
+@dataclass
+class Params:
+    pagePath: str
+
+
+@dataclass
+class Args:
+    params: Params
+
+
+@dataclass
+class Buttons:
+    count: int
+    source: str
+
+
+def runNode(args: Args) -> Buttons:
+    with open(args.params.pagePath, encoding="utf-8") as fp:
+        return returnResult(Buttons(count=len(fp.read()), source=args.params.pagePath))
+"""
+
+
+def env_config_fixture(tmp_path: Path):
+    """`config` 값이 `${env.DEMO_ROOT}` 를 품고 그 값이 `params` 로 스크립트에 간다."""
+    target = write(tmp_path, "home.html", "<main>안녕</main>")
+    script = write(tmp_path, "reads.py", READS_FILE)
+    nodes = [
+        {
+            "id": "read",
+            "source": node_file(tmp_path, "read", str(script), kind="sense"),
+            "params": {"pagePath": "${config.pagePath}"},
+        }
+    ]
+    pipeline = build_pipeline(nodes, ["alpha", "beta"], ["read"])
+    config = {"pagePath": "${env.DEMO_ROOT}/home.html"}
+    return pipeline, config, target
+
+
+def test_비교도_config_안의_env_참조를_스크립트까지_전개한다(tmp_path):
+    """값 검증만 고치고 여기를 빠뜨리면 **비교에서만** 원문이 스크립트에 간다 (R5-1)."""
+    pipeline, config, target = env_config_fixture(tmp_path)
+    env = {"HOME": str(tmp_path), "DEMO_ROOT": str(tmp_path)}
+
+    result, report = run(pipeline, config, tmp_path, env=env)
+
+    assert [f for f in result.findings if f.status == "error"] == []
+    written = report.model_dump()["read"]
+    assert written["same"] is True
+    # 스크립트가 **받은 값** 자체가 전개된 절대경로여야 한다.
+    assert written["values"]["alpha"]["source"] == str(target)
+    assert written["values"]["beta"]["source"] == str(target)
+    assert_four_states(pipeline, result)
+
+
+def test_비교의_params_에_남은_참조도_STR_REF_007_이다(tmp_path):
+    pipeline, _config, _target = env_config_fixture(tmp_path)
+    env = {"HOME": str(tmp_path), "DEMO_ROOT": str(tmp_path)}
+
+    result, _ = run(pipeline, {"pagePath": "${ref.sc_deadbeef}/x"}, tmp_path, env=env)
+
+    errs = [f for f in result.findings if f.status == "error"]
+    assert {f.rule_id for f in errs} == {"STR-REF-007"}
+    assert_four_states(pipeline, result)

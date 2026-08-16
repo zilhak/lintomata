@@ -61,6 +61,7 @@ __all__ = [
     "expand_path",
     "expand_config",
     "expand_state",
+    "expand_all",
 ]
 
 
@@ -269,9 +270,14 @@ def _fail_not_ref(value: object) -> NoReturn:
     )
 
 
-def expand_env(value: str, env: Mapping[str, str]) -> str:
-    """`${env.X}` 만 전개한다. 미정의 환경변수는 `STR-PATH-002`."""
-    return _substitute(value, "env", lambda name: _env_lookup(name, env))
+def expand_env(value: Any, env: Mapping[str, str]) -> Any:
+    """`${env.X}` 만 전개한다. 미정의 환경변수는 `STR-PATH-002`.
+
+    `expand_config`/`expand_state` 와 같은 전개기를 쓰므로 **리스트·매핑을 재귀**하고
+    문자열 전체가 참조 하나면 타입을 보존한다. `params` 가 중첩 구조일 수 있고,
+    스크립트에 넘어가는 값도 `${env.X}` 를 품을 수 있기 때문이다 (R5-1).
+    """
+    return _expand(value, "env", lambda name: _env_lookup(name, env))
 
 
 def _env_lookup(name: str, env: Mapping[str, str]) -> str:
@@ -428,6 +434,56 @@ def _state_lookup(name: str, state: Mapping[str, Any]) -> Any:
     if name not in state:
         _fail("STR-STATE-002", fields={"names": name})
     return state[name]
+
+
+def expand_all(
+    value: Any,
+    *,
+    config: Mapping[str, Any],
+    state: Mapping[str, Any],
+    env: Mapping[str, str],
+    target: str = "",
+) -> Any:
+    """**스크립트에 넘기는 값**을 끝까지 전개한다 — `config` → `state` → `env` (R5-1).
+
+    `params` 를 스크립트에 넘기는 자리가 `expand_env` 를 안 불러 `${env.X}` 가
+    **원문 그대로 스크립트에 도달했다.** `checks/pipeline.py` 는 `expand_path` 로
+    **전개해서 검증**하므로 검증과 전달이 서로 다른 문자열을 봤고, 증상이
+    `FileNotFoundError` 라 *"대상 파일이 없다"* 로 오독됐다.
+    `schema.md` 3절이 *"이식성은 환경변수가 담당한다"* 를 설계 전제로 두었는데
+    그 전제가 이 자리에서만 깨진 것이다.
+
+    **순서가 계약이다.** `config`·`state` 값이 `${env.Y}` 를 품을 수 있으므로
+    env 가 마지막이다. 반대로 하면 config 가 끌고 들어온 `${env.Y}` 가 그대로 남는다.
+
+    **전개 후에도 `${` 가 남으면 오류다** — `expand_path` 와 같은 논리다.
+    리터럴로 통과시키면 나중에 엉뚱한 오류로 원인이 뭉개진다.
+
+    `target` 은 비교 파이프라인의 target 이름이다 (`expand_config` 와 같은 뜻).
+    """
+    expanded = expand_config(value, config, target)
+    expanded = expand_state(expanded, state)
+    expanded = expand_env(expanded, env)
+    _fail_if_unresolved_deep(expanded, value)
+    return expanded
+
+
+def _fail_if_unresolved_deep(expanded: Any, original: Any) -> None:
+    """전개가 끝난 값에 `${` 가 남았는지 **재귀로** 훑는다.
+
+    문자열 하나에 대한 판정은 `_fail_if_unresolved` 와 같다 — 문법이 깨졌으면
+    `STR-REF-006`, 문법은 정상인데 안 풀렸으면 `STR-REF-007`.
+    """
+    if isinstance(expanded, str):
+        _fail_if_unresolved(expanded, original if isinstance(original, str) else expanded)
+        return
+    if isinstance(expanded, list):
+        for item in expanded:
+            _fail_if_unresolved_deep(item, item)
+        return
+    if isinstance(expanded, Mapping):
+        for item in expanded.values():
+            _fail_if_unresolved_deep(item, item)
 
 
 # ── 전개 엔진 ────────────────────────────────────────────────────────────────

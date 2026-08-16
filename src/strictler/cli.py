@@ -169,10 +169,14 @@ def _marked_index(store: Store) -> tuple[dict[str, RegistryEntry], RefGraph]:
     참조 깨짐은 삭제 시점에 계산할 수 없다 — 지워지는 쪽은 자기를 참조하는 상위를
     모른다. 그래서 조회할 때마다 인덱스에서 다시 판정한다. 검증 깨짐은 반대로
     수정 시점에만 계산되므로 `revalidate` 가 인덱스에 적어둔 것을 그대로 읽는다.
+
+    **그 위에 전이를 얹는다** (R5-4) — 참조 대상이 깨졌으면 상위도 깨진 것이다.
+    Spec 등록 검사는 형태만 보므로 이걸 안 하면 돌릴 수 없는 Spec 이 `○` 로 나온다.
     """
     entries = store.load_index().entries
     graph = RefGraph(entries)
     graph.broken_refs()
+    graph.propagate_broken()
     return entries, graph
 
 
@@ -264,6 +268,10 @@ def cmd_show(args: argparse.Namespace) -> int:
     dependents = graph.dependents(entry.id)
     file_path = store.path_of(entry.id)
     content = store.read(entry.id)
+    # 단위테스트는 노드와 함께 등록된다 — 있는지 없는지가 보여야 `node test <id>` 가
+    # 왜 안 도는지 알 수 있다 (R5-2).
+    test_path = store.test_path(entry.kind, entry.id)
+    has_test = test_path is not None and test_path.is_file()
 
     if args.json:
         detail: dict[str, Any] = entry.model_dump()
@@ -271,6 +279,8 @@ def cmd_show(args: argparse.Namespace) -> int:
         detail["dependencies"] = dependencies
         detail["dependents"] = dependents
         detail["content"] = content
+        if test_path is not None:
+            detail["test"] = str(test_path) if has_test else ""
         print(json.dumps(detail, ensure_ascii=False, indent=2))
     else:
         print(f"{entry.id}  {entry.name}  ({entry.kind})")
@@ -278,6 +288,8 @@ def cmd_show(args: argparse.Namespace) -> int:
         print(f"  해시           {entry.hash}")
         print(f"  등록시각       {entry.registered_at}")
         print(f"  파일           {file_path}")
+        if test_path is not None:
+            print(f"  단위테스트     {test_path if has_test else '없음'}")
         print(f"  참조하는 것    {', '.join(dependencies) or '-'}")
         print(f"  참조하는 상위  {', '.join(dependents) or '-'}")
         print("--- 내용 ---")
@@ -352,10 +364,13 @@ def cmd_node_test(args: argparse.Namespace) -> int:
 
     등록 검사(형식)와 성격이 다르므로 별도 명령이다. `schema.md` 14절.
 
-    테스트 정의는 `<노드파일>.test.json` 이고 **등록 대상이 아니다**(등록되는 것은
-    스크립트·노드·파이프라인·Spec 넷뿐). 그래서 인자를 두 가지로 받는다:
-    노드 id 면 등록소의 노드 파일 옆(`nodes/<id>.test.json`)을 보고,
-    파일 경로면 그 파일을 그대로 쓴다.
+    테스트 정의는 `<노드파일>.test.json` 이고 **등록 종류가 아니라 노드 정의 묶음의
+    일부다**(등록되는 종류는 스크립트·노드·파이프라인·Spec 넷으로 고정).
+    그래서 `node add`/`update` 가 **노드 파일 옆의 그것을 함께 복사한다** (R5-2).
+
+    인자는 두 가지로 받는다: 노드 id 면 등록소의 노드 파일 옆
+    (`nodes/<id>.test.json`)을 보고, 파일 경로면 그 파일을 그대로 쓴다.
+    **등록하지 않고 돌리는 경로를 남겨두는 것**이 후자다.
     """
     from strictler.testing import harness
 
@@ -377,13 +392,14 @@ def _node_test_path(store: Store, value: str) -> Path:
     """`node test` 의 인자를 테스트 파일 경로로 푼다."""
     if value.startswith(_ID_PREFIX["node"]):
         entry = _entry_of(store, value, "node")
-        path = store.path_of(entry.id).with_suffix(".test.json")
-        if not path.is_file():
+        path = store.test_path(entry.kind, entry.id)
+        if path is None or not path.is_file():
             raise StrictlerError(
-                f"노드 단위테스트 파일이 없습니다: {path}\n"
-                "테스트 정의는 `<노드파일>.test.json` 이고 등록 대상이 아닙니다. "
-                "그 자리에 두거나 파일 경로를 직접 주세요: "
-                "`strictler node test /abs/path/detect_buttons.test.json`"
+                f"이 노드에는 단위테스트가 등록돼 있지 않습니다: {entry.id}\n"
+                "테스트 정의는 `<노드파일>.test.json` 이고 **노드와 함께 복사된다** — "
+                "노드 파일 옆에 그 이름으로 두고 `strictler node add`/`update` 를 "
+                "다시 하면 등록소에 함께 들어갑니다. 등록 없이 돌리려면 파일 경로를 "
+                "직접 주세요: `strictler node test /abs/path/detect_buttons.test.json`"
             )
         return path
 

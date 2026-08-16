@@ -430,6 +430,37 @@ def test_잘못된_노드를_add_하면_등록되지_않는다(project: Project)
     assert project.ids("node") == []
 
 
+def test_앞단이_모호한_파이프라인은_add_에서_걸린다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**돌리기 전에 잡아 자기 수정 신호를 준다** (R5-3, `schema.md` 6절).
+
+    전에는 등록이 통과하고 `check` 에서 **규칙 id 없는 오류**로 터졌다 —
+    리포트에서 기계적으로 특정할 수 없었다.
+    """
+    page, buttons, check = three_nodes(project)
+    nodes = wiring(page, buttons, check)
+    nodes[2]["inputs"] = {"percept": "buttons", "other": "page"}
+    ambiguous = project.pipeline("ambiguous", nodes)
+
+    assert project.run("pipeline", "add", str(ambiguous)) == 2
+
+    out = capsys.readouterr().out
+    assert "STR-GRAPH-003" in rule_ids(out)
+    assert project.ids("pipeline") == []
+
+
+def test_같은_앞단을_두_이름으로_받는_파이프라인은_그대로_등록된다(
+    project: Project,
+) -> None:
+    """값은 하나이므로 모호할 것이 없다 — 걸리는 것은 **서로 다른 노드**뿐이다."""
+    page, buttons, check = three_nodes(project)
+    nodes = wiring(page, buttons, check)
+    nodes[2]["inputs"] = {"percept": "buttons", "also": "buttons"}
+
+    assert project.run("pipeline", "add", str(project.pipeline("twice", nodes))) == 0
+
+
 def test_없는_파일을_add_하면_오류다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -480,6 +511,58 @@ def test_update_는_id_를_유지하고_상위를_전이적으로_재검증한�
     assert project.run("pipeline", "list") == 1
     listed = capsys.readouterr().out
     assert "검증 깨짐" in listed and "STR-TYPE-004" in listed
+
+
+def test_참조_대상이_검증_깨짐이면_상위도_깨짐으로_나온다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**깨짐은 전이적이다** (R5-4).
+
+    Spec 등록 검사는 형태만 보므로 재검증이 그냥 통과한다 — 그런데 그 Spec 은
+    **돌릴 수 없다.** `spec list` 만 보는 사람에게 `○` 는 거짓말이다.
+    """
+    ids = register_all(project)
+    assert project.run("script", "update", ids["script"], str(project.script("page", VANTAGE_TITLE))) == 1
+    capsys.readouterr()
+
+    assert project.run("spec", "list") == 1
+    listed = capsys.readouterr().out
+    assert "검증 깨짐" in listed
+    assert ids["pipeline"] in listed  # 어디서 깨졌는지가 보인다
+
+    assert project.run("spec", "show", ids["spec"]) == 1
+    assert "검증 깨짐" in capsys.readouterr().out
+
+    # **저장하지는 않는다** — 아래가 고쳐지면 그 자리에서 사라져야 하는 파생값이다.
+    assert project.store.show(ids["spec"]).broken == ""
+
+
+def test_아래가_고쳐지면_상위의_전이_표시도_사라진다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ids = register_all(project)
+    assert project.run("script", "update", ids["script"], str(project.script("page", VANTAGE_TITLE))) == 1
+    assert project.run("script", "update", ids["script"], str(project.script("page", VANTAGE))) == 0
+    capsys.readouterr()
+
+    assert project.run("spec", "list") == 0
+    assert "검증 깨짐" not in capsys.readouterr().out
+
+
+def test_참조_대상이_삭제돼도_상위의_상위까지_번진다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """참조 깨짐도 같은 논리다 — 사라진 것을 참조하는 파이프라인을 참조하는 Spec 도
+    돌릴 수 없다. 다만 Spec 자신의 참조는 멀쩡하므로 표시는 **검증 깨짐**이다."""
+    ids = register_all(project)
+    assert project.run("node", "remove", ids["node"]) == 1
+    capsys.readouterr()
+
+    assert project.run("pipeline", "list") == 1
+    assert "참조 깨짐" in capsys.readouterr().out
+
+    assert project.run("spec", "list") == 1
+    assert "검증 깨짐" in capsys.readouterr().out
 
 
 def test_상위가_다시_통과하면_검증_깨짐_표시가_걷힌다(
@@ -726,6 +809,139 @@ def test_check_는_시각을_스스로_주입한다(
     assert seen["spec_name"] == "login.json"
 
 
+# ── node add/update/remove 가 옆의 `.test.json` 을 함께 다룬다 (R5-2) ────────
+
+
+def node_with_test(project: Project) -> tuple[Path, Path]:
+    """노드 파일과 **그 옆의** `<노드파일>.test.json` 을 만든다."""
+    node = project.node("page", "vantage", project.script("page", VANTAGE))
+    test = write_json(
+        node.with_suffix(".test.json"),
+        {
+            "node": str(node),
+            "cases": [
+                {
+                    "name": "url 을 그대로 담는다",
+                    "args": {"params": {"url": "https://x"}},
+                    "expect": {"url": "https://x"},
+                }
+            ],
+        },
+    )
+    return node, test
+
+
+def test_node_add_가_옆의_test_json_을_함께_복사한다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**등록소는 도구가 관리하는 영역**이다 (R5-2).
+
+    함께 복사하지 않으면 `node test <id>` 가 사용자가 등록소 디렉터리에 손으로
+    파일을 넣어야만 성립하고, *"등록 후 원본을 지워도 된다"* 를 따르면 단위테스트를
+    다시 돌릴 방법이 없어진다.
+    """
+    node, test = node_with_test(project)
+    assert project.run("node", "add", str(node)) == 0
+    node_id = project.only("node")
+    capsys.readouterr()
+
+    stored = project.store.test_path("node", node_id)
+    assert stored is not None and stored.is_file()
+    assert project.store.has_test(node_id)
+
+    # 손으로 등록소에 넣지 않아도 `node test <id>` 가 돈다 — 대역 없이 진짜 하네스로.
+    assert project.run("node", "test", node_id) == 0
+    assert "pass 1" in capsys.readouterr().out
+
+
+def test_ref_로_노드를_가리킨_테스트는_원본을_지워도_돈다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """*"등록 후 원본을 지워도 된다"* 가 단위테스트에도 성립한다 (R5-2).
+
+    테스트가 노드를 `${ref.<id>}` 로 가리키면 등록소 안에서 완결된다 — 그래서
+    id 를 받은 뒤 테스트를 붙여 `update` 하는 것이 자연스러운 저작 순서다.
+    """
+    node, test = node_with_test(project)
+    assert project.run("node", "add", str(node)) == 0
+    node_id = project.only("node")
+
+    write_json(
+        test,
+        {
+            "node": f"${{ref.{node_id}}}",
+            "cases": [
+                {
+                    "name": "url 을 그대로 담는다",
+                    "args": {"params": {"url": "https://x"}},
+                    "expect": {"url": "https://x"},
+                }
+            ],
+        },
+    )
+    assert project.run("node", "update", node_id, str(node)) == 0
+    capsys.readouterr()
+
+    node.unlink()
+    test.unlink()
+    assert project.run("node", "test", node_id) == 0
+    assert "pass 1" in capsys.readouterr().out
+
+
+def test_테스트가_없는_노드도_정상_등록된다(project: Project) -> None:
+    """**없으면 그냥 없는 것이다 — 오류가 아니다.**"""
+    node = project.node("page", "vantage", project.script("page", VANTAGE))
+    assert project.run("node", "add", str(node)) == 0
+    assert project.store.has_test(project.only("node")) is False
+
+
+def test_node_show_가_단위테스트_유무를_드러낸다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    node, _test = node_with_test(project)
+    assert project.run("node", "add", str(node)) == 0
+    node_id = project.only("node")
+    capsys.readouterr()
+
+    assert project.run("node", "show", node_id) == 0
+    assert "단위테스트" in capsys.readouterr().out
+
+
+def test_node_update_가_테스트를_따라_교체하고_없으면_걷는다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    node, test = node_with_test(project)
+    assert project.run("node", "add", str(node)) == 0
+    node_id = project.only("node")
+
+    # 테스트만 고쳐 다시 등록하면 등록소의 것도 따라온다.
+    write_json(test, {"node": str(node), "cases": []})
+    assert project.run("node", "update", node_id, str(node)) == 0
+    stored = project.store.test_path("node", node_id)
+    assert stored is not None
+    assert json.loads(stored.read_text(encoding="utf-8"))["cases"] == []
+
+    # 원본에서 사라지면 등록소에서도 걷는다 — 등록된 적 없는 테스트가 남으면 유령이다.
+    test.unlink()
+    assert project.run("node", "update", node_id, str(node)) == 0
+    assert project.store.has_test(node_id) is False
+    capsys.readouterr()
+
+
+def test_node_remove_는_테스트도_함께_지운다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    node, _test = node_with_test(project)
+    assert project.run("node", "add", str(node)) == 0
+    node_id = project.only("node")
+    stored = project.store.test_path("node", node_id)
+    assert stored is not None and stored.is_file()
+
+    assert project.run("node", "remove", node_id) == 0
+    assert not stored.exists()
+    capsys.readouterr()
+
+
 # ── node test — 실제 실행 계열 배선 ──────────────────────────────────────────
 
 
@@ -795,7 +1011,7 @@ def test_test_json_이_없으면_오류다(
     capsys.readouterr()
 
     assert project.run("node", "test", node_id) == 2
-    assert "단위테스트 파일이 없습니다" in capsys.readouterr().err
+    assert "단위테스트가 등록돼 있지 않습니다" in capsys.readouterr().err
 
     assert project.run("node", "test", str(project.root / "없다.test.json")) == 2
     assert "단위테스트 파일이 없습니다" in capsys.readouterr().err

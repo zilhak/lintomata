@@ -73,6 +73,7 @@ __all__ = [
     "build_dag",
     "check_pipeline",
     "check_cycle",
+    "check_ambiguous_input",
     "check_wiring_types",
     "check_state_mapping",
     "check_transitions",
@@ -174,6 +175,35 @@ def check_cycle(
                         "STR-GRAPH-002", path=source_path, node=nid, fields={"name": nid}
                     )
                 )
+    return findings
+
+
+def check_ambiguous_input(pipeline: Pipeline, source_path: str) -> list[Finding]:
+    """한 노드의 `inputs` 가 **서로 다른 앞단**을 둘 이상 가리키는지 (`STR-GRAPH-003`).
+
+    `Args.input` 은 필드 **하나**다 (`schema.md` 6절). 서로 다른 앞단이 둘 이상이면
+    타입은 통과해도 값은 하나만 들어가고 나머지는 조용히 사라진다 —
+    **조용히 하나를 고르면 거짓 리포트**다.
+
+    **등록 시점에 잡는다** (R5-3). 파이프라인 JSON 만 보면 판정이 끝나므로
+    실행까지 미룰 이유가 없다. `schema.md` 6절이 형식 제한의 목적으로
+    *"돌리기 전에 잡아 자기 수정 신호를 준다"* 를 못 박았다.
+
+    ⚠ **같은 노드를 여러 이름으로 가리키는 것은 정상이다** — 값은 하나이므로
+    모호할 것이 없다. 걸리는 것은 **서로 다른 노드**가 둘 이상일 때뿐이다.
+    """
+    findings: list[Finding] = []
+    for pn in pipeline.nodes:
+        producers = list(dict.fromkeys(pn.inputs.values()))
+        if len(producers) > 1:
+            findings.append(
+                rules.finding(
+                    "STR-GRAPH-003",
+                    path=source_path,
+                    node=pn.id,
+                    fields={"nodes": ", ".join(producers)},
+                )
+            )
     return findings
 
 
@@ -807,6 +837,7 @@ def check_pipeline(
     driven = {transition.after for transition in pipeline.transitions}
     driven |= set(pipeline.compare)
     findings.extend(check_cycle(dag, source_path, exempt=driven))
+    findings.extend(check_ambiguous_input(pipeline, source_path))
     findings.extend(check_state_mapping(pipeline, contracts, source_path))
     findings.extend(check_transitions(pipeline, source_path))
     findings.extend(check_config_decls(pipeline, source_path))

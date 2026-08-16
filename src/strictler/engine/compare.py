@@ -159,6 +159,7 @@ def run_compare_pipeline(
         prepared=prepared,
         result=result,
         machine=machine,
+        env=env,
         path=path,
     )
     return _close(pipeline, result, path), build_compare_report(values)
@@ -374,6 +375,7 @@ def _walk(
     prepared: _Prepared,
     result: RunResult,
     machine: StateMachine,
+    env: Mapping[str, str],
     path: str,
 ) -> dict[str, dict[str, Any]]:
     """노드마다 target 전부를 돌리고 취합한다.
@@ -394,6 +396,7 @@ def _walk(
             registry=prepared.registry,
             result=result,
             machine=machine,
+            env=env,
             path=path,
         )
         if outputs is None:
@@ -506,6 +509,7 @@ def _run_targets(
     registry: TypeRegistry,
     result: RunResult,
     machine: StateMachine,
+    env: Mapping[str, str],
     path: str,
 ) -> tuple[dict[str, Any] | None, list[Finding]]:
     """한 노드의 target 별 스크립트를 전부 돌려 `{target: 출력값}` 으로 취합한다.
@@ -534,7 +538,7 @@ def _run_targets(
         )
 
         params, param_findings = _params_for(
-            pn, target_configs[target], target, state, path=path
+            pn, target_configs[target], target, state, env=env, path=path
         )
         findings.extend(param_findings)
         if params is None:
@@ -605,7 +609,12 @@ def _run_targets(
 
 
 def _producer_of(pn: PipelineNode, *, path: str) -> tuple[str, list[Finding]]:
-    """이 노드에 값을 주는 앞단 노드. **target 과 무관한 배선 판정**이다."""
+    """이 노드에 값을 주는 앞단 노드. **target 과 무관한 배선 판정**이다.
+
+    **정본은 등록 시점의 `checks.pipeline.check_ambiguous_input`(`STR-GRAPH-003`)**
+    이고 여기는 2선 방어다 (R5-3). 값 검증(`runtime._ambiguous_input`)과 **같은
+    규칙 id 로** 낸다 — 같은 사실이 엔진에 따라 다른 모양으로 나오면 안 된다.
+    """
     producers: list[str] = []
     for producer in pn.inputs.values():
         if producer not in producers:
@@ -614,16 +623,11 @@ def _producer_of(pn: PipelineNode, *, path: str) -> tuple[str, list[Finding]]:
         return "", []
     if len(producers) > 1:
         return "", [
-            Finding(
-                status="error",
+            rules.finding(
+                "STR-GRAPH-003",
                 path=path,
                 node=pn.id,
-                message=(
-                    "`inputs` 가 서로 다른 앞단 노드 "
-                    f"{', '.join(producers)} 를 가리킵니다.\n"
-                    "`Args.input` 은 값 하나입니다 — 노드 하나에서만 입력을 받도록 "
-                    "배선하고, 여러 앞단이 필요하면 합치는 노드를 하나 두세요."
-                ),
+                fields={"nodes": ", ".join(producers)},
             )
         ]
     return producers[0], []
@@ -635,16 +639,21 @@ def _params_for(
     target: str,
     state: Mapping[str, Any],
     *,
+    env: Mapping[str, str],
     path: str,
 ) -> tuple[dict[str, Any] | None, list[Finding]]:
-    """`params` 의 `${config.X}` / `${state.X}` 를 이 target 기준으로 전개한다.
+    """`params` 를 이 target 기준으로 **끝까지** 전개한다 — `config` → `state` → `env`.
 
     **`params` 는 target 별로 갈린다** — 스크립트가 갈라지니 거기 필요한 값도 갈라진다.
     없는 이름은 `STR-CMP-004` 다 (`targets.<이름>` 에도 공통에도 없다).
+
+    **env 전개는 값 검증과 같은 자리에서 같은 순서로 한다** (R5-1) — 여기만 빠지면
+    비교 파이프라인에서만 `${env.X}` 가 원문으로 스크립트에 도달한다.
     """
     try:
-        expanded = refs.expand_config(dict(pn.params), config, target)
-        expanded = refs.expand_state(expanded, state)
+        expanded = refs.expand_all(
+            dict(pn.params), config=config, state=state, env=env, target=target
+        )
     except StrictlerError as exc:
         return None, node_checks.findings_of(exc, path=path, node=pn.id)
     return dict(expanded), []

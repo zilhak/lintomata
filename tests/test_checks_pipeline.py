@@ -125,6 +125,42 @@ def test_transition_driver_is_not_orphan():
     assert findings == []
 
 
+# ── check_ambiguous_input (R5-3) ─────────────────────────────────────────────
+
+
+def test_서로_다른_앞단_둘은_등록_시점에_걸린다():
+    """**돌리기 전에 잡는다** — 파이프라인 JSON 만 봐도 판정이 끝난다 (R5-3).
+
+    `Args.input` 은 필드 하나라 값도 하나만 들어가고 나머지는 조용히 사라진다.
+    실행까지 미루면 **규칙 id 없는 오류**로 터져 리포트에서 특정할 수 없다.
+    """
+    findings = pipe.check_ambiguous_input(
+        make(nodes=[n("a"), n("b"), n("c", inputs={"x": "a", "y": "b"})]), "p.json"
+    )
+    assert ids(findings) == ["STR-GRAPH-003"]
+    assert findings[0].node == "c"
+    assert "a, b" in findings[0].message
+
+
+def test_같은_노드를_여러_이름으로_받는_것은_정상이다():
+    """값은 하나이므로 모호할 것이 없다 — 걸리는 것은 **서로 다른 노드**뿐이다."""
+    assert (
+        pipe.check_ambiguous_input(
+            make(nodes=[n("a"), n("c", inputs={"x": "a", "y": "a"})]), "p.json"
+        )
+        == []
+    )
+
+
+def test_앞단이_하나거나_없으면_걸리지_않는다():
+    assert (
+        pipe.check_ambiguous_input(
+            make(nodes=[n("a"), n("b", inputs={"x": "a"})]), "p.json"
+        )
+        == []
+    )
+
+
 # ── check_wiring_types ───────────────────────────────────────────────────────
 
 
@@ -1063,6 +1099,7 @@ def test_recheck_resolved_does_not_silently_pass_an_unfilled_script(
         ("STR-REF-005", {"name": "x"}),
         ("STR-GRAPH-001", {"cycle": "a → a"}),
         ("STR-GRAPH-002", {"name": "x"}),
+        ("STR-GRAPH-003", {"nodes": "a, b"}),
         ("STR-TYPE-004", {"out": "a", "in": "b"}),
         ("STR-TYPE-005", {"type": "dict"}),
         ("STR-STATE-001", {"name": "__x"}),
