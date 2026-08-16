@@ -5,7 +5,7 @@
 그러니 이 문서는 소개글이 아니라 **따라 하는 순서와 판단 기준**이다.
 
 - **레퍼런스는 [`docs/schema.md`](schema.md)** — 필드 목록·문법·계약의 정본이다. 여기서 되풀이하지 않고 링크한다.
-- **규칙 id 는 [`docs/rules.md`](rules.md)** — 64개 전체와 각 규칙의 `guide`.
+- **규칙 id 는 [`docs/rules.md`](rules.md)** — 69개 전체와 각 규칙의 `guide`.
 - **여기서 인용하는 파일은 전부 [`examples/home-check`](../examples/home-check)** 에 실재한다.
   이 문서의 명령과 출력은 **실제로 돌려서 받은 것**이다.
 
