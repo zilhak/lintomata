@@ -82,6 +82,7 @@ def test_store_creates_layout(store: Store, home: Path) -> None:
 
 def test_new_id_prefix_per_kind() -> None:
     assert new_id("script").startswith("sc_")
+    assert new_id("library").startswith("lb_")
     assert new_id("node").startswith("nd_")
     assert new_id("pipeline").startswith("pl_")
     assert new_id("spec").startswith("sp_")
@@ -90,11 +91,13 @@ def test_new_id_prefix_per_kind() -> None:
 
 def test_add_issues_prefixed_id_per_kind(store: Store, tmp_path: Path) -> None:
     script = write(tmp_path / "detect.py", SCRIPT_SRC)
+    library = write(tmp_path / "buttons.py", "def is_button(tag):\n    return True\n")
     node = write(tmp_path / "detect.json", '{"type": "perceive"}')
     pipeline = write(tmp_path / "flow.json", '{"info": {}}')
     spec = write(tmp_path / "login.json", '{"plan": []}')
 
     assert store.add("script", script).id.startswith("sc_")
+    assert store.add("library", library).id.startswith("lb_")
     assert store.add("node", node).id.startswith("nd_")
     assert store.add("pipeline", pipeline).id.startswith("pl_")
     assert store.add("spec", spec).id.startswith("sp_")

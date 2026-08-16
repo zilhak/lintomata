@@ -14,6 +14,7 @@
 → AI 저작 워크플로우의 안전망이 여기 있다. **잘못 쓴 순간 걸리고, 돌려보기 전에 자기 수정한다.**
 
 - `script` — 스크립트 AST 검사 (노드 계약·타입·금지 패턴)
+- `library` — 라이브러리 AST 검사 (금지 패턴은 같게, 노드 계약은 아예 없이)
 - `node` — 노드 JSON 로드와 검증
 - `pipeline` — 파이프라인 JSON 로드와 검증 (DAG·배선 타입·상태 매핑·비교 계약)
 - `reachability` — 도달 가능성 판정기
@@ -47,6 +48,7 @@ def check_registration(kind: EntryKind, source: Path, store: Store) -> list[Find
     파일을 못 읽는 것은 **위반이 아니라 도구가 못 돈 것**이므로 `StrictlerError` 다
     (`schema.md` 9절). 반면 내용이 규칙에 어긋나는 것은 전부 `Finding` 이다.
     """
+    from strictler.checks import library as library_checks
     from strictler.checks import node as node_checks
     from strictler.checks import pipeline as pipeline_checks
     from strictler.checks import script as script_checks
@@ -59,6 +61,13 @@ def check_registration(kind: EntryKind, source: Path, store: Store) -> list[Find
         # 등록소가 아는 선언을 함께 넘긴다 — `uv tool install --with` 는 선언적이라
         # 안내 명령이 완전하지 않으면 **다른 스크립트의 의존성을 지운다**.
         return script_checks.check_script(
+            text, str(path), known_dependencies=store.declared_dependencies()
+        )
+
+    if kind == "library":
+        # 라이브러리는 **노드가 아니다** — 계약(`runNode`/`Args`/출력 타입)을 묻지
+        # 않는다. 대신 금지 패턴은 스크립트와 똑같이 받는다 (`schema.md` 6.5절).
+        return library_checks.check_library(
             text, str(path), known_dependencies=store.declared_dependencies()
         )
 

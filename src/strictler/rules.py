@@ -1,7 +1,8 @@
 """검사 규칙 테이블 — `STR-<CATEGORY>-<NNN>`.
 
-`rules.md` 전체가 근거다. 규칙 64개 (PATH 4 / REF 7 / GRAPH 3 / TYPE 7 /
-CONTRACT 7 / STATE 7 / BAN 4 / DEP 3 / TOOL 2 / CONFIG 3 / CMP 4 / TEST 8 / REG 5).
+`rules.md` 전체가 근거다. 규칙 69개 (PATH 4 / REF 7 / GRAPH 3 / TYPE 7 /
+CONTRACT 7 / STATE 7 / BAN 4 / DEP 3 / TOOL 2 / CONFIG 3 / CMP 4 / TEST 8 / REG 5 /
+LIB 5).
 **늘어나는 것이 전제다** — 카테고리별 독립 번호 공간, 번호 재사용 금지,
 폐기해도 `status: deprecated` 로 남긴다.
 
@@ -41,9 +42,16 @@ __all__ = [
 ]
 
 
-RuleWhen = Literal["node-register", "pipeline-register", "run", "test", "list"]
+RuleWhen = Literal[
+    "node-register", "library-register", "pipeline-register", "run", "test", "list"
+]
 """규칙이 도는 시점. `rules.md` 2절의 `when` 열 —
-N=노드 등록, P=파이프라인 등록, R=실행, T=단위테스트, 그리고 목록 표시 전용(REG-004/005)."""
+N=노드 등록, **LB=라이브러리 등록**, P=파이프라인 등록, R=실행, T=단위테스트,
+그리고 목록 표시 전용(REG-004/005).
+
+**라이브러리 등록이 별도 시점인 이유**는 검사 대상이 다르기 때문이다 — 라이브러리에는
+`runNode` 도 `Args` 도 없어 노드 계약 검사가 통째로 해당 없고, 대신 노드에는 없는
+제한(중첩 금지·dataclass 금지)이 걸린다 (`schema.md` 6.5절)."""
 
 RuleStatus = Literal["active", "deprecated"]
 
@@ -99,6 +107,7 @@ def _slots_of(*templates: str) -> tuple[str, ...]:
 
 # 시점 약어 — `rules.md` 2절 표의 `when` 열 그대로.
 _N: RuleWhen = "node-register"
+_LB: RuleWhen = "library-register"
 _P: RuleWhen = "pipeline-register"
 _R: RuleWhen = "run"
 _T: RuleWhen = "test"
@@ -164,9 +173,9 @@ _TABLE: tuple[Rule, ...] = (
         "STR-REF-001",
         "script-not-found",
         (_N,),
-        "노드의 `script` 를 찾을 수 없습니다: {script}",
-        "노드의 `script` 는 등록된 스크립트(`${ref.sc_...}`) 또는 "
-        "실재하는 파일 경로여야 합니다",
+        "노드가 가리키는 파일을 찾을 수 없습니다: {script}",
+        "노드의 `script` 와 `libraries` 값은 등록된 것(`${ref.sc_...}` / "
+        "`${ref.lb_...}`) 또는 실재하는 파일 경로여야 합니다",
     ),
     _rule(
         "STR-REF-002",
@@ -641,7 +650,7 @@ _TABLE: tuple[Rule, ...] = (
         (_N, _P),
         "참조의 접두가 그 자리가 요구하는 종류와 다릅니다.",
         "이 자리에는 {expected} 가 와야 합니다. 준 것: {given} "
-        "(접두 `sc_`=스크립트 `nd_`=노드 `pl_`=파이프라인 `sp_`=Spec)",
+        "(접두 `sc_`=스크립트 `lb_`=라이브러리 `nd_`=노드 `pl_`=파이프라인 `sp_`=Spec)",
     ),
     _rule(
         "STR-REG-004",
@@ -659,11 +668,60 @@ _TABLE: tuple[Rule, ...] = (
         "참조 대상이 수정되어 이 구성의 검증이 무효화됐습니다. 실패한 규칙: {rule}. "
         "이 요소를 고쳐 다시 `update` 하세요",
     ),
+    # ── LIB — 라이브러리 (`schema.md` 6.5절) ───────────────────────────
+    _rule(
+        "STR-LIB-001",
+        "library-slot-unwired",
+        (_N,),
+        "스크립트가 요구하는 라이브러리 슬롯이 노드에 배선되지 않았습니다: {names}",
+        "스크립트의 `from strictler_lib import <이름>` 은 **능력 선언**("
+        "\"이 슬롯이 필요합니다\")이고, 그 슬롯에 무엇을 쓸지는 **노드가** 정합니다. "
+        "노드 JSON 에 `\"libraries\": { \"<이름>\": \"${ref.lb_...}\" }` 를 넣으세요 "
+        "— 절대경로(`${env.X}` 포함)도 됩니다. 배선이 빠진 슬롯: {names}",
+    ),
+    _rule(
+        "STR-LIB-002",
+        "library-slot-unused",
+        (_N,),
+        "노드가 배선한 라이브러리 슬롯을 스크립트가 쓰지 않습니다: {names}",
+        "노드의 `libraries` 는 스크립트가 `from strictler_lib import <이름>` 으로 "
+        "요구한 슬롯에만 답합니다. 쓰지 않는 배선은 참조 그래프만 넓혀 "
+        "**라이브러리를 고칠 때 상관없는 노드까지 재검증**하게 만듭니다. "
+        "그 배선을 빼거나, 스크립트에서 실제로 쓰세요. 남는 배선: {names}",
+    ),
+    _rule(
+        "STR-LIB-003",
+        "library-nested-import",
+        (_LB,),
+        "라이브러리가 다른 라이브러리를 import 합니다: {name}",
+        "라이브러리는 **한 층뿐**입니다 — 라이브러리끼리 import 를 허용하면 "
+        "그때부터 패키지 매니저를 만들게 됩니다. 그 함수를 이 파일 안에 두거나, "
+        "쓰는 쪽 스크립트가 두 슬롯을 각각 배선하세요",
+    ),
+    _rule(
+        "STR-LIB-004",
+        "library-dataclass-forbidden",
+        (_LB,),
+        "라이브러리가 `dataclass` 를 선언했습니다: {name}",
+        "v1 의 라이브러리는 **함수만** 제공합니다. 노드 간 계약 타입이 스크립트 밖에서 "
+        "생기면 계약 추출이 파일 하나만 파싱하므로 타입 레지스트리에 구멍이 납니다. "
+        "이 dataclass 는 그것을 쓰는 **스크립트로 옮기세요**",
+    ),
+    _rule(
+        "STR-LIB-005",
+        "library-import-form",
+        (_N,),
+        "`strictler_lib` 를 허용되지 않은 형태로 import 했습니다: {form}",
+        "허용되는 형태는 **모듈 최상단의 `from strictler_lib import <이름>`** "
+        "하나뿐입니다. `import strictler_lib` 나 `from strictler_lib.<x> import y`, "
+        "`import *`, 함수 안에서의 import 는 **슬롯을 정적으로 뽑을 수 없어** "
+        "배선 검사가 무의미해집니다",
+    ),
 )
 
 
 RULES: dict[str, Rule] = {rule.id: rule for rule in _TABLE}
-"""규칙 id → 규칙. `rules.md` 2절의 64개."""
+"""규칙 id → 규칙. `rules.md` 2절의 69개."""
 
 if len(RULES) != len(_TABLE):  # pragma: no cover - 테이블 오타 방지용 자기 검증
     raise StrictlerError("규칙 테이블에 중복 id 가 있습니다")

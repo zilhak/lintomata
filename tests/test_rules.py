@@ -1,4 +1,4 @@
-"""`rules.py` — 규칙 테이블 64개와 `Finding` 생성 헬퍼."""
+"""`rules.py` — 규칙 테이블 69개와 `Finding` 생성 헬퍼."""
 
 from __future__ import annotations
 
@@ -26,12 +26,13 @@ EXPECTED_COUNTS = {
     "CMP": 4,
     "TEST": 8,
     "REG": 5,
+    "LIB": 5,
 }
 
 
-def test_rule_count_is_64() -> None:
-    assert len(RULES) == 64
-    assert sum(EXPECTED_COUNTS.values()) == 64
+def test_rule_count_is_69() -> None:
+    assert len(RULES) == 69
+    assert sum(EXPECTED_COUNTS.values()) == 69
 
 
 def test_category_counts_match_rules_md() -> None:
@@ -101,6 +102,12 @@ def test_rules_for_when() -> None:
     list_ids = {rule.id for rule in rules_for("list")}
     assert list_ids == {"STR-REG-004", "STR-REG-005"}
 
+    # 라이브러리 등록은 **검사 대상이 다르다** — 노드 계약은 아예 안 보고,
+    # 대신 노드에는 없는 제한(중첩 금지·dataclass 금지)이 걸린다.
+    library_ids = {rule.id for rule in rules_for("library-register")}
+    assert library_ids == {"STR-LIB-003", "STR-LIB-004"}
+    assert "STR-CONTRACT-001" not in library_ids
+
     # TEST 카테고리는 단위테스트 실행 중에 나는 것이지만 `STR-TEST-008` 만은
     # **호출 자체를 판정**하는 규칙이라 `run` 이다 (`rules.md` 2절).
     test_ids = {rule.id for rule in rules_for("test")}
@@ -111,7 +118,14 @@ def test_rules_for_when() -> None:
 
 def test_rules_for_covers_every_rule() -> None:
     seen: set[str] = set()
-    for when in ("node-register", "pipeline-register", "run", "test", "list"):
+    for when in (
+        "node-register",
+        "library-register",
+        "pipeline-register",
+        "run",
+        "test",
+        "list",
+    ):
         seen |= {rule.id for rule in rules_for(when)}
     assert seen == set(RULES)
 

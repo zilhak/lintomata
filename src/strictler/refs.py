@@ -85,6 +85,7 @@ _BRACE_C = re.compile(r"\$\{[^{}]*\}")
 
 _KIND_LABEL: dict[EntryKind, str] = {
     "script": "스크립트(`sc_`)",
+    "library": "라이브러리(`lb_`)",
     "node": "노드(`nd_`)",
     "pipeline": "파이프라인(`pl_`)",
     "spec": "Spec(`sp_`)",

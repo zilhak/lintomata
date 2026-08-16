@@ -10,7 +10,7 @@ Step 1 통합에서 남의 모듈을 stub 으로 끼고 돌린 탓에 규칙 슬
 진짜 하네스로 한 번만 돌렸으면 드러났다 — 그래서 대역을 벗겼다 (R6-2).
 
 짚는 것:
-  - **CRUD 넷이 종류 4개 모두에 대해 도는가**
+  - **CRUD 넷이 종류 5개 모두에 대해 도는가**
   - **잘못된 것을 `add` 하면 등록소에 안 들어가는가**
   - **`update` 후 id 가 유지되고 상위가 전이적으로 재검증되는가**
   - **`remove` 후 `list` 가 참조 깨짐을 표시하는가**
@@ -233,6 +233,20 @@ BROKEN = """
         return Scene(url="x")
 """
 
+LIBRARY = """
+    \"\"\"여러 스크립트가 나눠 쓰는 판정 — `runNode` 도 `Args` 도 없다.\"\"\"
+
+    def length(text):
+        return len(text)
+"""
+
+LIBRARY_BANNED = """
+    import time
+
+    def length(text):
+        return len(text) + int(time.time())
+"""
+
 
 # ── 프로젝트 조립 ────────────────────────────────────────────────────────────
 
@@ -367,7 +381,7 @@ def rule_ids(out: str) -> set[str]:
     }
 
 
-# ── CRUD 넷 × 종류 넷 ────────────────────────────────────────────────────────
+# ── CRUD 넷 × 종류 다섯 ────────────────────────────────────────────────────────
 
 
 def register_all(project: Project) -> dict[str, str]:
@@ -421,13 +435,14 @@ def register_all(project: Project) -> dict[str, str]:
 REPLACEMENT: dict[str, str] = {}
 
 
-@pytest.mark.parametrize("kind", ["script", "node", "pipeline", "spec"])
-def test_CRUD_넷이_종류_넷_모두에_대해_돈다(
+@pytest.mark.parametrize("kind", ["script", "library", "node", "pipeline", "spec"])
+def test_CRUD_넷이_종류_다섯_모두에_대해_돈다(
     project: Project, kind: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     page, buttons, check = three_nodes(project)
     sources = {
         "script": project.root / "scripts" / "page.py",
+        "library": write(project.root / "libraries" / "buttons.py", LIBRARY),
         "node": page,
         "pipeline": project.pipeline("basic", wiring(page, buttons, check)),
         "spec": None,
@@ -483,11 +498,15 @@ def test_json_출력이_기계가_읽는_형태다(
 
     assert project.run("script", "list", "--json") == 0
     listed = json.loads(capsys.readouterr().out)
-    assert [entry["id"] for entry in listed] == [entry_id]
+    assert [entry["id"] for entry in listed["entries"]] == [entry_id]
+    # **어느 등록소를 보고 있는지가 드러난다** — `--json` 에도 (`schema.md` 2절).
+    assert listed["home"] == str(project.store.home)
+    assert listed["kind"] == "script"
 
     assert project.run("script", "show", entry_id, "--json") == 0
     shown = json.loads(capsys.readouterr().out)
     assert shown["id"] == entry_id
+    assert shown["home"] == str(project.store.home)
     assert shown["hash"] == project.store.show(entry_id).hash
     assert "runNode" in shown["content"]
     assert shown["dependencies"] == [] and shown["dependents"] == []
@@ -508,6 +527,52 @@ def test_잘못된_스크립트를_add_하면_등록되지_않는다(
     assert project.ids("script") == []
     # 복사본조차 만들어지지 않는다 — 검사 통과가 저장의 전제다
     assert list((project.home / "scripts").iterdir()) == []
+
+
+def test_금지_패턴이_든_라이브러리는_add_되지_않는다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**여기가 뚫리면 라이브러리가 금지의 우회로가 된다** (`schema.md` 6.5절)."""
+    bad = write(project.root / "libraries" / "clock.py", LIBRARY_BANNED)
+
+    assert project.run("library", "add", str(bad)) == 2
+
+    assert "STR-BAN-001" in rule_ids(capsys.readouterr().out)
+    assert project.ids("library") == []
+    assert list((project.home / "libraries").iterdir()) == []
+
+
+def test_라이브러리는_노드_계약을_요구받지_않는다(project: Project) -> None:
+    """`runNode` 도 `Args` 도 없는 파일이 그대로 등록된다 — **노드가 아니다.**"""
+    library = write(project.root / "libraries" / "buttons.py", LIBRARY)
+    assert project.run("library", "add", str(library)) == 0
+    assert len(project.ids("library")) == 1
+
+
+def test_list_는_어느_등록소를_보고_있는지_낸다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`STRICTLER_HOME` 을 깜빡하고 전역 등록소에 쓰는 것이 가장 흔한 사고다.
+
+    비어 있을 때 *"등록이 안 된 것"* 과 *"다른 등록소를 보고 있는 것"* 이 구분되지
+    않으면 라이브러리처럼 **공유되는 것**에서 특히 아프다 (`schema.md` 2절).
+    """
+    assert project.run("library", "list") == 0
+    out = capsys.readouterr().out
+    assert str(project.home) in out
+    assert "등록된 library 가 없습니다." in out
+
+
+def test_아무도_안_쓰는_라이브러리는_목록에_드러난다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """*"본체가 하나"* 를 강제하지는 못한다 — 대신 **보이게** 한다."""
+    library = write(project.root / "libraries" / "buttons.py", LIBRARY)
+    assert project.run("library", "add", str(library)) == 0
+    capsys.readouterr()
+
+    assert project.run("library", "list") == 0
+    assert "아무도 쓰지 않음" in capsys.readouterr().out
 
 
 def test_잘못된_노드를_add_하면_등록되지_않는다(project: Project) -> None:

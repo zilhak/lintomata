@@ -4,11 +4,47 @@
 > 고정하기 위해 쓴 계약서다. 각 라운드의 독립 리뷰가 계약 자체의 결함을 찾아내면
 > **계약 개정(R1~R6)** 으로 기록했고, 그 개정 블록이 **본문보다 우선한다.**
 >
-> **왜 남기나.** R1~R6 은 "왜 지금 구조가 이렇게 됐는지" 의 근거다 — 예를 들어
+> **왜 남기나.** R1~R7 은 "왜 지금 구조가 이렇게 됐는지" 의 근거다 — 예를 들어
 > 타입 등록기의 키가 `(origin, name)` 인 이유(모든 노드 스크립트가 `Args` 를 선언한다),
 > 구동 루프가 `engine/drive.py` 하나인 이유(둘로 두었더니 실제로 갈렸다),
 > Action 이 타입 검사를 받는 이유(투명성은 면제가 아니다) 가 전부 여기 있다.
 > 본문의 "Step" 표기는 그 병렬 진행의 흔적이다.
+
+> ## ⚠️ 계약 개정 R7 (2026-08-16, conductor) — **R6~R1 보다 우선한다. 등록 종류 `library` 신설**
+>
+> `schema.md` 6.5절이 확정한 **다섯 번째 등록 종류**를 들인다. 형제 파일 `import` 가
+> 되지 않으므로(등록하면 파일 하나만 복사된다) 공유는 등록소를 통해서 한다.
+>
+> ### R7-1. 등록 종류가 **다섯**이다 — `script` / `library` / `node` / `pipeline` / `spec`
+> `model.EntryKind` 에 `"library"`, `ID_PREFIXES` 에 `"lb_"`, `store.SUBDIRS` 에
+> `libraries/` 가 붙는다. **CRUD 다섯은 다른 종류와 완전히 같다** — 종류마다 다른
+> 명령을 두지 않는다. `strictler library test` 는 **없다**(`schema.md` 6.5절: 라이브러리엔
+> `runNode` 계약이 없어 하네스가 맞지 않는다 — 쓰는 쪽 **노드 단위테스트로 간접 검증**된다).
+>
+> ### R7-2. `checks/library.py` 신설 — **금지 표는 복제하지 않는다** ★
+> 라이브러리에도 금지 패턴(시간·랜덤·subprocess)이 **스크립트와 똑같이** 걸린다.
+> 안 걸면 거기서 `import time` 을 해 **금지가 통째로 우회된다.**
+> → 판정은 `checks.script.check_bans` **그 함수**가 한다. 두 벌로 만들면 갈리고,
+> 갈린 쪽이 곧 우회로가 된다 (R4-1 계열 사고가 정확히 그거였다).
+>
+> **시그니처 변경:** `check_bans(source, path, contract: ScriptContract | None)`.
+> `None` 이면 `STR-BAN-004`(미선언 state 참조)를 보지 않는다 — 라이브러리에는
+> 선언된 state 가 없어 판정할 근거가 아예 없다. 나머지 셋은 그대로 돈다.
+>
+> ```python
+> NAMESPACE = "strictler_lib"
+> def check_library(source: str, path: str,
+>                   known_dependencies: tuple[str, ...] | list[str] = ()) -> list[Finding]
+> def check_no_nesting(tree: ast.Module, path: str) -> list[Finding]   # STR-LIB-003
+> def check_no_dataclass(tree: ast.Module, path: str) -> list[Finding] # STR-LIB-004
+> ```
+>
+> ### R7-3. `list`/`show` 는 **어느 등록소를 보고 있는지**를 낸다 (`--json` 포함)
+> `STRICTLER_HOME` 을 깜빡하고 전역 `~/.strictler` 에 조용히 쓰는 것이 가장 흔한 사고고,
+> 목록이 비어 있을 때 *"등록이 안 된 것"* 과 *"다른 등록소를 보고 있는 것"* 이 구분되지
+> 않는다. 라이브러리처럼 **공유되는 것**에서 특히 아프다.
+> → `list --json` 은 배열이 아니라 `{home, kind, entries}` 다 (**형태 변경**).
+> → 라이브러리는 **아무도 안 쓰면** 목록에 표시된다 (`schema.md` 6.5절: 강제하지 않고 보이게 한다).
 
 > ## ⚠️ 계약 개정 R6 (2026-08-16, conductor) — **R5~R1 보다 우선한다. 최종 라운드**
 >

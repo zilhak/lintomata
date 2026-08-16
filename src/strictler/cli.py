@@ -1,6 +1,7 @@
 """CLI 표면 — 등록소가 중심이다 (`schema.md` 2절).
 
-**종류 넷에 CRUD 가 완전하다.** `<종류>` = `script` / `node` / `pipeline` / `spec`
+**종류 다섯에 CRUD 가 완전하다.**
+`<종류>` = `script` / `library` / `node` / `pipeline` / `spec`
 
     strictler <종류> add    <파일>          정적 검사 후 등록. 통과해야 저장된다. id 발급
     strictler <종류> list                   목록. 깨진 구성 표시
@@ -53,10 +54,11 @@ from strictler.store.graph import RefGraph
 __all__ = ["build_parser", "main"]
 
 
-KINDS: tuple[EntryKind, ...] = ("script", "node", "pipeline", "spec")
+KINDS: tuple[EntryKind, ...] = ("script", "library", "node", "pipeline", "spec")
 
 _ID_PREFIX: dict[str, str] = {
     "script": "sc_",
+    "library": "lb_",
     "node": "nd_",
     "pipeline": "pl_",
     "spec": "sp_",
@@ -64,6 +66,7 @@ _ID_PREFIX: dict[str, str] = {
 
 _KIND_LABEL = {
     "script": "스크립트 (.py) — 실제 동작 코드",
+    "library": "라이브러리 (.py) — 여러 스크립트가 나눠 쓰는 함수",
     "node": "노드 (JSON) — 동작 정의",
     "pipeline": "파이프라인 (JSON) — 노드들의 DAG 구성",
     "spec": "Spec (JSON) — 기획",
@@ -158,8 +161,8 @@ def _kind_mismatch(entry_id: str, actual: str, expected: EntryKind) -> Strictler
     """자리가 요구하는 종류와 id 의 종류가 다르다 — **사용법 오류**다."""
     return StrictlerError(
         f"이 자리에는 {expected} 가 와야 하는데 {entry_id} 는 {actual} 입니다.\n"
-        f"접두가 종류를 말합니다 (`sc_`=스크립트 `nd_`=노드 `pl_`=파이프라인 "
-        f"`sp_`=Spec). `strictler {actual} <명령>` 으로 부르세요."
+        f"접두가 종류를 말합니다 (`sc_`=스크립트 `lb_`=라이브러리 `nd_`=노드 "
+        f"`pl_`=파이프라인 `sp_`=Spec). `strictler {actual} <명령>` 으로 부르세요."
     )
 
 
@@ -232,10 +235,15 @@ def cmd_list(args: argparse.Namespace) -> int:
     두 종류를 구분해 낸다. `schema.md` 2절.
 
     **깨짐은 실패가 아니라 상태 표시다** — 그래서 `2` 가 아니라 `1` 이다.
+
+    **어느 등록소를 보고 있는지를 함께 낸다.** `STRICTLER_HOME` 을 깜빡하고 전역
+    `~/.strictler` 에 조용히 쓰는 것이 가장 흔한 사고이고, 목록이 비어 있을 때
+    *"등록이 안 된 것"* 과 *"다른 등록소를 보고 있는 것"* 이 구분되지 않는다
+    (`schema.md` 2절: 어느 등록소를 쓰고 있는지는 항상 출력에 드러나야 한다).
     """
     kind: EntryKind = args.kind
     store = _store(args)
-    entries, _ = _marked_index(store)
+    entries, graph = _marked_index(store)
     listed = sorted(
         (entry for entry in entries.values() if entry.kind == kind),
         key=lambda entry: entry.id,
@@ -244,16 +252,42 @@ def cmd_list(args: argparse.Namespace) -> int:
     if args.json:
         print(
             json.dumps(
-                [entry.model_dump() for entry in listed], ensure_ascii=False, indent=2
+                {
+                    "home": str(store.home),
+                    "kind": kind,
+                    "entries": [entry.model_dump() for entry in listed],
+                },
+                ensure_ascii=False,
+                indent=2,
             )
         )
-    elif not listed:
-        print(f"등록된 {kind} 가 없습니다.")
     else:
+        print(f"등록소  {store.home}")
+        if not listed:
+            print(f"등록된 {kind} 가 없습니다.")
         for entry in listed:
-            print(f"{entry.id}  {entry.name}  {_broken_mark(entry)}")
+            mark = _broken_mark(entry)
+            unused = _unused_mark(entry, graph)
+            print(f"{entry.id}  {entry.name}  {mark}{unused}")
 
     return 1 if any(entry.broken for entry in listed) else 0
+
+
+def _unused_mark(entry: RegistryEntry, graph: RefGraph) -> str:
+    """**아무도 안 쓰는 라이브러리**를 표시한다 (`schema.md` 6.5절).
+
+    라이브러리 메커니즘이 주는 것은 *본체가 하나인 것*이지, 누군가 스크립트 안에
+    같은 로직을 다시 인라인으로 쓰는 것을 막지는 못한다. 그걸 규칙으로 잡으려면
+    *"비슷한 함수인가"* 를 판정해야 하는데 오탐만 난다. 대신 **보이게** 한다 —
+    *"깨짐은 막지 않고 표시한다"* 와 같은 태도다.
+
+    **다른 종류에는 붙이지 않는다.** Spec 은 아무도 참조하지 않는 것이 정상이고
+    (최상위다), 노드·파이프라인은 경로 참조로 쓰일 수 있어 참조 그래프가
+    사용처의 전부가 아니다. 라이브러리는 **쓰이려고만 존재한다.**
+    """
+    if entry.kind != "library" or graph.dependents(entry.id):
+        return ""
+    return "  (아무도 쓰지 않음)"
 
 
 def cmd_show(args: argparse.Namespace) -> int:
@@ -275,6 +309,7 @@ def cmd_show(args: argparse.Namespace) -> int:
 
     if args.json:
         detail: dict[str, Any] = entry.model_dump()
+        detail["home"] = str(store.home)
         detail["path"] = str(file_path)
         detail["dependencies"] = dependencies
         detail["dependents"] = dependents
@@ -285,16 +320,18 @@ def cmd_show(args: argparse.Namespace) -> int:
     else:
         print(f"{entry.id}  {entry.name}  ({entry.kind})")
         print(f"  상태           {_broken_mark(entry)}")
+        print(f"  등록소         {store.home}")
         print(f"  해시           {entry.hash}")
         print(f"  등록시각       {entry.registered_at}")
         print(f"  파일           {file_path}")
         if test_path is not None:
             print(f"  단위테스트     {test_path if has_test else '없음'}")
-        if entry.kind == "script":
+        if entry.kind in ("script", "library"):
             # PEP 723 선언. **없는 것이 정상이다** — stdlib 만 쓰는 스크립트가 대부분이다.
             print(f"  선언 의존성    {', '.join(entry.dependencies) or '없음'}")
         print(f"  참조하는 것    {', '.join(dependencies) or '-'}")
-        print(f"  참조하는 상위  {', '.join(dependents) or '-'}")
+        # 라이브러리에서는 이 줄이 **그것을 쓰는 노드 전부**다 (`schema.md` 6.5절).
+        print(f"  참조하는 상위  {', '.join(dependents) or '-'}{_unused_mark(entry, graph)}")
         print("--- 내용 ---")
         print(content)
 
@@ -575,6 +612,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "예:\n"
             "  strictler script  add    ./detect_buttons.py\n"
+            "  strictler library add    ./buttons.py\n"
             "  strictler node    update nd_e5f6a7b8 ./detect_buttons.json\n"
             "  strictler node    test   nd_e5f6a7b8\n"
             "  strictler pipeline list\n"

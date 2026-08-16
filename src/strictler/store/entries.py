@@ -46,6 +46,7 @@ __all__ = [
 
 SUBDIRS: dict[str, str] = {
     "script": "scripts",
+    "library": "libraries",
     "node": "nodes",
     "pipeline": "pipelines",
     "spec": "specs",
@@ -63,11 +64,13 @@ CACHE_SUBDIR = "cache"
 
 _EXTENSIONS: dict[str, str] = {
     "script": ".py",
+    "library": ".py",
     "node": ".json",
     "pipeline": ".json",
     "spec": ".json",
 }
-"""종류 → 등록소 안에서 쓰는 확장자. 스크립트 언어는 Python 하나뿐이다."""
+"""종류 → 등록소 안에서 쓰는 확장자. 스크립트 언어는 Python 하나뿐이고,
+라이브러리도 같은 언어의 파일 하나다 (`schema.md` 6.5절)."""
 
 _PREFIX_OF: dict[str, str] = {kind: prefix for prefix, kind in ID_PREFIXES.items()}
 """종류 → id 접두. `model.ID_PREFIXES` 의 역방향."""
@@ -194,13 +197,15 @@ def _collect_refs(text: str) -> list[str]:
 
 
 def _collect_dependencies(kind: EntryKind, text: str) -> list[str]:
-    """스크립트가 PEP 723 헤더로 선언한 의존성을 그대로 기록한다.
+    """스크립트·라이브러리가 PEP 723 헤더로 선언한 의존성을 그대로 기록한다.
 
-    **스크립트만 해당한다** — 노드·파이프라인·Spec 은 JSON 이라 헤더가 없다.
+    **`.py` 인 두 종류만 해당한다** — 노드·파이프라인·Spec 은 JSON 이라 헤더가 없다.
+    라이브러리도 스크립트와 **같은 프로세스**에 로드되므로 의존성 모델이 같다
+    (`schema.md` 6절): 격리는 없고 strictler 환경에서 `import` 가 풀린다.
     깨진 헤더는 등록 전 검사(`STR-DEP-002`)가 이미 막았으므로 여기서는 관대하게
     읽는다(`deps.declared_dependencies`).
     """
-    if kind != "script":
+    if kind not in ("script", "library"):
         return []
     return list(deps.declared_dependencies(text))
 
@@ -351,7 +356,7 @@ class Store:
             raise StrictlerError(
                 f"등록소에 없는 id 입니다: {entry_id}\n"
                 "삭제됐거나 오타입니다. `strictler <종류> list` 로 확인하세요 "
-                "(접두 `sc_`=스크립트 `nd_`=노드 `pl_`=파이프라인 `sp_`=Spec)."
+                "(접두 `sc_`=스크립트 `lb_`=라이브러리 `nd_`=노드 `pl_`=파이프라인 `sp_`=Spec)."
             )
         return entry
 

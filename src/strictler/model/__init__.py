@@ -44,11 +44,15 @@ __all__ = [
 
 # ── 공통 어휘 ────────────────────────────────────────────────────────────────
 
-EntryKind = Literal["script", "node", "pipeline", "spec"]
-"""등록소가 다루는 네 종류 (`schema.md` 2절)."""
+EntryKind = Literal["script", "library", "node", "pipeline", "spec"]
+"""등록소가 다루는 다섯 종류 (`schema.md` 2·6.5절).
+
+`library` 는 **여러 스크립트가 나눠 쓰는 함수의 본체**다. 형제 파일 `import` 가
+되지 않으므로(등록하면 파일 하나만 복사된다) 공유는 등록소를 통해서 한다."""
 
 ID_PREFIXES: dict[str, EntryKind] = {
     "sc_": "script",
+    "lb_": "library",
     "nd_": "node",
     "pl_": "pipeline",
     "sp_": "spec",

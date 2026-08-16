@@ -315,16 +315,28 @@ def check_types(contract: ScriptContract) -> list[Finding]:
     return findings
 
 
-def check_bans(source: str, path: str, contract: ScriptContract) -> list[Finding]:
+def check_bans(source: str, path: str, contract: ScriptContract | None) -> list[Finding]:
     """금지 패턴. `STR-BAN-001` (시간) / `-002` (랜덤) / `-003` (직접 subprocess) /
     `-004` (미선언 state 참조).
 
     `tool` 로 선언된 함수가 부가적으로 subprocess 를 띄우는 것은 막지 않는다 —
     `Args.state` 와 같은 구조다: **미리 선언하면 허용, 선언 없으면 에러.**
+
+    **`contract` 가 `None` 이면 `-004` 를 보지 않는다** — 라이브러리가 그 경우다
+    (`checks.library`). 라이브러리에는 `Args` 도 `runNode` 도 없어 *선언된 state*
+    라는 것이 아예 없으므로, 상태 참조를 판정할 근거가 없다. 나머지 셋은
+    **스크립트와 똑같이** 걸린다 — 안 그러면 라이브러리에서 `import time` 을 해
+    금지가 통째로 우회된다 (`schema.md` 6.5절).
+
+    ★ **금지 표는 이 함수 하나가 본다.** 라이브러리용으로 한 벌 더 만들면 두 표가
+    갈리고, 갈린 쪽이 곧 우회로가 된다.
     """
     tree = _parse(source, path)
     aliases = _import_aliases(tree)
-    allowed_states = set(contract.state_names) | ENGINE_STATE_FIELDS
+    allowed_states = (
+        set(contract.state_names) | ENGINE_STATE_FIELDS if contract is not None else set()
+    )
+    param_name = contract._param_name if contract is not None else ""
 
     # (규칙, 이름) 로 중복을 없앤다 — 같은 사실을 두 번 보고하지 않는다.
     hits: dict[tuple[str, str], tuple[int, int]] = {}
@@ -352,8 +364,8 @@ def check_bans(source: str, path: str, contract: ScriptContract) -> list[Finding
             rule_id = _BANNED_CALLS.get(called) if called else None
             if rule_id:
                 record(rule_id, called, node)
-        elif isinstance(node, ast.Attribute):
-            state_name = _state_access(node, contract._param_name)
+        elif isinstance(node, ast.Attribute) and param_name:
+            state_name = _state_access(node, param_name)
             if state_name is not None and state_name not in allowed_states:
                 record("STR-BAN-004", state_name, node)
 
