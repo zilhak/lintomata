@@ -1,6 +1,6 @@
 """검사 규칙 테이블 — `STR-<CATEGORY>-<NNN>`.
 
-`rules.md` 전체가 근거다. 규칙 57개 (PATH 4 / REF 6 / GRAPH 2 / TYPE 7 /
+`rules.md` 전체가 근거다. 규칙 58개 (PATH 4 / REF 7 / GRAPH 2 / TYPE 7 /
 CONTRACT 6 / STATE 7 / BAN 4 / TOOL 2 / CONFIG 3 / CMP 4 / TEST 7 / REG 5).
 **늘어나는 것이 전제다** — 카테고리별 독립 번호 공간, 번호 재사용 금지,
 폐기해도 `status: deprecated` 로 남긴다.
@@ -207,6 +207,16 @@ _TABLE: tuple[Rule, ...] = (
         "참조는 네임스페이스를 반드시 붙입니다 — `${env.X}` / `${config.X}` / "
         "`${state.X}` / `${ref.<id>}` 넷뿐입니다. 네임스페이스가 없으면 "
         '"미정의 환경변수인지 config 오타인지" 구분할 수 없어 에러가 뭉개집니다. '
+        "문제의 참조: {ref}",
+    ),
+    _rule(
+        "STR-REF-007",
+        "unresolved-reference",
+        (_N, _P, _R),
+        "참조 문법은 정상인데 이 자리에 도달하기 전에 전개되지 않았습니다: {ref}",
+        "이 자리에서는 모든 참조가 이미 풀려 있어야 합니다. 전개되지 않은 참조를 "
+        '리터럴로 통과시키면 나중에 "파일 없음" 으로 원인이 뭉개집니다. '
+        "`config` 선언에 빠진 값이 없는지, 전개 순서가 맞는지 확인하세요. "
         "문제의 참조: {ref}",
     ),
     # ── GRAPH — DAG 구조 ───────────────────────────────────────────────
@@ -568,8 +578,8 @@ _TABLE: tuple[Rule, ...] = (
         "ref-broken",
         (_L,),
         "참조 대상이 삭제되어 구성이 깨졌습니다: {id}",
-        "참조 대상이 삭제되어 구성이 깨졌습니다. 대상을 다시 등록하고 "
-        "이 요소의 참조를 새 id 로 고치세요",
+        "참조 대상이 삭제되어 구성이 깨졌습니다. 없어진 참조: {id}. "
+        "대상을 다시 등록하고 이 요소의 참조를 새 id 로 고치세요",
     ),
     _rule(
         "STR-REG-005",
@@ -583,7 +593,7 @@ _TABLE: tuple[Rule, ...] = (
 
 
 RULES: dict[str, Rule] = {rule.id: rule for rule in _TABLE}
-"""규칙 id → 규칙. `rules.md` 2절의 57개."""
+"""규칙 id → 규칙. `rules.md` 2절의 58개."""
 
 if len(RULES) != len(_TABLE):  # pragma: no cover - 테이블 오타 방지용 자기 검증
     raise StrictlerError("규칙 테이블에 중복 id 가 있습니다")

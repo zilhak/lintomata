@@ -1,4 +1,4 @@
-"""`rules.py` — 규칙 테이블 57개와 `Finding` 생성 헬퍼."""
+"""`rules.py` — 규칙 테이블 58개와 `Finding` 생성 헬퍼."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ ID_RE = re.compile(r"^STR-[A-Z]+-\d{3}$")
 # `rules.md` 3절 "규칙 수 요약" 그대로.
 EXPECTED_COUNTS = {
     "PATH": 4,
-    "REF": 6,
+    "REF": 7,
     "GRAPH": 2,
     "TYPE": 7,
     "CONTRACT": 6,
@@ -28,9 +28,9 @@ EXPECTED_COUNTS = {
 }
 
 
-def test_rule_count_is_57() -> None:
-    assert len(RULES) == 57
-    assert sum(EXPECTED_COUNTS.values()) == 57
+def test_rule_count_is_58() -> None:
+    assert len(RULES) == 58
+    assert sum(EXPECTED_COUNTS.values()) == 58
 
 
 def test_category_counts_match_rules_md() -> None:
@@ -296,7 +296,7 @@ def test_reference_syntax_is_never_mistaken_for_a_slot() -> None:
         assert "state" not in rule.slots, rule.id
 
 
-# ── 신설 규칙 3개 (rules.md 4절 증가 이력) ────────────────────────────
+# ── 신설 규칙 4개 (rules.md 4절 증가 이력) ────────────────────────────
 
 
 def test_new_rules_exist_with_declared_when_and_slots() -> None:
@@ -309,9 +309,55 @@ def test_new_rules_exist_with_declared_when_and_slots() -> None:
     assert get_rule("STR-REF-006").when == ("node-register", "pipeline-register", "run")
     assert get_rule("STR-REF-006").slots == ("ref",)
 
+    assert get_rule("STR-REF-007").when == ("node-register", "pipeline-register", "run")
+    assert get_rule("STR-REF-007").slots == ("ref",)
+
 
 def test_malformed_reference_guide_keeps_namespace_examples() -> None:
     text = render("STR-REF-006", ref="${vars.X}")
     assert "${env.X}" in text
     assert "${ref.<id>}" in text
     assert "${vars.X}" in text
+
+
+def test_unresolved_reference_is_a_separate_rule_from_malformed() -> None:
+    """`${config.y}` 는 **문법이 정상**이다 — 잘못된 건 전개 순서다 (R2-6).
+
+    `-006` 의 guide("네임스페이스를 반드시 붙입니다")를 받은 AI 는 엉뚱한 곳을
+    고친다. 규칙을 나누는 기준은 "증상" 이 아니라 **"고치는 방법"** 이므로,
+    두 규칙의 guide 가 서로 다른 수정 방향을 가리켜야 한다.
+    """
+    malformed = get_rule("STR-REF-006")
+    unresolved = get_rule("STR-REF-007")
+
+    assert unresolved.name == "unresolved-reference"
+    assert unresolved.guide != malformed.guide
+
+    # -007 은 "전개 순서" 를 고치라고 한다. 네임스페이스를 붙이라고 하지 않는다.
+    assert "전개" in unresolved.guide
+    assert "네임스페이스" not in unresolved.guide
+    # -006 은 반대다.
+    assert "네임스페이스" in malformed.guide
+
+
+def test_unresolved_reference_renders_the_offending_reference() -> None:
+    text = render("STR-REF-007", ref="/x/${config.y}/z")
+    assert "/x/${config.y}/z" in text
+    assert "{ref}" not in text
+    # 참조 문법이 슬롯으로 오인되어 사라지지 않는다.
+    assert "${config.y}" in text
+
+
+def test_ref_broken_guide_names_the_missing_id() -> None:
+    """`STR-REG-004` 의 guide 에도 `{id}` 가 있다 (R2-8, rules.md 개정).
+
+    guide 만 읽고도 무엇이 없어졌는지 알 수 있어야 한다 —
+    `STR-REG-002` 가 이미 같은 형태다.
+    """
+    rule = get_rule("STR-REG-004")
+    assert "id" in rule.slots
+
+    text = render("STR-REG-004", id="nd_e5f6a7b8")
+    _message, guide = text.split("\n", 1)
+    assert "nd_e5f6a7b8" in guide
+    assert "{id}" not in text
