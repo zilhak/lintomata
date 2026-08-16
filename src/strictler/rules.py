@@ -1,7 +1,7 @@
 """검사 규칙 테이블 — `STR-<CATEGORY>-<NNN>`.
 
-`rules.md` 전체가 근거다. 규칙 61개 (PATH 4 / REF 7 / GRAPH 3 / TYPE 7 /
-CONTRACT 7 / STATE 7 / BAN 4 / TOOL 2 / CONFIG 3 / CMP 4 / TEST 8 / REG 5).
+`rules.md` 전체가 근거다. 규칙 64개 (PATH 4 / REF 7 / GRAPH 3 / TYPE 7 /
+CONTRACT 7 / STATE 7 / BAN 4 / DEP 3 / TOOL 2 / CONFIG 3 / CMP 4 / TEST 8 / REG 5).
 **늘어나는 것이 전제다** — 카테고리별 독립 번호 공간, 번호 재사용 금지,
 폐기해도 `status: deprecated` 로 남긴다.
 
@@ -453,6 +453,38 @@ _TABLE: tuple[Rule, ...] = (
         "`Args.state` 에 없는 상태를 참조했습니다: {name} (파일: {file})",
         "참조할 상태를 `Args.state` 에 미리 선언해야 합니다. 선언에 없는 것은 쓸 수 없습니다",
     ),
+    # ── DEP — 스크립트 의존성 (PEP 723) ────────────────────────────────
+    _rule(
+        "STR-DEP-001",
+        "dependency-missing",
+        (_N,),
+        "PEP 723 헤더에 선언한 패키지가 이 환경에 없습니다: {requirement} (파일: {file})",
+        "노드 스크립트는 strictler 와 **같은 프로세스**에 로드되므로 `import` 가 "
+        "strictler 가 설치된 환경에서 풀립니다. 격리 환경을 만들어 주지 않으니 "
+        "그 환경에 함께 설치하세요: {install}",
+    ),
+    _rule(
+        "STR-DEP-002",
+        "dependency-header-malformed",
+        (_N,),
+        "PEP 723 헤더를 읽을 수 없습니다: {reason} (파일: {file})",
+        "헤더는 `# /// script` 로 열고 `# ///` 로 닫으며, 사이의 각 줄은 `# ` 로 "
+        "시작하는 TOML 입니다. `dependencies` 는 PEP 508 문자열의 배열입니다:\n"
+        '  # /// script\n'
+        '  # requires-python = ">=3.11"\n'
+        '  # dependencies = ["selectolax>=0.3"]\n'
+        "  # ///\n"
+        "헤더가 아예 없어도 됩니다 — stdlib 만 쓰는 스크립트에는 필요 없습니다",
+    ),
+    _rule(
+        "STR-DEP-003",
+        "dependency-version-unsatisfied",
+        (_N,),
+        "설치된 버전이 선언한 요구를 만족하지 않습니다: {requirement} "
+        "(설치된 것: {installed}) (파일: {file})",
+        "환경에는 패키지가 한 벌만 깔립니다. 설치된 것을 요구에 맞추거나 "
+        "({install}) 헤더의 요구를 실제로 쓰는 버전에 맞추세요",
+    ),
     # ── TOOL — 외부 도구 ───────────────────────────────────────────────
     _rule(
         "STR-TOOL-001",
@@ -627,7 +659,7 @@ _TABLE: tuple[Rule, ...] = (
 
 
 RULES: dict[str, Rule] = {rule.id: rule for rule in _TABLE}
-"""규칙 id → 규칙. `rules.md` 2절의 61개."""
+"""규칙 id → 규칙. `rules.md` 2절의 64개."""
 
 if len(RULES) != len(_TABLE):  # pragma: no cover - 테이블 오타 방지용 자기 검증
     raise StrictlerError("규칙 테이블에 중복 id 가 있습니다")

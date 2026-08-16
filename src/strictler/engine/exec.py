@@ -27,6 +27,7 @@ from typing import Any, Mapping
 
 from pydantic import BaseModel, ValidationError
 
+from strictler import deps
 from strictler.checks.script import RESULT_FN, ScriptContract
 from strictler.errors import Finding, StrictlerError
 from strictler.typesys.primitives import PRIMITIVES, TypeRef, element_type, is_list
@@ -68,9 +69,11 @@ def _return_result(value: Any) -> Any:
 def load_script(path: Path) -> ModuleType:
     """스크립트 파일을 모듈로 로드한다.
 
-    노드 스크립트는 PEP 723 헤더로 자기 의존성을 선언할 수 있다 — 스크립트 하나가
-    자기완결 파일이 된다 (`CLAUDE.md` 구현 언어 절). 의존성 격리는 `uv run` 이
-    바깥에서 해주므로 여기서는 그냥 로드한다.
+    **의존성 격리는 없다 — 스크립트는 strictler 와 같은 프로세스에 로드된다**
+    (`schema.md` 6절). 그래서 스크립트의 `import` 는 strictler 가 설치된 환경에서
+    풀린다. PEP 723 헤더는 **선언일 뿐 격리를 만들지 않는다** — 등록 시점에
+    `deps.check_dependencies` 가 그 선언을 읽어 확인할 뿐이다.
+    여기서는 그냥 로드하고, 못 찾은 모듈이 헤더에 선언돼 있으면 설치 명령을 안내한다.
 
     모듈 이름은 **경로 해시**로 만든다. 파일 이름을 그대로 쓰면 서로 다른
     파이프라인의 같은 이름 스크립트가 `sys.modules` 에서 충돌한다.
@@ -99,9 +102,29 @@ def load_script(path: Path) -> ModuleType:
             f"{type(exc).__name__}: {exc}\n"
             "모듈 최상위(import·상수 계산 등)에서 터진 것입니다. "
             "노드 스크립트는 import 만으로 부작용이 없어야 하고, 실제 동작은 "
-            "`runNode(args)` 안에 두세요."
+            "`runNode(args)` 안에 두세요." + _dependency_hint(path, exc)
         ) from exc
     return module
+
+
+def _dependency_hint(path: Path, exc: BaseException) -> str:
+    """`ModuleNotFoundError` 이고 그 모듈이 PEP 723 헤더에 선언돼 있으면 설치 명령을 붙인다.
+
+    없으면 `""` — 다른 예외에는 아무것도 덧붙이지 않는다. 예외 텍스트만 나가면
+    *"왜 없는지"* 와 *"어디에 깔아야 하는지"* 가 빠져 AI 가 고칠 곳을 못 찾는다
+    (`schema.md` 6절 — 격리하지 않으므로 strictler 환경에 깔아야 한다).
+
+    **소스를 못 읽는 것은 여기서 문제 삼지 않는다.** 이 함수는 이미 실패한 예외에
+    문장을 덧붙이는 자리라서, 여기서 새 예외를 내면 원인이 뭉개진다.
+    """
+    if not isinstance(exc, ModuleNotFoundError) or not exc.name:
+        return ""
+    try:
+        source = Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+    hint = deps.missing_module_hint(source, exc.name)
+    return f"\n{hint}" if hint else ""
 
 
 # ── 값 조립 ──────────────────────────────────────────────────────────────────
@@ -244,15 +267,16 @@ def invoke(module: ModuleType, args: Any) -> Any:
             f"진입점 `{ENTRYPOINT}(args)` 가 없습니다: {getattr(module, '__file__', '?')}\n"
             "진입점 이름은 전 노드 타입 공통으로 고정입니다."
         )
+    file = getattr(module, "__file__", "") or ""
     try:
         return entry(args)
     except BaseException as exc:  # noqa: BLE001 - 사용자 코드는 무엇이든 던질 수 있다
         raise StrictlerError(
-            f"`{ENTRYPOINT}` 가 예외를 냈습니다: "
-            f"{getattr(module, '__file__', '?')}\n"
+            f"`{ENTRYPOINT}` 가 예외를 냈습니다: {file or '?'}\n"
             f"{type(exc).__name__}: {exc}\n"
             "스크립트 예외는 위반이 아니라 **오류**입니다 — 기획과 다른 것이 아니라 "
             "검사 자체가 못 돈 것입니다. 스크립트를 고치세요."
+            + (_dependency_hint(Path(file), exc) if file else "")
         ) from exc
 
 

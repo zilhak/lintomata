@@ -356,6 +356,35 @@ def test_add_ignores_other_namespaces(store: Store, tmp_path: Path) -> None:
     assert store.add("node", source).refs == []
 
 
+PEP723_SRC = (
+    "# /// script\n"
+    '# requires-python = ">=3.11"\n'
+    '# dependencies = ["pydantic>=2"]\n'
+    "# ///\n" + SCRIPT_SRC
+)
+
+
+def test_add_records_declared_dependencies(store: Store, tmp_path: Path) -> None:
+    """PEP 723 선언을 등록 시점에 기록한다 — 격리를 뒤집을 조건을 도구가 스스로
+    검출하기 위한 재료다 (`schema.md` 6절)."""
+    source = write(tmp_path / "n.py", PEP723_SRC)
+    assert store.add("script", source).dependencies == ["pydantic>=2"]
+
+
+def test_dependencies_are_empty_without_header(store: Store, tmp_path: Path) -> None:
+    """**헤더가 없는 것이 정상이다.** 스크립트가 아닌 종류도 마찬가지."""
+    assert store.add("script", write(tmp_path / "a.py", SCRIPT_SRC)).dependencies == []
+    node = write(tmp_path / "a.json", json.dumps({"type": "sense"}))
+    assert store.add("node", node).dependencies == []
+
+
+def test_update_refreshes_declared_dependencies(store: Store, tmp_path: Path) -> None:
+    entry = store.add("script", write(tmp_path / "n.py", PEP723_SRC))
+    assert entry.dependencies == ["pydantic>=2"]
+    plain = write(tmp_path / "plain.py", SCRIPT_SRC)
+    assert store.update(entry.id, plain).dependencies == []
+
+
 def test_dependencies_and_dependents(store: Store, tmp_path: Path) -> None:
     sc_id, nd_id, pl_id, _sp_id = _chain(store, tmp_path)
     graph = RefGraph.build(store)

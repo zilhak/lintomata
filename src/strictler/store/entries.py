@@ -26,6 +26,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from strictler import deps
 from strictler.errors import StrictlerError
 from strictler.model import ID_PREFIXES, EntryKind
 from strictler.refs import PLACEHOLDER_RE
@@ -105,6 +106,15 @@ class RegistryEntry(BaseModel):
     refs: list[str] = Field(default_factory=list)
     """이 항목이 참조하는 다른 항목의 id 들. 역방향 추적의 재료 (`graph.py`)."""
 
+    dependencies: list[str] = Field(default_factory=list)
+    """스크립트가 PEP 723 헤더로 선언한 외부 패키지들 (원문 그대로). 스크립트가
+    아니거나 헤더가 없으면 빈 목록 — **헤더가 없는 것이 정상이다**(stdlib 만 쓰는
+    스크립트).
+
+    등록 시점에 기록해 두는 이유는 `schema.md` 6절이 격리를 뒤집을 조건으로 못 박은
+    *"같은 패키지의 호환되지 않는 버전을 요구하는 스크립트가 둘 이상"* 을 **도구가
+    스스로 검출**하기 위해서다 — 사람이 눈치채길 기다리지 않는다."""
+
     broken: str = ""
     """깨짐 표시. `""` | `"ref"`(`STR-REG-004`, 대상 삭제) |
     `"validation"`(`STR-REG-005`, 대상 수정으로 상위 검증 무효화)."""
@@ -169,6 +179,18 @@ def _collect_refs(text: str) -> list[str]:
         if ref_id not in found:
             found.append(ref_id)
     return found
+
+
+def _collect_dependencies(kind: EntryKind, text: str) -> list[str]:
+    """스크립트가 PEP 723 헤더로 선언한 의존성을 그대로 기록한다.
+
+    **스크립트만 해당한다** — 노드·파이프라인·Spec 은 JSON 이라 헤더가 없다.
+    깨진 헤더는 등록 전 검사(`STR-DEP-002`)가 이미 막았으므로 여기서는 관대하게
+    읽는다(`deps.declared_dependencies`).
+    """
+    if kind != "script":
+        return []
+    return list(deps.declared_dependencies(text))
 
 
 def _read_source(source: Path) -> tuple[Path, str]:
@@ -268,6 +290,7 @@ class Store:
             hash=hash_file(path),
             registered_at=_now_iso(),
             refs=_collect_refs(text),
+            dependencies=_collect_dependencies(kind, text),
         )
         shutil.copyfile(path, self._file_path(kind, entry_id))
         entry.test_hash = self._sync_test(kind, entry_id, path)
@@ -319,6 +342,7 @@ class Store:
         entry.hash = hash_file(path)
         entry.registered_at = _now_iso()
         entry.refs = _collect_refs(text)
+        entry.dependencies = _collect_dependencies(entry.kind, text)
         # 새 내용이 검사를 통과해 들어온 것이므로 자기 자신의 깨짐 표시는 걷는다.
         # 상위의 깨짐은 재검증이 다시 판정한다.
         entry.broken = ""

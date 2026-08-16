@@ -290,6 +290,9 @@ def cmd_show(args: argparse.Namespace) -> int:
         print(f"  파일           {file_path}")
         if test_path is not None:
             print(f"  단위테스트     {test_path if has_test else '없음'}")
+        if entry.kind == "script":
+            # PEP 723 선언. **없는 것이 정상이다** — stdlib 만 쓰는 스크립트가 대부분이다.
+            print(f"  선언 의존성    {', '.join(entry.dependencies) or '없음'}")
         print(f"  참조하는 것    {', '.join(dependencies) or '-'}")
         print(f"  참조하는 상위  {', '.join(dependents) or '-'}")
         print("--- 내용 ---")

@@ -1127,6 +1127,45 @@ def test_node_show_가_단위테스트_유무를_드러낸다(
     assert "단위테스트" in capsys.readouterr().out
 
 
+VANTAGE_PEP723 = """
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = ["pydantic>=2"]
+    # ///
+""" + VANTAGE
+
+VANTAGE_MISSING_DEP = """
+    # /// script
+    # dependencies = ["definitely-not-installed-xyz"]
+    # ///
+""" + VANTAGE
+
+
+def test_script_show_가_선언된_의존성을_드러낸다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PEP 723 선언이 등록소에 기록되고 `show` 에 보인다 (`schema.md` 6절)."""
+    assert project.run("script", "add", str(project.script("page", VANTAGE_PEP723))) == 0
+    script_id = project.only("script")
+    capsys.readouterr()
+
+    assert project.run("script", "show", script_id) == 0
+    assert "pydantic>=2" in capsys.readouterr().out
+    assert project.store.show(script_id).dependencies == ["pydantic>=2"]
+
+
+def test_선언한_패키지가_없으면_등록되지_않는다(
+    project: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**오류(2) 다** — 위반이 아니라 도구가 못 도는 상태다. 메시지에 설치 명령이 있다."""
+    source = project.script("page", VANTAGE_MISSING_DEP)
+    assert project.run("script", "add", str(source)) == 2
+    out = capsys.readouterr().out
+    assert "STR-DEP-001" in out
+    assert "uv tool install strictler --with 'definitely-not-installed-xyz'" in out
+    assert project.ids("script") == []
+
+
 def test_node_update_가_테스트를_따라_교체하고_없으면_걷는다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:

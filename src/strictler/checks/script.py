@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import ast
 
-from strictler import rules
+from strictler import deps, rules
 from strictler.errors import Finding, StrictlerError
 from strictler.model import ENGINE_STATE_FIELDS, NodeType
 from strictler.typesys.primitives import TypeRef, check_allowed, parse_type
@@ -203,6 +203,10 @@ def check_script(source: str, path: str, node_type: NodeType | None = None) -> l
     `node_type` 이 없으면(스크립트 단독 등록) 타입별 형식 요구는 건너뛴다 —
     그건 노드 등록 시에 돈다.
 
+    **PEP 723 의존성 확인(`STR-DEP-*`)도 여기서 함께 돈다** (`deps.check_dependencies`).
+    스크립트를 돌리지 않는다는 원칙은 그대로다 — 헤더를 읽어 선언된 패키지가
+    지금 환경에 있는지 `importlib.metadata` 로 보기만 한다.
+
     **실패를 최대한 수집한다** — 하나 걸렸다고 나머지를 멈추지 않는다.
     """
     contract, findings = extract_contract(source, path)
@@ -210,6 +214,7 @@ def check_script(source: str, path: str, node_type: NodeType | None = None) -> l
     findings.extend(check_args_shape(contract))
     findings.extend(check_types(contract))
     findings.extend(check_bans(source, path, contract))
+    findings.extend(deps.check_dependencies(source, path))
     if node_type is not None:
         findings.extend(check_node_type_form(contract, node_type))
     return findings

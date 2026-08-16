@@ -1,4 +1,4 @@
-"""`rules.py` — 규칙 테이블 61개와 `Finding` 생성 헬퍼."""
+"""`rules.py` — 규칙 테이블 64개와 `Finding` 생성 헬퍼."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ EXPECTED_COUNTS = {
     "CONTRACT": 7,
     "STATE": 7,
     "BAN": 4,
+    "DEP": 3,
     "TOOL": 2,
     "CONFIG": 3,
     "CMP": 4,
@@ -28,9 +29,9 @@ EXPECTED_COUNTS = {
 }
 
 
-def test_rule_count_is_61() -> None:
-    assert len(RULES) == 61
-    assert sum(EXPECTED_COUNTS.values()) == 61
+def test_rule_count_is_64() -> None:
+    assert len(RULES) == 64
+    assert sum(EXPECTED_COUNTS.values()) == 64
 
 
 def test_category_counts_match_rules_md() -> None:
