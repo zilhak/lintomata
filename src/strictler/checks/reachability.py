@@ -20,19 +20,30 @@
 ## 전개 모델 — 상태는 언제나 하나다
 
 파이프라인 상태는 **한 번에 하나**이고, 전이는 노드가 끝날 때만 일어난다.
-그래서 전개는 다음 라운드 반복의 고정점이다:
+그래서 전개는 다음 고정점이다:
 
-1. 아직 안 돈 노드를 **선언 순서대로** 훑는다
-2. `inputs` 의존이 전부 끝났고 `when` 이 **현재 상태**와 맞으면 실행 가능으로 표시한다
-3. 그 노드를 `after` 로 삼는 전이가 있으면 **즉시** 상태를 옮긴다
-4. 한 라운드가 아무것도 새로 실행하지 못하면 끝. 남은 노드가 도달 불가다
+1. 아직 안 돈 노드를 **선언 순서대로** 훑어 첫 번째 실행 가능한 것을 집는다 —
+   `inputs` 의존이 전부 끝났고 `when` 이 **현재 상태**와 맞는 노드
+2. 그 노드를 실행한 것으로 치고, 그 노드를 `after` 로 삼는 전이들을 **구간으로 지나간다**
+3. 지나가는 **각 상태마다** 1 로 되돌아가 그 자리에서 실행 가능해진 노드를 전부 소진한다
+4. 더 집을 노드가 없으면 끝. 남은 노드가 도달 불가다
 
-라운드마다 최소 한 노드가 소진되므로 **전이가 사이클을 이뤄도 끝난다.**
-한 번 조건이 안 맞았던 노드도 다음 라운드에 다시 본다 — 상태는 그 사이에 옮겨갈 수 있다.
+실행할 때마다 노드가 하나씩 소진되므로 **전이가 사이클을 이뤄도 끝난다.**
+한 번 조건이 안 맞았던 노드도 상태가 옮겨간 뒤 다시 본다.
 
-**동시에 실행 가능한 노드들의 순서는 선언 순서로 정한다.** 상태가 하나뿐이므로
-순서를 정하지 않으면 결과가 갈린다. 이 선택은 임의가 아니라 *결정적이어야 한다*는
-요구에서 나온 것이고, 엔진도 같은 순서로 돈다.
+**같은 `after` 를 갖는 전이가 둘 이상이면 그것은 구간이다.**
+`{after:A, to:loading}` + `{after:A, to:done, delay:5000}` 은 `schema.md` 8절이
+`delay` 로 표현하려던 구간 그 자체다 — 금지할 것이 아니라 **전개할 것**이다.
+`delay` **오름차순(없으면 0), 같으면 선언 순서**로 차례로 지나가고,
+각 중간 상태에서 대기 중이던 노드를 그 자리에서 실행 가능으로 본다.
+마지막 하나만 반영하면 `reachable_states` 와 최종 상태가 서로 반대를 말하고
+**전이 선언 순서를 뒤집으면 등록 성패가 뒤집힌다** (MODULES.md R3-6).
+`delay` 가 아직 안 풀린 `${config.X}` 문자열이면 `0` 으로 본다 — 선언 순서가 남는다.
+
+**★ 동시에 실행 가능한 노드들의 순서는 파이프라인의 `nodes` 선언 순서다. 이것은 계약이다**
+(MODULES.md R3-7). 상태가 하나뿐이라 순서를 정하지 않으면 결과가 갈리고,
+**등록 성패까지 갈린다** — 등록은 통과했는데 실행에선 못 닿는 일이 생기면 안 된다.
+→ `simulate().order` 가 **참조 구현**이고 `engine.runtime` 이 이 순서를 따른다.
 
 ## 다른 규칙이 이미 보고한 것은 여기서 다시 내지 않는다
 
@@ -40,6 +51,13 @@
 매핑 대상이 `states.values` 에 없음 `STR-STATE-003`, 노드가 선언 안 한 상태
 `STR-STATE-004`)는 **그 규칙들이 이미 원인을 짚었다.** 여기서 `-006`/`-007` 을 겹쳐
 내면 AI 가 엉뚱한 곳을 고치므로, 그런 노드는 **상태 제약이 없는 것처럼** 전개한다.
+
+같은 이유로 **데이터 의존으로 막힌 노드에는 `-007` 을 내지 않는다** (MODULES.md R3-8).
+`-007` 의 guide 는 `when` 을 확인하라고 말하는데, `when` 이 없는 노드가 그걸 받으면
+AI 가 엉뚱한 곳을 고친다. 데이터로 막힌 이유는 언제나 따로 보고된다 —
+없는 노드 id 는 `STR-REF-003`, 의존 대상이 도달 불가면 그 대상이 `-007` 로,
+순환은 `STR-GRAPH-001`. **`ReachResult.unreachable` 에는 그대로 담는다** —
+정보는 남기고 Finding 만 안 낸다.
 """
 
 from __future__ import annotations
@@ -58,7 +76,9 @@ class ReachResult:
       `reachable`          — 언젠가 실행될 수 있는 노드 id 집합
       `unreachable`        — 영원히 실행되지 않는 노드 id 집합
       `reachable_states`   — 초기 상태에서 실제로 들어가지는 상태 이름 집합
-      `order`              — 실행 가능한 순서 하나 (전개가 노드를 소진한 순서)
+      `order`              — 실행 순서. **동시 실행 가능한 노드는 선언 순서다 —
+                             이것은 계약이고 `engine.runtime` 이 이 순서를 따른다**
+                             (MODULES.md R3-7)
     """
 
     def __init__(self) -> None:
@@ -87,6 +107,21 @@ def _wait_state(
     return mapped
 
 
+def _outgoing(pipeline: Pipeline) -> dict[str, list[str]]:
+    """`{after: [지나가는 상태, ...]}` — 같은 `after` 의 전이는 **구간**이다.
+
+    `delay` 오름차순(없으면 0), 같으면 선언 순서. `delay` 가 아직 안 풀린
+    `${config.X}` 문자열이면 `0` 으로 보아 선언 순서를 남긴다.
+    """
+    grouped: dict[str, list[tuple[int, int, str]]] = {}
+    for index, transition in enumerate(pipeline.transitions):
+        delay = transition.delay if isinstance(transition.delay, int) else 0
+        grouped.setdefault(transition.after, []).append((delay, index, transition.to))
+    return {
+        after: [to for _, _, to in sorted(items)] for after, items in grouped.items()
+    }
+
+
 def simulate(pipeline: Pipeline, node_states: dict[str, dict[str, str]]) -> ReachResult:
     """조건과 그래프만으로 상태머신을 돌려본다.
 
@@ -102,18 +137,14 @@ def simulate(pipeline: Pipeline, node_states: dict[str, dict[str, str]]) -> Reac
     waits = {node.id: _wait_state(node, node_states, declared) for node in nodes}
     # `inputs` 가 DAG 를 만든다 — 값이 앞단 노드 id 다 (`schema.md` 4절).
     deps = {node.id: tuple(node.inputs.values()) for node in nodes}
-
-    outgoing: dict[str, list[str]] = {}
-    for transition in pipeline.transitions:
-        outgoing.setdefault(transition.after, []).append(transition.to)
+    outgoing = _outgoing(pipeline)
 
     current = pipeline.states.initial
     result.reachable_states.add(current)
-
     executed: set[str] = set()
-    progressed = True
-    while progressed:
-        progressed = False
+
+    def ready() -> PipelineNode | None:
+        """지금 상태에서 실행 가능한 첫 노드 — **선언 순서**가 tie-break 다(계약)."""
         for node in nodes:
             if node.id in executed:
                 continue
@@ -122,13 +153,32 @@ def simulate(pipeline: Pipeline, node_states: dict[str, dict[str, str]]) -> Reac
             wait = waits[node.id]
             if wait is not None and wait != current:
                 continue
+            return node
+        return None
+
+    def drain() -> None:
+        """지금 상태에서 더 집을 노드가 없을 때까지 소진한다."""
+        while True:
+            node = ready()
+            if node is None:
+                return
             executed.add(node.id)
             result.order.append(node.id)
-            progressed = True
-            # 전이는 노드가 끝나는 그 자리에서 일어난다 — 뒤 노드는 바뀐 상태를 본다.
-            for to in outgoing.get(node.id, ()):
-                current = to
-                result.reachable_states.add(to)
+            pass_through(node.id)
+
+    def pass_through(node_id: str) -> None:
+        """이 노드를 `after` 로 삼는 전이 구간을 차례로 지나간다.
+
+        **각 중간 상태에서 대기 중이던 노드를 그 자리에서 실행 가능으로 본다** —
+        마지막 상태만 반영하면 중간 상태를 기다리는 노드가 통째로 사라진다.
+        """
+        nonlocal current
+        for to in outgoing.get(node_id, ()):
+            current = to
+            result.reachable_states.add(to)
+            drain()
+
+    drain()
 
     result.reachable = set(executed)
     result.unreachable = {node.id for node in nodes} - executed
@@ -149,6 +199,11 @@ def check_reachability(
 
     한 노드에 둘 다 내지 않는다 — `-006` 이 더 구체적인 진단이므로 그쪽만 낸다.
     규칙을 나누는 기준은 증상이 아니라 **고치는 방법**이다.
+
+    **`-007` 은 `when` 으로 막힌 노드에만 낸다** (MODULES.md R3-8) —
+    즉 `inputs` 의존은 전부 도달 가능한데도 못 닿는 노드다. 데이터로 막힌 것은
+    원인이 따로 보고되므로(`STR-REF-003` / 그 대상의 `-007` / `STR-GRAPH-001`)
+    여기서 겹쳐 내지 않는다. `ReachResult.unreachable` 에는 그대로 남는다.
     """
     findings: list[Finding] = []
     declared = set(pipeline.states.values)
@@ -159,28 +214,35 @@ def check_reachability(
 
     dead_when: set[str] = set()
     for node in pipeline.nodes:
+        when = node.when
         wait = _wait_state(node, node_states, declared)
-        if wait is None or wait in entered_by_transition:
+        if when is None or wait is None or wait in entered_by_transition:
             continue
         dead_when.add(node.id)
+        # 두 층을 다 보여준다 — `when` 에 적는 것은 노드 어휘 `{name}` 이고
+        # 전이를 추가할 자리는 파이프라인 어휘 `{mapped}` 다 (`schema.md` 8절).
         findings.append(
             rules.finding(
                 "STR-STATE-006",
                 path=source_path,
                 node=node.id,
-                fields={"name": wait},
+                fields={"name": when.state, "mapped": wait},
             )
         )
 
     result = simulate(pipeline, node_states)
     for node in pipeline.nodes:
-        if node.id in result.unreachable and node.id not in dead_when:
-            findings.append(
-                rules.finding(
-                    "STR-STATE-007",
-                    path=source_path,
-                    node=node.id,
-                    fields={"name": node.id},
-                )
+        if node.id not in result.unreachable or node.id in dead_when:
+            continue
+        # 데이터 의존이 하나라도 못 닿으면 그쪽이 원인이다 — 여기서 겹쳐 내지 않는다.
+        if not all(dep in result.reachable for dep in node.inputs.values()):
+            continue
+        findings.append(
+            rules.finding(
+                "STR-STATE-007",
+                path=source_path,
+                node=node.id,
+                fields={"name": node.id},
             )
+        )
     return findings

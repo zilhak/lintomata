@@ -315,9 +315,11 @@ _TABLE: tuple[Rule, ...] = (
         "STR-CONTRACT-003",
         "return-missing",
         (_N,),
-        "`returnResult()` 를 호출하지 않습니다. (파일: {file})",
+        "`returnResult()` 로 dataclass 를 내보내지 않습니다 — 호출이 없거나 "
+        "출력 타입이 dataclass 가 아닙니다(primitive·미확정). (파일: {file})",
         "출력은 `returnResult()` 로 내보냅니다. 반환 타입은 dataclass 이고 "
-        "이름은 자유입니다",
+        "이름은 자유입니다 — 타입 동일성을 **구조로** 판정하므로 primitive 를 "
+        "그대로 내보낼 수 없습니다",
     ),
     _rule(
         "STR-CONTRACT-004",
@@ -386,9 +388,11 @@ _TABLE: tuple[Rule, ...] = (
         "STR-STATE-006",
         "state-unreachable",
         (_P,),
-        "`when` 이 참조하는 상태 `{name}` 으로 가는 transition 이 없습니다.",
-        "이 상태로 가는 `transitions` 가 없어 노드가 영원히 실행되지 않습니다. "
-        "전이를 추가하거나 `when` 을 지우세요",
+        "`when` 이 참조하는 상태로 가는 transition 이 없습니다.",
+        "노드 어휘 `{name}` 은 파이프라인 상태 `{mapped}` 에 매핑돼 있는데, "
+        "그 상태로 가는 `transitions` 가 없어 노드가 영원히 실행되지 않습니다. "
+        "전이를 추가하거나 `when` 을 지우세요 "
+        "(전이를 적는 자리는 파이프라인 어휘 `{mapped}` 쪽입니다)",
     ),
     _rule(
         "STR-STATE-007",
@@ -479,7 +483,7 @@ _TABLE: tuple[Rule, ...] = (
     _rule(
         "STR-CMP-002",
         "target-type-differ",
-        (_P,),
+        (_P, _R),
         "target 별 스크립트가 서로 다른 input/output/state 타입을 선언했습니다: {node}",
         "인식 스크립트는 target 마다 달라도 되지만, **input/output/state 타입은 "
         "노드에 귀속되어 공통**이어야 비교가 성립합니다. `params` 는 달라도 됩니다",
@@ -487,7 +491,7 @@ _TABLE: tuple[Rule, ...] = (
     _rule(
         "STR-CMP-003",
         "targets-too-few",
-        (_P,),
+        (_P, _R),
         "`targets` 가 2개 미만입니다: {count}",
         "비교하려면 대상이 둘 이상이어야 합니다. 개수 상한은 없습니다",
     ),

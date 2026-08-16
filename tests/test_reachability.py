@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping, Sequence
 
 import pytest
@@ -51,12 +52,16 @@ def _pipeline(
     *,
     values: Sequence[str],
     initial: str,
-    transitions: Iterable[tuple[str, str]] = (),
+    transitions: Iterable[tuple[str, str] | tuple[str, str, int]] = (),
 ) -> Pipeline:
+    """전이는 `(after, to)` 또는 `(after, to, delay)` 로 준다."""
     return Pipeline(
         info=PipelineInfo(name="p", description="테스트용", kind="verify"),
         states=States(values=list(values), initial=initial),
-        transitions=[Transition(after=after, to=to) for after, to in transitions],
+        transitions=[
+            Transition(after=t[0], to=t[1], delay=t[2] if len(t) == 3 else None)
+            for t in transitions
+        ],
         nodes=list(nodes),
     )
 
@@ -66,6 +71,14 @@ def _ids(findings: list[Finding], rule_id: str) -> set[str]:
     return {f.node for f in findings if f.rule_id == rule_id}
 
 
+_SLOT_RE = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}")
+
+
+def _guide_fragment(rule_id: str) -> str:
+    """guide 에서 슬롯이 없는 가장 긴 조각 — 렌더된 메시지에 그대로 남아 있어야 한다."""
+    return max(_SLOT_RE.split(rules.get_rule(rule_id).guide), key=len)
+
+
 def _assert_rendered(findings: list[Finding]) -> None:
     """슬롯이 전부 채워졌고 규칙 id 가 살아 있는지 — 리포트가 원인을 짚는 최소 조건."""
     for f in findings:
@@ -73,7 +86,7 @@ def _assert_rendered(findings: list[Finding]) -> None:
         assert f.status == "error"
         assert "{" not in f.message, f"슬롯이 안 채워졌다: {f.message!r}"
         # guide 가 메시지 뒤에 이어붙는다 (`schema.md` 11절) — AI 자기 수정의 재료다.
-        assert rules.get_rule(f.rule_id).guide[:12] in f.message
+        assert _guide_fragment(f.rule_id) in f.message
 
 
 # ── 정상 파이프라인 ──────────────────────────────────────────────────────────
@@ -168,8 +181,11 @@ def test_when_state_no_transition_targets_it() -> None:
     assert [f.rule_id for f in findings] == ["STR-STATE-006"]
     assert findings[0].node == "ghost"
     assert findings[0].path == "p.json"
-    # 슬롯에는 **파이프라인 상태 이름**이 들어간다 — 전이를 추가할 자리가 그쪽이므로.
+    # 두 층이 **둘 다** 보여야 한다 (R3-9) — `when` 에 적힌 것은 노드 어휘 `done`,
+    # 전이를 추가할 자리는 파이프라인 어휘 `settled` 다. 하나만 보이면
+    # JSON 의 어느 자리를 고쳐야 하는지가 안 드러난다.
     assert "settled" in findings[0].message
+    assert "done" in findings[0].message
     # `-006` 이 났으면 같은 노드에 `-007` 을 겹쳐 내지 않는다.
     assert _ids(findings, "STR-STATE-007") == set()
 
@@ -220,8 +236,13 @@ def test_state_passes_before_inputs_finish() -> None:
     assert findings[0].node == "late"
 
 
-def test_data_block_and_state_block_are_different_rules() -> None:
-    """의존으로 막힌 것과 `when` 으로 막힌 것이 섞이면 AI 가 엉뚱한 곳을 고친다."""
+def test_data_blocked_node_gets_no_finding_but_stays_unreachable() -> None:
+    """데이터로 막힌 것에 `-007` 을 내면 AI 가 엉뚱한 곳을 고친다 (R3-8).
+
+    `-007` 의 guide 는 `when` 을 확인하라고 말하는데 `dataBlocked` 에는 `when` 이
+    아예 없다. 없는 노드 id 를 가리킨 것은 `STR-REF-003` 이 이미 보고한다 —
+    **정보는 `unreachable` 에 남기고 Finding 만 안 낸다.**
+    """
     pipeline = _pipeline(
         [
             _node("gate"),
@@ -234,24 +255,49 @@ def test_data_block_and_state_block_are_different_rules() -> None:
     )
     node_states = {"stateBlocked": {"done": "gone"}}
 
+    result = simulate(pipeline, node_states)
+    assert result.unreachable == {"dataBlocked", "stateBlocked"}
+
     findings = check_reachability(pipeline, node_states, "p.json")
 
     _assert_rendered(findings)
     assert _ids(findings, "STR-STATE-006") == {"stateBlocked"}
-    assert _ids(findings, "STR-STATE-007") == {"dataBlocked"}
+    assert _ids(findings, "STR-STATE-007") == set()
 
 
-def test_self_dependency_is_unreachable() -> None:
+def test_node_blocked_by_an_unreachable_dependency_defers_to_that_dependency() -> None:
+    """의존 대상이 도달 불가면 **그 대상이** `-007` 로 보고된다 — 뒷단은 겹쳐 내지 않는다."""
+    pipeline = _pipeline(
+        [
+            _node("open"),
+            _node("late", inputs={"page": "open"}, when="fresh"),
+            _node("tail", inputs={"x": "late"}),
+        ],
+        values=["idle", "capturing"],
+        initial="idle",
+        transitions=[("open", "capturing")],
+    )
+    node_states = {"late": {"fresh": "idle"}}
+
+    result = simulate(pipeline, node_states)
+    assert result.unreachable == {"late", "tail"}
+
+    findings = check_reachability(pipeline, node_states, "p.json")
+
+    _assert_rendered(findings)
+    assert _ids(findings, "STR-STATE-007") == {"late"}
+
+
+def test_self_dependency_defers_to_the_cycle_rule() -> None:
+    """자기 자신을 입력으로 받는 것은 순환이다 — `STR-GRAPH-001` 의 몫이다 (R3-8)."""
     pipeline = _pipeline(
         [_node("loop", inputs={"x": "loop"})],
         values=["idle"],
         initial="idle",
     )
 
-    findings = check_reachability(pipeline, {}, "p.json")
-
-    _assert_rendered(findings)
-    assert _ids(findings, "STR-STATE-007") == {"loop"}
+    assert simulate(pipeline, {}).unreachable == {"loop"}
+    assert check_reachability(pipeline, {}, "p.json") == []
 
 
 # ── 전이 사이클 — 정상 케이스에서 멈춘다 ─────────────────────────────────────
@@ -281,6 +327,100 @@ def test_transition_cycle_terminates_and_runs_each_node_once() -> None:
     assert result.order == ["toggleOn", "toggleOff", "after"]
     assert len(result.order) == len(set(result.order))
     assert result.reachable_states == {"low", "high"}
+
+
+# ── 같은 `after` 의 전이 여럿 = 구간 (R3-6) ─────────────────────────────────
+
+
+def _interval_pipeline(reversed_declaration: bool) -> Pipeline:
+    """`{after:load, to:loading}` + `{after:load, to:done, delay:5000}` — `delay` 구간.
+
+    `schema.md` 8절이 `delay` 로 표현하려던 형상 그 자체다. 문법상 정상이므로
+    금지할 것이 아니라 전개할 것이다.
+    """
+    transitions: list[tuple[str, str] | tuple[str, str, int]] = [
+        ("load", "loading"),
+        ("load", "done", 5000),
+    ]
+    if reversed_declaration:
+        transitions.reverse()
+    return _pipeline(
+        [
+            _node("load"),
+            _node("spinner", when="mid"),
+            _node("result", when="end"),
+        ],
+        values=["idle", "loading", "done"],
+        initial="idle",
+        transitions=transitions,
+    )
+
+
+_INTERVAL_STATES = {"spinner": {"mid": "loading"}, "result": {"end": "done"}}
+
+
+@pytest.mark.parametrize("reversed_declaration", [False, True])
+def test_intermediate_state_of_an_interval_is_passed_through(
+    reversed_declaration: bool,
+) -> None:
+    """중간 상태 `loading` 을 기다리는 노드가 그 자리에서 실행 가능해야 한다.
+
+    마지막 전이만 반영하면 `spinner` 가 통째로 사라지고, `reachable_states` 는
+    `loading` 을 담았다고 말해 **한 결과 안에서 두 필드가 반대를 말한다.**
+    그리고 **전이 선언 순서를 뒤집으면 등록 성패가 뒤집힌다** — 그래서 두 순서를 다 돌린다.
+    """
+    pipeline = _interval_pipeline(reversed_declaration)
+
+    result = simulate(pipeline, _INTERVAL_STATES)
+
+    assert result.reachable == {"load", "spinner", "result"}
+    assert result.unreachable == set()
+    assert result.reachable_states == {"idle", "loading", "done"}
+    # `delay` 오름차순 — `loading`(0) 을 지나 `done`(5000) 으로 간다.
+    assert result.order == ["load", "spinner", "result"]
+    assert check_reachability(pipeline, _INTERVAL_STATES, "p.json") == []
+
+
+def test_interval_expansion_is_independent_of_declaration_order() -> None:
+    """선언 순서를 뒤집어도 결과가 같다 — 순서는 `delay` 가 정한다."""
+    forward = simulate(_interval_pipeline(False), _INTERVAL_STATES)
+    backward = simulate(_interval_pipeline(True), _INTERVAL_STATES)
+
+    assert forward.order == backward.order
+    assert forward.reachable == backward.reachable
+    assert forward.reachable_states == backward.reachable_states
+
+
+def test_same_delay_keeps_declaration_order() -> None:
+    """`delay` 가 같으면 선언 순서가 tie-break 다."""
+    pipeline = _pipeline(
+        [_node("go"), _node("second", when="b"), _node("first", when="a")],
+        values=["idle", "a", "b"],
+        initial="idle",
+        transitions=[("go", "a", 100), ("go", "b", 100)],
+    )
+    node_states = {"first": {"a": "a"}, "second": {"b": "b"}}
+
+    assert simulate(pipeline, node_states).order == ["go", "first", "second"]
+
+
+def test_unresolved_delay_reference_is_treated_as_zero() -> None:
+    """`delay` 가 아직 안 풀린 `${config.X}` 여도 구간 전개가 깨지지 않는다."""
+    pipeline = Pipeline(
+        info=PipelineInfo(name="p", description="테스트용", kind="verify"),
+        states=States(values=["idle", "m", "z"], initial="idle"),
+        transitions=[
+            Transition(after="go", to="m", delay="${config.wait}"),
+            Transition(after="go", to="z", delay=3000),
+        ],
+        nodes=[_node("go"), _node("mid", when="m")],
+    )
+    node_states = {"mid": {"m": "m"}}
+
+    result = simulate(pipeline, node_states)
+
+    assert result.reachable == {"go", "mid"}
+    assert result.reachable_states == {"idle", "m", "z"}
 
 
 # ── 다른 규칙이 이미 보고한 것은 겹쳐 내지 않는다 ────────────────────────────
@@ -313,15 +453,24 @@ def test_mapped_state_outside_values_defers_to_state_003() -> None:
 # ── 규칙 계약 ────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("rule_id", ["STR-STATE-006", "STR-STATE-007"])
-def test_rule_slots_are_what_this_module_fills(rule_id: str) -> None:
+@pytest.mark.parametrize(
+    ("rule_id", "slots"),
+    [
+        # R3-9 — `-006` 은 노드 어휘와 파이프라인 상태 **둘 다** 받는다.
+        ("STR-STATE-006", ("name", "mapped")),
+        ("STR-STATE-007", ("name",)),
+    ],
+)
+def test_rule_slots_are_what_this_module_fills(
+    rule_id: str, slots: tuple[str, ...]
+) -> None:
     """이 모듈이 채우는 슬롯이 규칙이 요구하는 슬롯과 정확히 같은가.
 
     규칙 문구가 바뀌어 슬롯이 늘면 `rules.finding()` 이 `StrictlerError` 를 내면서
     **규칙 id 가 사라진다.** 통합 전에 여기서 걸린다.
     """
     rule = rules.get_rule(rule_id)
-    assert rule.slots == ("name",)
+    assert rule.slots == slots
     assert "pipeline-register" in rule.when
 
 

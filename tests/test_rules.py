@@ -361,3 +361,47 @@ def test_ref_broken_guide_names_the_missing_id() -> None:
     _message, guide = text.split("\n", 1)
     assert "nd_e5f6a7b8" in guide
     assert "{id}" not in text
+
+
+# ── R3 문구·검사시점 개정 (rules.md 4절, 번호는 그대로) ───────────────
+
+
+def test_state_006_shows_both_layers() -> None:
+    """R3-9 — 노드 어휘와 파이프라인 상태는 **다른 층**이다.
+
+    하나만 보이면 JSON 의 어느 자리를 고쳐야 하는지가 안 드러난다 —
+    `when` 에 적는 것은 노드 어휘이고 전이를 추가할 자리는 파이프라인 어휘다.
+    """
+    rule = get_rule("STR-STATE-006")
+    assert rule.slots == ("name", "mapped")
+
+    text = render("STR-STATE-006", name="done", mapped="settled")
+    assert "done" in text
+    assert "settled" in text
+    assert "{" not in text
+
+
+def test_compare_rules_also_run_at_spec_execution() -> None:
+    """R3-4 — target 별 스크립트는 Spec 의 `config` 가 채우므로 등록 시점엔 모른다.
+
+    등록 시점 판정만 두면 비교 파이프라인에서 이 규칙이 **영영 안 돈다.**
+    """
+    for rule_id in ("STR-CMP-002", "STR-CMP-003"):
+        assert get_rule(rule_id).when == ("pipeline-register", "run"), rule_id
+
+    at_run = {rule.id for rule in rules_for("run")}
+    assert {"STR-CMP-002", "STR-CMP-003"} <= at_run
+
+
+def test_contract_003_covers_non_dataclass_output() -> None:
+    """R3-11 — `-> str` 같은 primitive 반환도 이 규칙이 잡는다.
+
+    guide 는 이미 "반환 타입은 dataclass" 라고 말하는데 강제하는 규칙이 없었다.
+    규칙을 새로 파지 않은 이유는 두 경우의 **고치는 방법이 같기** 때문이다.
+    """
+    rule = get_rule("STR-CONTRACT-003")
+    assert rule.slots == ("file",)
+
+    text = render("STR-CONTRACT-003", file="/abs/perceive.py")
+    assert "dataclass" in text
+    assert "primitive" in text
