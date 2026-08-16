@@ -1,0 +1,18 @@
+# 작업용 문서·임시 파일 (git 에 올리지 않는다)
+.claude-workspace/
+
+# 편집기·OS
+*.swp
+*.swo
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
