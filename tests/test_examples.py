@@ -255,6 +255,11 @@ def test_노드_단위테스트가_경로로_돈다(
             id="출력이-dataclass-아님",
         ),
         pytest.param(
+            ("script", "add", str(INVALID / "bad_dependency.py")),
+            {"STR-DEP-001"},
+            id="선언한-패키지가-환경에-없음",
+        ),
+        pytest.param(
             ("node", "add", str(INVALID / "bad_reckon_no_verdict.json")),
             {"STR-CONTRACT-007"},
             id="판정-필드-없는-Reckon",

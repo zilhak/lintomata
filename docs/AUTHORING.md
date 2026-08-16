@@ -5,7 +5,7 @@
 그러니 이 문서는 소개글이 아니라 **따라 하는 순서와 판단 기준**이다.
 
 - **레퍼런스는 [`docs/schema.md`](schema.md)** — 필드 목록·문법·계약의 정본이다. 여기서 되풀이하지 않고 링크한다.
-- **규칙 id 는 [`docs/rules.md`](rules.md)** — 61개 전체와 각 규칙의 `guide`.
+- **규칙 id 는 [`docs/rules.md`](rules.md)** — 64개 전체와 각 규칙의 `guide`.
 - **여기서 인용하는 파일은 전부 [`examples/home-check`](../examples/home-check)** 에 실재한다.
   이 문서의 명령과 출력은 **실제로 돌려서 받은 것**이다.
 
@@ -254,6 +254,49 @@ input 타입과 output 타입이 다르면 등록이 실패한다(`STR-CONTRACT-
 ```
 1786874956395	…/examples/home-check/targets/home.html	612
 ```
+
+### 외부 패키지를 쓰려면 — PEP 723 로 선언하고 **strictler 환경에 설치한다**
+
+stdlib 만 쓰면 아무것도 안 해도 된다. **대부분의 스크립트가 그렇고, 헤더가 없는 것이 정상이다.**
+
+`selectolax` 같은 외부 패키지가 필요하면 두 가지를 한다.
+
+**① 스크립트 맨 위에 PEP 723 헤더를 쓴다.**
+
+```python
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["selectolax>=0.3"]
+# ///
+from dataclasses import dataclass
+
+from selectolax.lexbor import LexborHTMLParser
+```
+
+각 줄이 `# ` 로 시작하고, 사이는 TOML 이며, `# ///` 로 닫는다. 파일 맨 위여야 한다.
+
+**② strictler 가 설치된 환경에 함께 깐다.**
+
+```
+uv tool install strictler --with 'selectolax>=0.3'
+```
+
+**★ 헤더는 선언일 뿐 환경을 만들어 주지 않는다.** 노드 스크립트는 strictler 와 **같은
+프로세스**에 로드되므로 `import` 는 strictler 가 설치된 환경에서 풀린다 — 격리 환경도,
+스크립트별 가상환경도 없다. ESLint 플러그인이 ESLint 와 같은 `node_modules` 를 쓰는 것과
+같은 모델이다 (`schema.md` 6절).
+
+**헤더를 쓰면 등록 시점에 확인한다.** 선언한 것이 환경에 없으면 `script add` 가 거절하고
+설치 명령을 알려준다 — 돌려보기 전에 잡히는 자리다.
+
+| 규칙 | 언제 | 무엇을 고치나 |
+|---|---|---|
+| `STR-DEP-001` | 선언한 패키지가 환경에 없다 | **설치한다** (메시지에 명령이 그대로 들어 있다) |
+| `STR-DEP-002` | 헤더 형식이 잘못됐다 | **헤더를 고친다** — 설치할 것이 없다 |
+| `STR-DEP-003` | 설치된 버전이 요구를 만족하지 않는다 | 버전을 맞추거나 헤더의 요구를 고친다 |
+
+> **HTML 파싱에는 `selectolax`(lexbor) 를 쓴다.** `BeautifulSoup` 은 lxml 백엔드로도
+> 13배 느리다 (`CLAUDE.md` 실측표).
 
 ---
 
@@ -534,12 +577,13 @@ EXIT=1
 |---|---|---|---|
 | 시간·랜덤·subprocess·미선언 state, `dict`, `Optional` | `script add invalid/bad_banned.py` | `STR-BAN-001/002/003/004`, `STR-TYPE-001/002` | 시각은 `Args.state.__startedAt`, 외부 도구는 Spec 의 `tool`, 복합 타입은 dataclass, 없을 수 있는 필드는 **선언하지 않는다** |
 | 출력이 dataclass 가 아니다 (primitive 반환) | `script add invalid/bad_output_primitive.py` | `STR-CONTRACT-003` | 값 하나라도 dataclass 로 감싼다 — 타입 동일성을 **구조로** 판정한다 |
+| PEP 723 헤더에 선언한 패키지가 환경에 없다 | `script add invalid/bad_dependency.py` | `STR-DEP-001` | 메시지에 적힌 `uv tool install strictler --with '...'` 를 그대로 실행한다. 헤더는 선언일 뿐이고 **격리 환경을 만들어 주지 않는다** |
 | Reckon 인데 판정 필드가 없다 (`ok` 로 지음) | `node add invalid/bad_reckon_no_verdict.json` | `STR-CONTRACT-007` | 출력 dataclass 에 `passed: bool` 을 둔다 |
 | 한 노드에 서로 다른 앞단 둘을 배선 | `pipeline add invalid/pipeline_ambiguous.json` | `STR-GRAPH-003` | `Args.input` 은 필드 하나다. 앞단을 하나로 줄이거나 둘을 합치는 노드를 사이에 둔다 |
 | `when` 이 기다리는 상태로 가는 전이가 없다 | `pipeline add invalid/pipeline_dead_state.json` | `STR-STATE-006` | `transitions` 를 추가하거나 `when` 을 지운다. 전이를 적는 자리는 **파이프라인 어휘** 쪽이다 |
 | Reckon 이 기댓값을 안 쓰고 하드코딩 | `node test invalid/bad_reckon_hardcoded.test.json` | `STR-TEST-007` | `args.params` 의 기댓값을 실제로 읽는다. **정적으로는 못 잡혀 단위테스트에서 잡힌다** |
 
-앞의 다섯은 **등록이 실패한다** — 등록소에 들어가지 않으므로 잘못된 것이 재사용될 일이 없다:
+앞의 여섯은 **등록이 실패한다** — 등록소에 들어가지 않으므로 잘못된 것이 재사용될 일이 없다:
 
 ```
 $ uv run strictler pipeline add $STRICTLER_EXAMPLE_ROOT/invalid/pipeline_ambiguous.json

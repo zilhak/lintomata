@@ -564,7 +564,7 @@
           │             │                    │
         rules ── report │                    │
           │             │                    │
-        refs ───────────┤                    │
+        refs ── deps ───┤                    │
           │             │                    │
     typesys.primitives ─┤                    │
           │             │                    │
@@ -821,6 +821,40 @@ def expand_state(value: Any, state: Mapping[str,Any]) -> Any
 
 ---
 
+### `src/strictler/deps.py` — 의존성 확인 (추가)
+
+**책임.** 스크립트의 PEP 723 헤더를 읽고 **선언한 패키지가 현재 환경에 있는지** 본다.
+**격리를 만들지 않는다** — 확인하고 설치 명령을 안내하는 것이 전부다.
+
+**의존.** `rules`, `errors`, `packaging`(런타임 의존성).
+**근거.** `schema.md` 6절 *"스크립트의 의존성 — 격리하지 않는다"*, `rules.md` DEP.
+
+```python
+BLOCK_TYPE: str                   # "script" — PEP 723 블록 종류 이름
+
+class Declared:                   # frozen dataclass
+    present: bool = False         # 헤더가 있었는가. **없는 것이 정상이다**
+    requires_python: str = ""
+    dependencies: tuple[str, ...] = ()   # PEP 508 문자열 원문
+
+def read_header(source: str, path: str) -> tuple[Declared, list[Finding]]   # STR-DEP-002
+def declared_dependencies(source: str) -> tuple[str, ...]   # 관대하게 — 등록소 기록용
+def check_dependencies(source: str, path: str) -> list[Finding]   # STR-DEP-001/002/003
+def install_command(requirement: str) -> str    # uv tool install strictler --with '<req>'
+def missing_module_hint(source: str, module: str) -> str   # 실행 시점 안내. 해당 없으면 ""
+```
+
+**`uv run --script` 로 격리 프로세스를 띄우지 않는다** — `schema.md` 16절의 폐기된 안이다.
+스크립트는 strictler 와 같은 프로세스에 로드되므로 `import` 가 strictler 환경에서 풀린다.
+
+**등록소 전체를 훑어 충돌 쌍을 찾는 코드를 만들지 마라.** 환경에는 패키지가 한 벌만
+깔리므로 호환 불가 요구가 둘 있으면 반드시 한쪽이 `STR-DEP-003` 에 걸린다.
+
+**설치 여부·버전은 `importlib.metadata`**, 이름 정규화는 **PEP 503**(`My_Pkg == my-pkg`).
+환경 마커가 이 환경에 해당하지 않는 요구는 건너뛴다.
+
+---
+
 ### `src/strictler/typesys/primitives.py` — Step 1-a
 
 **책임.** 허용 타입 어휘와 타입 표현 파싱.
@@ -896,7 +930,9 @@ class TypeRegistry:
 SUBDIRS: dict[str,str]    # {"script":"scripts","node":"nodes","pipeline":"pipelines","spec":"specs"}
 
 class RegistryEntry:  id: str; kind: EntryKind; name: str; hash: str; registered_at: str
+                      test_hash: str = ""       # R6-7
                       refs: list[str] = []
+                      dependencies: list[str] = []   # 스크립트의 PEP 723 선언 (원문)
                       broken: str = ""          # "" | "ref" | "validation"
                       broken_detail: str = ""
 class RegistryIndex:  version: int = 1; entries: dict[str, RegistryEntry] = {}
@@ -920,6 +956,10 @@ class Store:
 ```
 
 **등록은 편의가 아니라 검증 결과를 재사용하는 기제다.** 해시가 그대로면 재검사하지 않는다.
+
+**`dependencies` 는 `kind == "script"` 일 때만 채워진다** (`deps.declared_dependencies`).
+`schema.md` 6절이 격리를 뒤집을 조건으로 못 박은 *"같은 패키지의 호환되지 않는 버전을
+요구하는 스크립트가 둘 이상"* 을 **도구가 스스로 검출**하기 위한 재료다.
 
 ---
 
@@ -971,8 +1011,8 @@ def check_registration(kind: EntryKind, source: Path, store: Store) -> list[Find
 
 **책임.** 스크립트 AST 검사. **스크립트를 돌리지 않는다** — `ast` 로 선언과 형식만 본다.
 
-**의존.** `typesys.*`, `errors`, `rules`, `model`(`NodeType`).
-**근거.** `schema.md` 6·13절, `rules.md` CONTRACT·TYPE·BAN·TOOL.
+**의존.** `typesys.*`, `errors`, `rules`, `deps`, `model`(`NodeType`).
+**근거.** `schema.md` 6·13절, `rules.md` CONTRACT·TYPE·BAN·DEP·TOOL.
 
 ```python
 class ScriptContract:
@@ -995,6 +1035,10 @@ def check_bans(source, path, contract) -> list[Finding]            # BAN-001~004
 def check_node_type_form(contract, node_type: NodeType) -> list[Finding]   # CONTRACT-005/006
 def check_tool_calls(contract, tool: dict[str, object]) -> list[Finding]   # TOOL-001/002 (실행 시점)
 ```
+
+**`check_script` 는 `deps.check_dependencies` 도 함께 돌린다** (`STR-DEP-001/002/003`).
+헤더를 읽어 지금 환경에 있는지 `importlib.metadata` 로 보기만 하므로
+*"스크립트를 돌리지 않는다"* 는 그대로다.
 
 **★ `ScriptContract` 가 이 프로젝트에서 가장 많이 재사용되는 자료구조다.**
 파이프라인 검사(배선 타입·상태 매핑)·엔진(`Args` 조립)·단위테스트가 전부 이걸 재료로 쓴다.
@@ -1144,6 +1188,12 @@ def validate_output(contract, value, registry: TypeRegistry, *, path: str, node:
 
 **샌드박싱은 하지 않는다.** ESLint·vite·jest 전부 사용자 코드를 그냥 로드해 실행한다 —
 lint 계열의 표준 신뢰 모델을 그대로 따른다.
+
+**의존성 격리도 없다** (`schema.md` 6절). 스크립트는 strictler 와 **같은 프로세스**에
+로드되므로 `import` 가 strictler 환경에서 풀린다 — `uv run` 이 바깥에서 격리해 준다는
+것은 **사실이 아니다**(`uv tool install` 로 전역 설치하면 그 "바깥" 이 없다).
+`load_script`/`invoke` 는 `ModuleNotFoundError` 가 났을 때 그 모듈이 PEP 723 헤더에
+선언돼 있으면 **설치 명령을 에러 메시지에 붙인다**(`deps.missing_module_hint`).
 
 **`build_args` 주의:** `Args` 의 세 필드는 **쓰는 것만 선언**돼 있다. 입력이 없는 Vantage 는
 `input` 필드가 아예 없으므로 **선언에 없는 필드를 채우면 안 된다.**
