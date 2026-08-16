@@ -508,9 +508,10 @@ src/strictler/
   model/     네 층(Spec/Pipeline/Node/NodeTest)의 pydantic 모델
   typesys/   타입 어휘 + dataclass 집합 정규화 (구조 동일성·부분집합 병합)
   refs.py    ${env.X}/${config.X}/${state.X}/${ref.<id>} 전개, 절대경로 강제
-  rules.py   검사 규칙 61개 + 슬롯 검증          report.py  리포트
+  rules.py   검사 규칙 69개 + 슬롯 검증          report.py  리포트
+  deps.py    PEP 723 의존성 선언 검사 (STR-DEP)
   store/     등록소 CRUD·해시 대조·참조 그래프
-  checks/    script(AST) · node · pipeline · reachability  ← 등록 시점 검사
+  checks/    script(AST) · library · node · pipeline · reachability · contracts(해시 재사용)
   engine/    drive(구동 루프 정본) · state · exec · runtime(값 검증) · compare(비교)
   testing/   노드 단위테스트 하네스
   cli.py     strictler <종류> add|list|show|update|remove / node test / check
@@ -522,7 +523,7 @@ src/strictler/
 |---|---|
 | **`docs/AUTHORING.md`** | **저작 가이드(독자는 AI).** 요구 → 네 층 파일, 단위테스트, 결과 읽는 법, **실패 카탈로그** |
 | **`docs/schema.md`** | **확정 사항 정본.** 네 층 구조·등록소·타입 시스템·노드 계약·리포트 전부. **작업 전 먼저 읽을 것** |
-| **`docs/rules.md`** | 검사 규칙 **61개** + ID 체계 + **증가 이력**(왜 늘었는지). 늘어나는 것이 전제 |
+| **`docs/rules.md`** | 검사 규칙 **69개** + ID 체계 + **증가 이력**(왜 늘었는지). 늘어나는 것이 전제 |
 | **`docs/MODULES.md`** | 모듈 경계·공개 시그니처. **최상단 계약 개정(R1~R6)이 본문보다 우선한다** |
 | `.claude-workspace/concept.md` | 설계에 이르는 논의 과정 (참고용) |
 
