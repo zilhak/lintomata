@@ -23,12 +23,12 @@ guide 문구에 그대로 들어 있는 `${env.X}` `${ref.sc_...}` 같은 참조
 
 from __future__ import annotations
 
-import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from lintomata.errors import Finding, NotRunCause, Status, LintomataError
+from lintomata.locale import SLOT_RE, translate
 
 __all__ = [
     "RuleWhen",
@@ -93,7 +93,10 @@ class Rule(BaseModel):
 
 # `{name}` 처럼 **점 없는 식별자 하나**만 자리표시자로 본다.
 # guide 문구에 그대로 들어 있는 `${env.X}` `${ref.sc_...}` 는 점이 있어 걸리지 않는다.
-_SLOT_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+#
+# **정의는 `locale` 에 있다** — 이것이 곧 *번역이 보존해야 할 것*의 정의이므로,
+# 카탈로그 검증과 같은 것을 봐야 한다. 두 벌로 두면 갈리고, 갈린 쪽이 곧 사고다.
+_SLOT_RE = SLOT_RE
 
 
 def _slots_of(*templates: str) -> tuple[str, ...]:
@@ -748,8 +751,17 @@ def rules_for(when: RuleWhen) -> list[Rule]:
 
 
 def _fill(template: str, fields: dict[str, object]) -> str:
-    """`{식별자}` 자리표시자를 `fields` 로 치환한다. 누락 검증은 호출자가 이미 했다."""
-    return _SLOT_RE.sub(lambda m: str(fields[m.group(1)]), template)
+    """`{식별자}` 자리표시자를 `fields` 로 치환한다. 누락 검증은 호출자가 이미 했다.
+
+    **모르는 이름은 그대로 둔다.** 원문의 슬롯은 호출자가 이미 검증했으므로 이 경우는
+    *번역이 원문에 없는 슬롯을 만들어낸 것* 뿐이고, 그때 `KeyError` 로 터지면
+    번역 오타가 도구를 못 돌게 만든다. 그런 카탈로그는 `slot_mismatches` 가
+    테스트에서 잡는다 — 실행 시점에 죽일 일이 아니다.
+    """
+    return _SLOT_RE.sub(
+        lambda m: str(fields[m.group(1)]) if m.group(1) in fields else m.group(0),
+        template,
+    )
 
 
 def _render(rule_id: str, fields: dict[str, object]) -> str:
@@ -758,6 +770,10 @@ def _render(rule_id: str, fields: dict[str, object]) -> str:
     슬롯 값이 없으면 **조용히 넘어가지 않고 오류**다 — 리포트에 `{cycle}` 이
     그대로 새어나가면 그건 검사기의 버그이지 위반이 아니다.
     필요한 슬롯 전부를 `Rule.slots` 에서 알려준다.
+
+    **누락 판정은 원문(`Rule.slots`) 기준이고, 치환은 번역된 문구에 한다.**
+    로케일이 판정을 흔들면 안 되기 때문이다 — 종료 코드도 규칙 id 도 언어와 무관하다
+    (`schema.md` 2절).
     """
     rule = get_rule(rule_id)
     missing = [name for name in rule.slots if name not in fields]
@@ -768,7 +784,9 @@ def _render(rule_id: str, fields: dict[str, object]) -> str:
             f"이 규칙이 요구하는 자리표시자는 {', '.join(rule.slots)} 입니다 "
             "(`rules.Rule.slots`). 값은 `fields` 딕셔너리로 넘깁니다."
         )
-    return f"{_fill(rule.message, fields)}\n{_fill(rule.guide, fields)}"
+    message = _fill(translate(rule.message), fields)
+    guide = _fill(translate(rule.guide), fields)
+    return f"{message}\n{guide}"
 
 
 def render(rule_id: str, **fields: object) -> str:

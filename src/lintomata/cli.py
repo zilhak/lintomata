@@ -44,8 +44,9 @@ import time
 from pathlib import Path
 from typing import Any, Sequence
 
-from lintomata import rules
+from lintomata import locale, rules
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import translate as _
 from lintomata.model import EntryKind
 from lintomata.report import Report, build_report, render_json, render_text
 from lintomata.store.entries import RegistryEntry, Store
@@ -65,12 +66,17 @@ _ID_PREFIX: dict[str, str] = {
 }
 
 _KIND_LABEL = {
-    "script": "스크립트 (.py) — 실제 동작 코드",
-    "library": "라이브러리 (.py) — 여러 스크립트가 나눠 쓰는 함수",
-    "node": "노드 (JSON) — 동작 정의",
-    "pipeline": "파이프라인 (JSON) — 노드들의 DAG 구성",
-    "spec": "Spec (JSON) — 기획",
+    "script": "script (.py) — the code that actually runs",
+    "library": "library (.py) — functions shared by several scripts",
+    "node": "node (JSON) — what one step does",
+    "pipeline": "pipeline (JSON) — the DAG the nodes are wired into",
+    "spec": "Spec (JSON) — the plan",
 }
+"""**원문은 영어다** (`schema.md` 2절). 번역은 `locale/ko.json` 에서 얹는다.
+
+여기서 번역하지 않고 **쓰는 자리에서** `_()` 를 부른다 — 이 dict 는 import 시점에
+확정되는데 로케일은 그보다 늦게 정해지기 때문이다.
+"""
 
 
 # ── 공용 ─────────────────────────────────────────────────────────────────────
@@ -573,33 +579,44 @@ def _add_crud_subcommands(kind: EntryKind, parser: argparse.ArgumentParser) -> N
     """한 종류에 대한 CRUD 서브커맨드를 붙인다."""
     sub = parser.add_subparsers(dest="action", metavar="<action>", required=True)
 
-    p_add = sub.add_parser("add", help="정적 검사 후 등록. 통과해야 저장된다")
-    p_add.add_argument("file", help="등록할 파일 경로")
-    p_add.add_argument("--name", default="", help="등록 이름 (생략 시 파일명)")
+    p_add = sub.add_parser(
+        "add", help=_("Register after the static checks. Only what passes is stored")
+    )
+    p_add.add_argument("file", help=_("Path of the file to register"))
+    p_add.add_argument(
+        "--name", default="", help=_("Registered name (defaults to the file name)")
+    )
     p_add.set_defaults(func=cmd_add)
 
-    p_list = sub.add_parser("list", help="목록. 깨진 구성 표시")
-    p_list.add_argument("--json", action="store_true", help="JSON 으로 출력")
+    p_list = sub.add_parser("list", help=_("List entries. Broken ones are marked"))
+    p_list.add_argument("--json", action="store_true", help=_("Print as JSON"))
     p_list.set_defaults(func=cmd_list)
 
-    p_show = sub.add_parser("show", help="상세 — 내용·해시·참조 관계")
+    p_show = sub.add_parser("show", help=_("Detail — content, hash, references"))
     p_show.add_argument("id", help=f"{kind} id")
-    p_show.add_argument("--json", action="store_true", help="JSON 으로 출력")
+    p_show.add_argument("--json", action="store_true", help=_("Print as JSON"))
     p_show.set_defaults(func=cmd_show)
 
-    p_update = sub.add_parser("update", help="내용 교체. id 유지. 상위 전이적 재검증")
+    p_update = sub.add_parser(
+        "update",
+        help=_("Replace the content. Keeps the id. Revalidates dependents transitively"),
+    )
     p_update.add_argument("id", help=f"{kind} id")
-    p_update.add_argument("file", help="새 내용 파일 경로")
+    p_update.add_argument("file", help=_("Path of the file holding the new content"))
     p_update.set_defaults(func=cmd_update)
 
-    p_remove = sub.add_parser("remove", help="삭제. 참조가 있어도 막지 않는다")
+    p_remove = sub.add_parser(
+        "remove", help=_("Delete. Not blocked even when something still references it")
+    )
     p_remove.add_argument("id", help=f"{kind} id")
     p_remove.set_defaults(func=cmd_remove)
 
     if kind == "node":
-        p_test = sub.add_parser("test", help="노드 단위테스트 (실제 실행)")
+        p_test = sub.add_parser(
+            "test", help=_("Node unit test (actually runs the script)")
+        )
         p_test.add_argument("id", help="node id")
-        p_test.add_argument("--json", action="store_true", help="JSON 으로 출력")
+        p_test.add_argument("--json", action="store_true", help=_("Print as JSON"))
         p_test.set_defaults(func=cmd_node_test)
 
 
@@ -607,10 +624,13 @@ def build_parser() -> argparse.ArgumentParser:
     """`lintomata` 의 전체 argparse 트리를 만든다."""
     parser = argparse.ArgumentParser(
         prog="lintomata",
-        description="기획대로 돌아가는지를 검사하는 도구 — QA 의 프로그램화, lint 의 인간 버전",
+        description=_(
+            "Checks that a program behaves the way it was planned "
+            "— QA turned into a program, lint aimed at humans"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "예:\n"
+        epilog=_(
+            "Examples:\n"
             "  lintomata script  add    ./detect_buttons.py\n"
             "  lintomata library add    ./buttons.py\n"
             "  lintomata node    update nd_e5f6a7b8 ./detect_buttons.json\n"
@@ -622,18 +642,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--home",
         default="",
-        help="등록소 경로 (기본: $LINTOMATA_HOME 또는 ~/.lintomata)",
+        help=_("Registry path (default: $LINTOMATA_HOME, else ~/.lintomata)"),
+    )
+    parser.add_argument(
+        "--lang",
+        default=locale.DEFAULT_LOCALE,
+        choices=locale.available_locales(),
+        help=_(
+            "Output language. Overrides the registry `config.json` `locale`; "
+            "the environment is never consulted"
+        ),
     )
 
-    sub = parser.add_subparsers(dest="kind", metavar="<종류|명령>", required=True)
+    sub = parser.add_subparsers(dest="kind", metavar=_("<kind|command>"), required=True)
 
     for kind in KINDS:
-        kind_parser = sub.add_parser(kind, help=_KIND_LABEL[kind])
+        kind_parser = sub.add_parser(kind, help=_(_KIND_LABEL[kind]))
         _add_crud_subcommands(kind, kind_parser)
 
-    p_check = sub.add_parser("check", help="검사 실행")
-    p_check.add_argument("spec", help="spec id (sp_...) 또는 Spec 파일 경로")
-    p_check.add_argument("--json", action="store_true", help="리포트를 JSON 으로 출력")
+    p_check = sub.add_parser("check", help=_("Run the checks"))
+    p_check.add_argument("spec", help=_("spec id (sp_...) or a path to a Spec file"))
+    p_check.add_argument(
+        "--json", action="store_true", help=_("Print the report as JSON")
+    )
     p_check.set_defaults(func=cmd_check)
 
     return parser
@@ -649,7 +680,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     `LintomataError` 는 **도구가 못 돈 것**이다 (`schema.md` 9절) — 위반이 아니므로
     `2` 다. 위반과 not run 은 예외가 아니라 `Finding` 으로 돌아와 `1` 이 된다.
+
+    ★ **로케일은 파서를 만들기 전에 정한다** (`schema.md` 2절). argparse 의 `help=` 는
+    파서를 만들 때 확정되는데 `--lang` 은 그 파서가 파싱하므로, 순서를 지키지 않으면
+    `lintomata --lang ko --help` 가 영어로 나온다. 그래서 `argv` 를 **선스캔**한다.
     """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    locale.set_locale(locale.resolve_locale(argv))
+
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
