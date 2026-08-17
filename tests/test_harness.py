@@ -666,7 +666,7 @@ def test_reckon_hardcoded_expected_is_an_error(project: Project) -> None:
     caught = [item for item in findings if item.rule_id == "LNT-TEST-007"]
     assert len(caught) == 1
     assert caught[0].status == "error"
-    assert "판정이 둘 다 통과" in caught[0].message
+    assert "yet both decide pass" in caught[0].message
 
 
 def test_reckon_같은_params_케이스_둘은_대조쌍이_아니다(project: Project) -> None:
@@ -876,7 +876,7 @@ def test_forgotten_return_is_output_mismatch(project: Project) -> None:
     findings = project.run(node_test)
 
     assert ids(findings) == ["LNT-TEST-003"]
-    assert "(없음)" in findings[0].message
+    assert "(none)" in findings[0].message
 
 
 def test_action_transparency_skips_when_no_input() -> None:
@@ -921,7 +921,7 @@ def test_broken_node_json_shape_is_a_finding(project: Project) -> None:
     findings = project.run(project.test_file(node_path, []))
 
     assert findings and all(item.status == "error" for item in findings)
-    assert "노드 JSON" in findings[0].message
+    assert "Node JSON" in findings[0].message
 
 
 def test_unparseable_node_json_is_an_error(project: Project) -> None:
@@ -957,7 +957,7 @@ def test_unimportable_script_is_an_error(project: Project) -> None:
     assert ids(findings) == [""]  # 규칙 없는 오류 — 그래도 결과가 사라지지 않는다
     # 모듈을 못 찾은 것은 **부작용 문제가 아니다** — 못 찾은 이름을 짚어 안내한다.
     assert "lintomata_그런_모듈은_없다" in findings[0].message
-    assert "형제 파일 import 는 되지 않습니다" in findings[0].message
+    assert "Importing a sibling file does not work" in findings[0].message
 
 
 def test_test_file_top_level_must_be_an_object(project: Project) -> None:

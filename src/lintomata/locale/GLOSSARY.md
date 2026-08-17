@@ -173,6 +173,59 @@ AI 가 엉뚱한 파일을 연다. 규칙 문구 안에서는 대개 후자이�
 | 하드코딩 | **hard-code** (동사), **hard-coded** | `Reckon` 기댓값 |
 | 껍데기 | **an empty shell** | *"기획 파일이 껍데기가 된다"* |
 
+### 2.14 형제 파일 → **sibling file**
+
+**근거.** `engine/exec.py` 의 가장 긴 안내문이 서는 자리다 —
+*"형제 파일 import 는 되지 않습니다"* → **"Importing a sibling file does not work"**.
+`neighbouring file` / `adjacent file` 은 *"옆에 있는 아무 파일"* 로 읽혀 **같은 디렉터리의
+소스 파일**이라는 뜻이 흐려진다. `sibling` 은 파일시스템 어휘로 이미 굳어 있다.
+
+### 2.15 안 풀린 참조 → **unexpanded** (동사 §2.13 의 expand)
+
+**근거.** *"`script` 가 아직 안 풀렸습니다"* 는 `${config.X}` 가 **전개되지 않은 채로
+실행 시점에 도달**한 것이다. `unresolved` 는 `LNT-REF-007`(`unresolved-reference`)
+규칙 **이름**에 이미 쓰고 있어, 규칙이 아닌 자리에 같은 낱말을 쓰면 *"그 규칙이 났나"* 로
+읽힌다. → 규칙 이름은 `unresolved`, 문장은 **still unexpanded**.
+
+### 2.16 원본 → **Written as:** (문장 조각)
+
+**근거.** 전개 전 문자열을 덧붙이는 자리다(`refs.py` 의 `detail`, `drive.py` 의 파일 없음).
+`original` 은 *"원본 파일"* 과 겹치고(등록소가 원본을 복사한다), `source` 는 **필드 이름**
+(`plan[].source`)이다. → 값 앞에 붙는 조각으로 **`Written as: {raw}`** 하나로 통일한다.
+
+### 2.17 예외로 끝났다 → **raised**
+
+**근거.** 파이썬 어휘 그대로다. *"`runNode` 가 예외를 냈습니다"* → **`` `runNode` raised: ``**,
+*"로드하다 예외가 났습니다"* → **`Loading the script raised:`**. `failed` 는 **위반**과
+헷갈린다 — 여기서 일어난 것은 `error` 이고, **그 구분이 이 도구의 사고방식 그 자체**다
+(§1 앵커 · `CLAUDE.md`). 뒤따르는 문장에서 `violation` / `error` 를 반드시 명시한다.
+
+### 2.18 값이 없는 자리의 표기 — **괄호 낱말은 이 셋뿐**
+
+| 한글 | 영어 | 어디 |
+|---|---|---|
+| `(없음)` | **`(none)`** | 필드 목록·상태 목록이 비었다 |
+| `(선언 없음)` | **`(not declared)`** | 타입 **선언 자체가 없다** (`_UNDECLARED`) |
+| `(최상위)` | **`(top level)`** | pydantic 오류 위치가 루트다 |
+
+**`(none)` 과 `(not declared)` 를 섞지 마라.** 앞은 *"비어 있다"*, 뒤는 *"쓴 적이 없다"* 다 —
+고치는 방법이 다르다(값을 채운다 / 선언을 적는다).
+
+### 2.19 등록소 명령의 결과 한 줄
+
+| 한글 | 영어 |
+|---|---|
+| `… 등록됨` | **`{id}  {name}  ({kind}) registered`** |
+| `내용 교체됨 (id 유지)` | **`{id}  {name}  content replaced (id kept)`** |
+| `… 를 삭제했습니다.` | **`Deleted {id}.`** |
+| `등록하지 않았습니다 — …` | **`Not registered — only what passes the static checks is stored: {path}`** |
+| `수정하지 않았습니다 — …` | **`Not updated — the new content must pass the static checks too: {path}`** |
+| `등록된 <종류> 가 없습니다.` | **`No {kind} is registered.`** |
+| `등록소  <경로>` | **`registry  {home}`** |
+
+**`show` 의 라벨 열은 줄 전체가 하나의 원문**이다 (`  status         {value}`) —
+정렬 폭이 언어마다 다르므로 라벨만 떼어 번역하면 열이 어긋난다.
+
 ---
 
 ## 3. 카탈로그를 채울 때
@@ -185,3 +238,19 @@ AI 가 엉뚱한 파일을 연다. 규칙 문구 안에서는 대개 후자이�
   번역이 덜 됐다고 검사가 못 도는 것은 과하다.
 - **`docs/rules.md` 의 guide 열은 `ko.json` 에서 인용한 것**이다. 원문이 둘이면 갈린다 →
   `tests/test_locale.py::test_rules_md_quotes_the_ko_catalog` 가 일치를 강제한다.
+
+### 새 문자열을 쓸 때 — 통로는 `locale.message()` 하나다
+
+```python
+raise LintomataError(message("No such file to register: {path}\n…", path=path))
+```
+
+- ★ **값을 f-string 으로 미리 박지 마라.** 값이 섞인 문자열은 **어떤 번역과도 맞지 않는다** —
+  경로 하나 바뀔 때마다 다른 키가 된다. 값은 `{path}` 처럼 슬롯으로 남기고 `message()` 가 채운다.
+- 치환기는 `str.format` 이 **아니다**(`locale.fill`). 문구에 `` `{...}` `` 같은 코드 예시가
+  그대로 들어 있고, 거기서 `KeyError` 로 터지면 **번역 오타가 도구를 못 돌게 만든다.**
+- 슬롯이 없는 문장은 `translate()`(`cli` 에서는 `_()`)로 충분하다.
+- 문구 안에 끼워 넣을 **낱말**(층 이름·`(none)`·`pass`/`violation`)도 그 자리에서 `translate()`
+  한다 — 번역 안 한 낱말이 번역된 문장 안에 박히면 그게 더 읽기 어렵다.
+- `tests/test_locale.py::test_ko_covers_every_translated_literal` 이 **`src` 전체를 훑어**
+  `message()`/`translate()` 에 넘긴 원문이 `ko.json` 에 있는지 강제한다. 빠뜨리면 빨개진다.

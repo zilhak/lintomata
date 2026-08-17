@@ -200,7 +200,7 @@ def test_a_dataclass_from_another_script_is_not_visible() -> None:
     reg = TypeRegistry()
     reg.register(dc("Button", origin="a.py", label="str"))
     reg.register(dc("Args", origin="b.py", input="Button"))
-    with pytest.raises(LintomataError, match="같은 스크립트") as excinfo:
+    with pytest.raises(LintomataError, match="the same script") as excinfo:
         reg.normalize()
     # 2선 방어에도 규칙 id 는 있어야 한다 — 맨 예외로 나가면 리포트가 무엇이 걸렸는지 모른다
     found = excinfo.value.findings[0]

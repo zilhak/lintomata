@@ -269,9 +269,9 @@ def test_missing_module_hint_only_for_declared() -> None:
 def test_missing_submodule_is_not_reported_as_missing_package() -> None:
     """★ **pydantic 은 설치돼 있다.** 없는 것은 서브모듈이다 — 사실이 아닌 문장을 내지 않는다."""
     hint = deps.missing_submodule_hint("pydantic.nope_this_submodule_does_not_exist")
-    assert "설치돼 있으나" in hint
-    assert "없습니다" in hint
-    assert "설치" in hint and "uv tool install" not in hint  # 설치 문제가 아니다
+    assert "package is installed, but it has no" in hint
+    assert "not an installation problem" in hint
+    assert "uv tool install" not in hint  # 설치 문제가 아니다
 
 
 def test_missing_submodule_hint_is_empty_when_root_is_absent() -> None:
@@ -295,10 +295,10 @@ def test_load_script_submodule_error_drops_the_sibling_paragraph(tmp_path: Path)
     with pytest.raises(LintomataError) as exc:
         engine_exec.load_script(path)
     message = exc.value.message
-    assert "설치돼 있으나" in message
-    assert "형제 파일" not in message
+    assert "package is installed, but it has no" in message
+    assert "sibling file" not in message
     # 헤더에 선언돼 있어도 "환경에 없습니다" 라고 말하지 않는다 — 설치돼 있다.
-    assert "지금 환경에 없습니다" not in message
+    assert "not in the current environment" not in message
 
 
 def test_load_script_appends_install_command(tmp_path: Path) -> None:
@@ -336,8 +336,8 @@ def test_load_script_without_header_still_explains_module_not_found(
     # 선언에 없으므로 요구 원문을 짚는 PEP 723 안내는 붙지 않는다.
     assert "uv tool install lintomata --with 'definitely" not in message
     # 대신 구조를 바꾸라는 안내가 나온다.
-    assert "형제 파일 import 는 되지 않습니다" in message
-    assert "부작용" not in message
+    assert "Importing a sibling file does not work" in message
+    assert "side effect" not in message
 
 
 def test_sibling_file_import_fails_with_structural_guide(tmp_path: Path) -> None:
@@ -357,9 +357,9 @@ def test_sibling_file_import_fails_with_structural_guide(tmp_path: Path) -> None
         engine_exec.load_script(path)
     message = exc.value.message
     assert "button_lib" in message
-    assert "형제 파일 import 는 되지 않습니다" in message
-    assert "노드를 재사용" in message
-    assert "uv tool install lintomata --with <패키지>" in message
+    assert "Importing a sibling file does not work" in message
+    assert "reuse the node that makes that decision" in message
+    assert "uv tool install lintomata --with <package>" in message
 
 
 def test_other_load_errors_keep_the_side_effect_guide(tmp_path: Path) -> None:
@@ -371,5 +371,5 @@ def test_other_load_errors_keep_the_side_effect_guide(tmp_path: Path) -> None:
     path.write_text("VALUE = 1 // 0\n", encoding="utf-8")
     with pytest.raises(LintomataError) as exc:
         engine_exec.load_script(path)
-    assert "import 만으로 부작용이 없어야" in exc.value.message
-    assert "형제 파일" not in exc.value.message
+    assert "must have no side effect" in exc.value.message
+    assert "sibling file" not in exc.value.message

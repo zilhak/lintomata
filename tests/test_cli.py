@@ -486,7 +486,7 @@ def test_CRUD_넷이_종류_다섯_모두에_대해_돈다(
     capsys.readouterr()
     assert project.ids(kind) == []
     assert project.run(kind, "list") == 0
-    assert "없습니다" in capsys.readouterr().out
+    assert "is registered" in capsys.readouterr().out
 
 
 def test_json_출력이_기계가_읽는_형태다(
@@ -560,7 +560,7 @@ def test_list_는_어느_등록소를_보고_있는지_낸다(
     assert project.run("library", "list") == 0
     out = capsys.readouterr().out
     assert str(project.home) in out
-    assert "등록된 library 가 없습니다." in out
+    assert "No library is registered." in out
 
 
 def test_아무도_안_쓰는_라이브러리는_목록에_드러난다(
@@ -572,7 +572,7 @@ def test_아무도_안_쓰는_라이브러리는_목록에_드러난다(
     capsys.readouterr()
 
     assert project.run("library", "list") == 0
-    assert "아무도 쓰지 않음" in capsys.readouterr().out
+    assert "(nobody uses it)" in capsys.readouterr().out
 
 
 def test_잘못된_노드를_add_하면_등록되지_않는다(project: Project) -> None:
@@ -616,7 +616,7 @@ def test_없는_파일을_add_하면_오류다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert project.run("script", "add", str(project.root / "없다.py")) == 2
-    assert "등록할 파일이 없습니다" in capsys.readouterr().err
+    assert "No such file to register" in capsys.readouterr().err
 
 
 def test_update_도_통과해야_성사된다(
@@ -661,7 +661,7 @@ def test_update_는_id_를_유지하고_상위를_전이적으로_재검증한�
     # 목록이 그것을 드러낸다
     assert project.run("pipeline", "list") == 1
     listed = capsys.readouterr().out
-    assert "검증 깨짐" in listed and "LNT-TYPE-004" in listed
+    assert "broken validation" in listed and "LNT-TYPE-004" in listed
 
 
 def test_참조_대상이_검증_깨짐이면_상위도_깨짐으로_나온다(
@@ -678,11 +678,11 @@ def test_참조_대상이_검증_깨짐이면_상위도_깨짐으로_나온다(
 
     assert project.run("spec", "list") == 1
     listed = capsys.readouterr().out
-    assert "검증 깨짐" in listed
+    assert "broken validation" in listed
     assert ids["pipeline"] in listed  # 어디서 깨졌는지가 보인다
 
     assert project.run("spec", "show", ids["spec"]) == 1
-    assert "검증 깨짐" in capsys.readouterr().out
+    assert "broken validation" in capsys.readouterr().out
 
     # **저장하지는 않는다** — 아래가 고쳐지면 그 자리에서 사라져야 하는 파생값이다.
     assert project.store.show(ids["spec"]).broken == ""
@@ -697,7 +697,7 @@ def test_아래가_고쳐지면_상위의_전이_표시도_사라진다(
     capsys.readouterr()
 
     assert project.run("spec", "list") == 0
-    assert "검증 깨짐" not in capsys.readouterr().out
+    assert "broken validation" not in capsys.readouterr().out
 
 
 def test_참조_대상이_삭제돼도_상위의_상위까지_번진다(
@@ -710,10 +710,10 @@ def test_참조_대상이_삭제돼도_상위의_상위까지_번진다(
     capsys.readouterr()
 
     assert project.run("pipeline", "list") == 1
-    assert "참조 깨짐" in capsys.readouterr().out
+    assert "broken reference" in capsys.readouterr().out
 
     assert project.run("spec", "list") == 1
-    assert "검증 깨짐" in capsys.readouterr().out
+    assert "broken validation" in capsys.readouterr().out
 
 
 def test_상위가_다시_통과하면_검증_깨짐_표시가_걷힌다(
@@ -745,11 +745,11 @@ def test_remove_후_list_가_참조_깨짐을_표시한다(
 
     assert project.run("node", "list") == 1
     listed = capsys.readouterr().out
-    assert "참조 깨짐" in listed and ids["script"] in listed
+    assert "broken reference" in listed and ids["script"] in listed
 
     # show 도 같은 깨짐을 드러낸다
     assert project.run("node", "show", ids["node"]) == 1
-    assert "참조 깨짐" in capsys.readouterr().out
+    assert "broken reference" in capsys.readouterr().out
 
 
 def test_참조가_없으면_remove_는_0_이다(
@@ -759,7 +759,7 @@ def test_참조가_없으면_remove_는_0_이다(
     entry_id = project.only("script")
     capsys.readouterr()
     assert project.run("script", "remove", entry_id) == 0
-    assert "삭제했습니다" in capsys.readouterr().out
+    assert "Deleted" in capsys.readouterr().out
 
 
 # ── 사용법 오류는 2 다 ───────────────────────────────────────────────────────
@@ -773,19 +773,19 @@ def test_종류가_다른_id_를_주면_사용법_오류다(
     capsys.readouterr()
 
     assert project.run("node", "show", entry_id) == 2
-    assert "이 자리에는 node 가 와야" in capsys.readouterr().err
+    assert "This position takes a node" in capsys.readouterr().err
 
 
 def test_없는_id_를_주면_오류다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert project.run("node", "show", "nd_00000000") == 2
-    assert "등록소에 없는 id" in capsys.readouterr().err
+    assert "No such id in the registry" in capsys.readouterr().err
 
 
 def test_home_이_상대경로면_오류다(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["--home", "./여기", "script", "list"]) == 2
-    assert "절대경로가 아닙니다" in capsys.readouterr().err
+    assert "is not an absolute path" in capsys.readouterr().err
 
 
 def test_인자가_없으면_argparse_가_2_로_끝낸다() -> None:
@@ -927,14 +927,14 @@ def test_경로로_준_Spec_은_실행_전에_검사한다(
     spec = write_json(project.root / "specs" / "bad.json", {"info": {}, "plan": []})
 
     assert project.run("check", str(spec)) == 2
-    assert "스키마에 맞지 않습니다" in capsys.readouterr().out
+    assert "does not match the schema" in capsys.readouterr().out
 
 
 def test_없는_Spec_경로는_오류다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert project.run("check", str(project.root / "없다.json")) == 2
-    assert "Spec 파일이 없습니다" in capsys.readouterr().err
+    assert "No such Spec file" in capsys.readouterr().err
 
 
 def test_check_는_시각을_스스로_주입한다(
@@ -1446,10 +1446,10 @@ def test_test_json_이_없으면_오류다(
     capsys.readouterr()
 
     assert project.run("node", "test", node_id) == 2
-    assert "단위테스트가 등록돼 있지 않습니다" in capsys.readouterr().err
+    assert "No node unit test is registered" in capsys.readouterr().err
 
     assert project.run("node", "test", str(project.root / "없다.test.json")) == 2
-    assert "단위테스트 파일이 없습니다" in capsys.readouterr().err
+    assert "No such node unit test file" in capsys.readouterr().err
 
 
 # ── 규칙 슬롯 — CLI 가 직접 만드는 것 ────────────────────────────────────────
@@ -1756,7 +1756,7 @@ def test_라이브러리를_쓰는_노드가_상위_재검증에서_깨질_수_�
     out = capsys.readouterr().out
     assert "LNT-REG-005" in rule_ids(out)
     assert project.run("node", "list") == 1
-    assert "✕ 검증 깨짐 — LNT-LIB-001" in capsys.readouterr().out
+    assert "✕ broken validation — LNT-LIB-001" in capsys.readouterr().out
 
 
 def test_라이브러리를_지우면_상위가_전이적으로_깨진다(
@@ -1770,10 +1770,10 @@ def test_라이브러리를_지우면_상위가_전이적으로_깨진다(
     capsys.readouterr()
 
     assert project.run("node", "list") == 1
-    assert "✕ 참조 깨짐" in capsys.readouterr().out
+    assert "✕ broken reference" in capsys.readouterr().out
     for kind in ("pipeline", "spec"):
         assert project.run(kind, "list") == 1
-        assert "✕ 검증 깨짐" in capsys.readouterr().out
+        assert "✕ broken validation" in capsys.readouterr().out
 
 
 def test_등록_이후_직접_고친_라이브러리는_실행에서_걸린다(

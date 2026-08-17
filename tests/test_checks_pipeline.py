@@ -207,7 +207,7 @@ def test_wiring_reports_missing_declaration():
     }
     findings = wired([n("x"), n("y", inputs={"v": "x"})], contracts)
     assert ids(findings) == ["LNT-TYPE-004"]
-    assert "선언 없음" in findings[0].message
+    assert "(not declared)" in findings[0].message
 
 
 def test_check_wiring_types_requires_node_types():
@@ -849,7 +849,7 @@ def test_check_pipeline_duplicate_node_id_is_reported(tmp_path, monkeypatch, sto
         ]
     )
     _, findings = pipe.check_pipeline(pipeline, "p.json", store=store, env={})
-    assert any("중복" in item.message for item in findings)
+    assert any("Duplicate node id" in item.message for item in findings)
 
 
 def test_check_pipeline_defers_unresolvable_target_scripts_without_complaining(
@@ -1135,7 +1135,7 @@ def test_recheck_resolved_does_not_silently_pass_an_unfilled_script(
         source_path="p.json",
     )
     assert [item.status for item in findings] == ["error"]
-    assert "안 풀렸습니다" in findings[0].message
+    assert "still unexpanded" in findings[0].message
 
 
 # ── 슬롯 계약 ────────────────────────────────────────────────────────────────

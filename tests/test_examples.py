@@ -36,6 +36,16 @@ LIBRARIES = EXAMPLE_ROOT / "libraries"
 INVALID = EXAMPLE_ROOT / "invalid"
 
 
+@pytest.fixture(autouse=True)
+def _restore_locale():
+    """로케일은 모듈 전역이다 — `--lang ko` 를 태운 테스트가 뒤를 오염시키지 않게 되돌린다."""
+    from lintomata import locale
+
+    before = locale.current_locale()
+    yield
+    locale.set_locale(before)
+
+
 @pytest.fixture()
 def example(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """등록소와 출력 디렉터리를 tmp 로 돌린다. 반환값은 출력 디렉터리."""
@@ -304,13 +314,13 @@ def test_일부러_틀린_것은_등록되지_않고_기대한_규칙이_나온�
     code, out = run(capsys, *argv)
 
     assert code == 2
-    assert "등록하지 않았습니다" in out
+    assert "Not registered" in out
     assert text_rule_ids(out) == expected
 
     # 등록소에 들어가지 않았다.
     listed_code, listed = run(capsys, kind, "list")
     assert listed_code == 0
-    assert f"등록된 {kind} 가 없습니다." in listed
+    assert f"No {kind} is registered." in listed
 
 
 def test_기댓값_하드코딩은_단위테스트가_잡는다(
@@ -407,7 +417,7 @@ def test_라이브러리를_못_풀면_노드_id_하나로_찍히고_실행되�
        구동에서 온 노드 id(`detectButtons`) 로 **같은 노드가 두 번** 찍히면
        같은 것인지 알 수 없고, `not run` 전파는 노드 id 로 대조하므로 여파도 어긋난다
     2. **그 노드를 돌리지 않는다** — 억지로 로드하면 스크립트가 `ImportError` 로 죽으며
-       *"배선이 없습니다"* 라는 **거짓 안내**가 진짜 원인(파일이 없다) 위에 덮인다
+       *"배선이 없습니다"*(`LNT-LIB-001`) 라는 **거짓 안내**가 진짜 원인(파일이 없다) 위에 덮인다
     3. 여파는 `not_run` 이다
     """
     code, report = run_json(
@@ -421,7 +431,7 @@ def test_라이브러리를_못_풀면_노드_id_하나로_찍히고_실행되�
     # 노드 `info.name` 으로는 아무것도 찍히지 않는다.
     assert all(item["node"] != "detect-buttons" for item in report["results"])
     # **거짓 안내가 없다** — 배선은 있고 파일이 없는 것이다.
-    assert "배선이 없습니다" not in json.dumps(report, ensure_ascii=False)
+    assert "is not wired on the node" not in json.dumps(report, ensure_ascii=False)
     assert "ImportError" not in json.dumps(report, ensure_ascii=False)
 
     not_run = {item["node"]: item["cause"] for item in report["results"] if item["status"] == "not_run"}
@@ -441,4 +451,50 @@ def test_비교_파이프라인도_같은_형태로_낸다(
     assert [item["node"] for item in errors] == ["buttons"]
     assert rule_ids(report) == {"LNT-REF-001"}
     assert all(item["node"] != "compare-buttons" for item in report["results"])
-    assert "배선이 없습니다" not in json.dumps(report, ensure_ascii=False)
+    assert "is not wired on the node" not in json.dumps(report, ensure_ascii=False)
+
+
+# ── 로케일은 판정을 흔들지 않는다 (`schema.md` 2절) ──────────────────────────
+
+
+ALL_SPECS: tuple[tuple[str, int], ...] = (
+    ("home_ok", 0),
+    ("home_broken", 1),
+    ("home_missing", 2),
+    ("compare_ok", 0),
+    ("compare_diff", 1),
+    ("all_in_one", 2),
+)
+"""예제 Spec 여섯과 그 종료 코드. **언어와 무관하게 같아야 한다.**"""
+
+
+@pytest.mark.parametrize("name,expected", ALL_SPECS, ids=[n for n, _ in ALL_SPECS])
+def test_종료코드와_규칙_id_는_로케일과_무관하다(
+    example: Path, capsys: pytest.CaptureFixture[str], name: str, expected: int
+) -> None:
+    """★ **`config.json` 에는 표현만 들어간다** (`schema.md` 2절).
+
+    번역이 판정에 새어 들어가면 그건 표현이 아니라 판정 데이터가 된 것이다.
+    종료 코드·4상태 요약·규칙 id 셋을 영어/한글에서 글자 단위로 대조한다.
+    """
+    spec = str(SPECS / f"{name}.json")
+
+    en_code, en_report = run_json(capsys, "--lang", "en", "check", spec)
+    ko_code, ko_report = run_json(capsys, "--lang", "ko", "check", spec)
+
+    assert en_code == expected
+    assert ko_code == expected
+    assert en_report["summary"] == ko_report["summary"]
+    assert rule_ids(en_report) == rule_ids(ko_report)
+    assert [item["status"] for item in en_report["results"]] == [
+        item["status"] for item in ko_report["results"]
+    ]
+
+
+def test_ko_는_실제로_한글_리포트를_낸다(
+    example: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """위 테스트는 **번역이 통째로 죽어 있어도** 통과한다 — 그걸 막는다."""
+    _, ko_report = run_json(capsys, "--lang", "ko", "check", str(SPECS / "home_missing.json"))
+    text = json.dumps(ko_report, ensure_ascii=False)
+    assert "스크립트 예외는 위반이 아니라 **오류**입니다" in text

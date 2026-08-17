@@ -873,8 +873,8 @@ def test_없는_config_는_STR_CMP_004_로_나온다(tmp_path):
     # target 별로 갈리는 것은 **target 별로 나오는 게 정상**이다 (R4-6) —
     # 어느 대상이 잘못됐는지가 메시지에 박혀 있어 dedupe 로 뭉개지지 않는다.
     assert {f.message.splitlines()[0] for f in found} == {
-        "현재 target: legacy",
-        "현재 target: v2",
+        "Current target: legacy",
+        "Current target: v2",
     }
     assert "없는값" in found[0].message
 

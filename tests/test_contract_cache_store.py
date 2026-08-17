@@ -278,5 +278,5 @@ def test_캐시가_있어도_등록_시_정적_검사는_그대로_돈다(
     out = capsys.readouterr().out
 
     assert code == 2
-    assert "등록하지 않았습니다" in out
+    assert "Not registered" in out
     assert "LNT-BAN-001" in out

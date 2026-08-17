@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -19,6 +20,8 @@ from lintomata.locale import (
     available_locales,
     catalog,
     config_locale,
+    fill,
+    message,
     resolve_locale,
     scan_option,
     slot_mismatches,
@@ -28,6 +31,10 @@ from lintomata.locale import (
 from lintomata.rules import RULES
 
 ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src" / "lintomata"
+
+_TRANSLATING = {"message", "_msg", "translate", "_"}
+"""원문을 카탈로그에 태우는 호출들. `cli` 는 `_` / `_msg`, 나머지는 `message`."""
 
 
 @pytest.fixture(autouse=True)
@@ -94,6 +101,72 @@ def test_ko_covers_every_rule_string() -> None:
         if getattr(rule, field) not in entries
     ]
     assert missing == []
+
+
+def _translated_literals() -> dict[str, list[str]]:
+    """`src` 전체에서 **번역을 타는 원문 리터럴**을 걷는다 — `{원문: [위치…]}`.
+
+    f-string 으로 값을 미리 박은 문자열은 여기 걸리지 않는다(리터럴이 아니다) —
+    그런 것은 애초에 카탈로그의 키가 될 수 없으므로 `message()` 로 못 쓴다.
+    """
+    found: dict[str, list[str]] = {}
+    for path in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                continue
+            if node.func.id not in _TRANSLATING or not node.args:
+                continue
+            first = node.args[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                where = f"{path.relative_to(ROOT)}:{node.lineno}"
+                found.setdefault(first.value, []).append(where)
+    return found
+
+
+def test_ko_covers_every_translated_literal() -> None:
+    """★ 규칙 문구만이 아니라 **오류 안내·CLI 문구도 전부** `ko` 에 있다.
+
+    빠져도 영어가 나갈 뿐 도구는 돈다 — `test_ko_covers_every_rule_string` 과
+    같은 이유로 **테스트가 아니면 아무도 모른다.** 새 문자열을 영어로만 넣고
+    카탈로그를 안 채우면 여기서 걸린다.
+    """
+    entries = catalog("ko")
+    missing = sorted(
+        (source, places[0])
+        for source, places in _translated_literals().items()
+        if source not in entries
+    )
+    assert missing == []
+
+
+def test_the_literal_collector_actually_finds_things() -> None:
+    """수집기가 죽어 있으면 위 테스트가 **빈 집합을 통과**한다 — 그걸 막는다."""
+    found = _translated_literals()
+    assert len(found) > 100
+    assert any(place.startswith("src/lintomata/cli.py") for places in found.values() for place in places)
+    assert "the value emitted by `returnResult()`" in found
+
+
+def test_message_translates_then_fills() -> None:
+    """`message()` 는 **번역 → 치환** 순서다. 값이 먼저 박히면 키가 안 맞는다."""
+    locale.set_locale("ko")
+    text = message("Deleted {id}.", id="sc_1")
+    assert text == "sc_1 를 삭제했습니다."
+
+    locale.set_locale(DEFAULT_LOCALE)
+    assert message("Deleted {id}.", id="sc_1") == "Deleted sc_1."
+
+
+def test_fill_leaves_unknown_braces_alone() -> None:
+    """★ `str.format` 이 아닌 이유 — 문구 안의 `` `{...}` `` 는 자리표시자가 아니다.
+
+    번역이 원문에 없는 슬롯을 만들어낸 경우도 같다. 여기서 터지면
+    **번역 오타가 도구를 못 돌게 만든다.**
+    """
+    assert fill("top level is an object (`{...}`)", {}) == "top level is an object (`{...}`)"
+    assert fill("{a} and {b}", {"a": 1}) == "1 and {b}"
+    assert fill("keep ${env.HOME}", {"env": "x"}) == "keep ${env.HOME}"
 
 
 def test_rules_md_quotes_the_ko_catalog() -> None:

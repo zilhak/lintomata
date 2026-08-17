@@ -1348,7 +1348,7 @@ def test_설명이_없는_위반에도_문구가_붙는다(project: Project) -> 
     violation = next(f for f in result.findings if f.status == "violation")
     assert violation.rule_id == ""
     assert violation.message
-    assert "기획과 다릅니다" in violation.message
+    assert "Differs from the plan" in violation.message
 
 
 def test_판정이_통과면_pass_다(project: Project) -> None:

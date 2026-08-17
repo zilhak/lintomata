@@ -163,7 +163,7 @@ def test_delay_가_정수로_안_풀리면_오류다() -> None:
             [{"after": "a", "to": "settled", "delay": "${config.settleMs}"}],
             {"settleMs": "곧"},
         )
-    assert "정수" in caught.value.message
+    assert "did not expand to an integer" in caught.value.message
 
 
 def test_delay_가_음수면_오류다() -> None:
