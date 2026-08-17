@@ -19,6 +19,7 @@ from collections import deque
 
 from lintomata import rules
 from lintomata.errors import Finding
+from lintomata.locale import message, translate
 from lintomata.store.entries import RegistryEntry, Store
 
 __all__ = ["RefGraph"]
@@ -142,9 +143,15 @@ class RefGraph:
             dep = self.entries.get(ref_id)
             if dep is None or not dep.broken:
                 continue
-            kind = "참조 깨짐" if dep.broken == "ref" else "검증 깨짐"
-            detail = f"{ref_id} {kind}"
-            return ref_id, f"{detail} ({dep.broken_detail})" if dep.broken_detail else detail
+            kind = translate(
+                "broken reference" if dep.broken == "ref" else "broken validation"
+            )
+            detail = message("{id} {kind}", id=ref_id, kind=kind)
+            return ref_id, (
+                message("{detail} ({why})", detail=detail, why=dep.broken_detail)
+                if dep.broken_detail
+                else detail
+            )
         return None
 
     def revalidate(self, store: Store, entry_id: str) -> list[Finding]:

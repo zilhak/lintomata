@@ -46,6 +46,7 @@ from typing import Any, Sequence
 
 from lintomata import locale, rules
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message as _msg
 from lintomata.locale import translate as _
 from lintomata.model import EntryKind
 from lintomata.report import Report, build_report, render_json, render_text
@@ -94,9 +95,12 @@ def _store(args: argparse.Namespace) -> Store:
     home = Path(os.path.expanduser(raw))
     if not home.is_absolute():
         raise LintomataError(
-            f"--home 이 절대경로가 아닙니다: {raw}\n"
-            "등록소 경로는 cwd 와 무관해야 합니다. `/srv/lintomata` 나 `~/.lintomata` "
-            "처럼 절대경로로 주세요."
+            _msg(
+                "`--home` is not an absolute path: {path}\n"
+                "A registry path must not depend on cwd. Give an absolute path such "
+                "as `/srv/lintomata` or `~/.lintomata`.",
+                path=raw,
+            )
         )
     return Store(home)
 
@@ -166,9 +170,14 @@ def _entry_of(store: Store, entry_id: str, kind: EntryKind) -> RegistryEntry:
 def _kind_mismatch(entry_id: str, actual: str, expected: EntryKind) -> LintomataError:
     """자리가 요구하는 종류와 id 의 종류가 다르다 — **사용법 오류**다."""
     return LintomataError(
-        f"이 자리에는 {expected} 가 와야 하는데 {entry_id} 는 {actual} 입니다.\n"
-        f"접두가 종류를 말합니다 (`sc_`=스크립트 `lb_`=라이브러리 `nd_`=노드 "
-        f"`pl_`=파이프라인 `sp_`=Spec). `lintomata {actual} <명령>` 으로 부르세요."
+        _msg(
+            "This position takes a {expected}, but {id} is a {actual}.\n"
+            "The prefix tells the kind (`sc_`=script `lb_`=library `nd_`=node "
+            "`pl_`=pipeline `sp_`=Spec). Call `lintomata {actual} <command>` instead.",
+            expected=expected,
+            id=entry_id,
+            actual=actual,
+        )
     )
 
 
@@ -192,9 +201,9 @@ def _marked_index(store: Store) -> tuple[dict[str, RegistryEntry], RefGraph]:
 def _broken_mark(entry: RegistryEntry) -> str:
     """`schema.md` 2절의 목록 표기."""
     if entry.broken == "ref":
-        return f"✕ 참조 깨짐 — {entry.broken_detail} 없음"
+        return _msg("✕ broken reference — {id} is gone", id=entry.broken_detail)
     if entry.broken == "validation":
-        return f"✕ 검증 깨짐 — {entry.broken_detail}"
+        return _msg("✕ broken validation — {detail}", detail=entry.broken_detail)
     return "○"
 
 
@@ -225,12 +234,24 @@ def cmd_add(args: argparse.Namespace) -> int:
 
     findings = check_registration(kind, source, store)
     if findings:
-        print(f"등록하지 않았습니다 — 정적 검사를 통과해야 저장됩니다: {source}")
+        print(
+            _msg(
+                "Not registered — only what passes the static checks is stored: {path}",
+                path=source,
+            )
+        )
         _emit(findings)
         return _exit_code(findings)
 
     entry = store.add(kind, source, name=args.name)
-    print(f"{entry.id}  {entry.name}  ({entry.kind}) 등록됨")
+    print(
+        _msg(
+            "{id}  {name}  ({kind}) registered",
+            id=entry.id,
+            name=entry.name,
+            kind=entry.kind,
+        )
+    )
     return 0
 
 
@@ -268,9 +289,9 @@ def cmd_list(args: argparse.Namespace) -> int:
             )
         )
     else:
-        print(f"등록소  {store.home}")
+        print(_msg("registry  {home}", home=store.home))
         if not listed:
-            print(f"등록된 {kind} 가 없습니다.")
+            print(_msg("No {kind} is registered.", kind=kind))
         for entry in listed:
             mark = _broken_mark(entry)
             unused = _unused_mark(entry, graph)
@@ -293,7 +314,7 @@ def _unused_mark(entry: RegistryEntry, graph: RefGraph) -> str:
     """
     if entry.kind != "library" or graph.dependents(entry.id):
         return ""
-    return "  (아무도 쓰지 않음)"
+    return _("  (nobody uses it)")
 
 
 def cmd_show(args: argparse.Namespace) -> int:
@@ -325,20 +346,36 @@ def cmd_show(args: argparse.Namespace) -> int:
         print(json.dumps(detail, ensure_ascii=False, indent=2))
     else:
         print(f"{entry.id}  {entry.name}  ({entry.kind})")
-        print(f"  상태           {_broken_mark(entry)}")
-        print(f"  등록소         {store.home}")
-        print(f"  해시           {entry.hash}")
-        print(f"  등록시각       {entry.registered_at}")
-        print(f"  파일           {file_path}")
+        print(_msg("  status         {value}", value=_broken_mark(entry)))
+        print(_msg("  registry       {value}", value=store.home))
+        print(_msg("  hash           {value}", value=entry.hash))
+        print(_msg("  registered at  {value}", value=entry.registered_at))
+        print(_msg("  file           {value}", value=file_path))
         if test_path is not None:
-            print(f"  단위테스트     {test_path if has_test else '없음'}")
+            print(
+                _msg(
+                    "  unit test      {value}",
+                    value=test_path if has_test else _("none"),
+                )
+            )
         if entry.kind in ("script", "library"):
             # PEP 723 선언. **없는 것이 정상이다** — stdlib 만 쓰는 스크립트가 대부분이다.
-            print(f"  선언 의존성    {', '.join(entry.dependencies) or '없음'}")
-        print(f"  참조하는 것    {', '.join(dependencies) or '-'}")
+            print(
+                _msg(
+                    "  declared deps  {value}",
+                    value=", ".join(entry.dependencies) or _("none"),
+                )
+            )
+        print(_msg("  references     {value}", value=", ".join(dependencies) or "-"))
         # 라이브러리에서는 이 줄이 **그것을 쓰는 노드 전부**다 (`schema.md` 6.5절).
-        print(f"  참조하는 상위  {', '.join(dependents) or '-'}{_unused_mark(entry, graph)}")
-        print("--- 내용 ---")
+        print(
+            _msg(
+                "  referenced by  {value}{unused}",
+                value=", ".join(dependents) or "-",
+                unused=_unused_mark(entry, graph),
+            )
+        )
+        print(_("--- content ---"))
         print(content)
 
     return 1 if entry.broken else 0
@@ -362,17 +399,33 @@ def cmd_update(args: argparse.Namespace) -> int:
 
     findings = check_registration(kind, source, store)
     if findings:
-        print(f"수정하지 않았습니다 — 새 내용도 정적 검사를 통과해야 합니다: {source}")
+        print(
+            _msg(
+                "Not updated — the new content must pass the static checks too: {path}",
+                path=source,
+            )
+        )
         _emit(findings)
         return _exit_code(findings)
 
     entry = store.update(args.id, source)
-    print(f"{entry.id}  {entry.name}  내용 교체됨 (id 유지)")
+    print(
+        _msg(
+            "{id}  {name}  content replaced (id kept)",
+            id=entry.id,
+            name=entry.name,
+        )
+    )
 
     broken = RefGraph.build(store).revalidate(store, entry.id)
     if not broken:
         return 0
-    print("상위 재검증에서 검증 깨짐이 나왔습니다 — 수정 자체는 성사됐습니다:")
+    print(
+        _(
+            "Revalidating the dependents turned up broken validation — the update "
+            "itself went through:"
+        )
+    )
     _print_broken(broken)
     return 1
 
@@ -391,11 +444,16 @@ def cmd_remove(args: argparse.Namespace) -> int:
     # 모른다. 그래서 상위 목록을 **삭제 전에** 뽑아둔다.
     dependents = RefGraph.build(store).dependents(args.id)
     store.remove(args.id)
-    print(f"{args.id} 를 삭제했습니다.")
+    print(_msg("Deleted {id}.", id=args.id))
 
     if not dependents:
         return 0
-    print("이 삭제로 참조가 깨진 구성이 있습니다 (삭제는 막지 않습니다):")
+    print(
+        _(
+            "This deletion left broken references behind (deletion is never "
+            "blocked):"
+        )
+    )
     _print_broken(
         [
             rules.finding("LNT-REG-004", path=dep_id, fields={"id": args.id})
@@ -458,11 +516,16 @@ def _node_test_path(store: Store, value: str) -> tuple[Path, str, list[Finding]]
         path = store.test_path(entry.kind, entry.id)
         if path is None or not path.is_file():
             raise LintomataError(
-                f"이 노드에는 단위테스트가 등록돼 있지 않습니다: {entry.id}\n"
-                "테스트 정의는 `<노드파일>.test.json` 이고 **노드와 함께 복사된다** — "
-                "노드 파일 옆에 그 이름으로 두고 `lintomata node add`/`update` 를 "
-                "다시 하면 등록소에 함께 들어갑니다. 등록 없이 돌리려면 파일 경로를 "
-                "직접 주세요: `lintomata node test /abs/path/detect_buttons.test.json`"
+                _msg(
+                    "No node unit test is registered for this node: {id}\n"
+                    "The test lives in `<node file>.test.json` and **is copied "
+                    "along with the node** — put it next to the node file under "
+                    "that name and run `lintomata node add`/`update` again, and it "
+                    "goes into the registry with it. To run it without "
+                    "registering, pass the file path directly: `lintomata node "
+                    "test /abs/path/detect_buttons.test.json`",
+                    id=entry.id,
+                )
             )
         if not store.verify_test_hash(entry.id):
             return path, entry.id, [
@@ -473,8 +536,11 @@ def _node_test_path(store: Store, value: str) -> tuple[Path, str, list[Finding]]
     path = _source(value)
     if not path.is_file():
         raise LintomataError(
-            f"노드 단위테스트 파일이 없습니다: {path}\n"
-            "노드 id (`nd_...`) 또는 `<노드파일>.test.json` 경로를 주세요."
+            _msg(
+                "No such node unit test file: {path}\n"
+                "Pass a node id (`nd_...`) or the path of a `<node file>.test.json`.",
+                path=path,
+            )
         )
     return path, "", []
 
@@ -540,8 +606,12 @@ def _resolve_spec(store: Store, value: str) -> tuple[Path | None, str, list[Find
     source = _source(value)
     if not source.is_file():
         raise LintomataError(
-            f"Spec 파일이 없습니다: {source}\n"
-            "등록된 Spec 은 id (`sp_...`) 로, 등록 안 한 것은 파일 경로로 줍니다."
+            _msg(
+                "No such Spec file: {path}\n"
+                "A registered Spec is passed by id (`sp_...`); an unregistered one "
+                "by file path.",
+                path=source,
+            )
         )
     return source, source.name, check_registration("spec", source, store)
 
@@ -560,9 +630,11 @@ def _load_spec(source: Path) -> tuple[Any, list[Finding]]:
             Finding(
                 status="error",
                 path=str(source),
-                message=(
-                    f"Spec 파일을 읽을 수 없습니다: {source} ({exc})\n"
-                    "Spec 은 UTF-8 JSON 이어야 합니다."
+                message=_msg(
+                    "Cannot read the Spec file: {path} ({detail})\n"
+                    "A Spec must be UTF-8 JSON.",
+                    path=source,
+                    detail=exc,
                 ),
             )
         ]
