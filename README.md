@@ -45,6 +45,25 @@ uv tool install git+https://github.com/zilhak/lintomata --with selectolax
 export LINTOMATA_HOME=$PROJECT_ROOT/.lintomata
 ```
 
+⚠️ **로컬 체크아웃에서 다시 설치할 때는 `--reinstall` 을 붙인다.**
+`uv` 는 버전이 그대로면 `--force` 만으로는 **캐시된 wheel 을 재사용**해서, 코드를 고쳐도 반영되지 않는다.
+
+```bash
+uv tool install . --force --reinstall
+```
+
+## 출력 언어
+
+**영어가 기본이다.** 한글 등 다른 언어는 카탈로그로 얹는다.
+
+```bash
+lintomata --lang ko check <spec>              # 이번 실행만
+echo '{"locale":"ko"}' > $LINTOMATA_HOME/config.json   # 프로젝트 기본값
+```
+
+**로케일은 `LANG` 을 따라가지 않는다** — 리포트는 커밋·diff 되는 산출물이라 환경마다 달라지면 안 된다.
+**규칙 id 와 종료 코드는 언어와 무관하다**; 로케일은 사람이 읽는 문장만 바꾼다.
+
 ```
 lintomata <종류> add|list|show|update|remove     # <종류> = script|library|node|pipeline|spec
 lintomata node test <id>                         # 노드 단위테스트 (실제 실행)
