@@ -574,7 +574,7 @@ def test_config_path_true_enforces_path_rule(tmp_path):
         make(config=decls), {"script": str(tmp_path / "a.py")}, "p.json", env={}
     )
     assert ids(bad) == ["LNT-PATH-004"]
-    assert "절대경로" in bad[0].message
+    assert "must be absolute" in bad[0].message
     assert good == []
 
 

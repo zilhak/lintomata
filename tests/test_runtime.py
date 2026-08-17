@@ -1293,7 +1293,7 @@ def test_서로_다른_앞단을_둘_받으면_오류다(project: Project) -> No
     result = project.run(path, {"url": "abcd"})
 
     assert result.outcomes["buttons"].status == "error"
-    assert "둘 이상" in "".join(f.message for f in result.findings if f.node == "buttons")
+    assert "more than one distinct upstream node" in "".join(f.message for f in result.findings if f.node == "buttons")
 
 
 # ── Reckon 의 판정 읽기 ──────────────────────────────────────────────────────

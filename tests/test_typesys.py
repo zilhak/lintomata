@@ -386,7 +386,7 @@ def test_merge_field_conflict_is_str_type_006() -> None:
         reg.merge_components()
     found = excinfo.value.findings[0]
     assert found.rule_id == "LNT-TYPE-006"
-    assert "필드 `x`" in found.message  # `{field}` 슬롯이 실제 필드명으로 채워진다
+    assert "Field `x`" in found.message  # `{field}` 슬롯이 실제 필드명으로 채워진다
     assert "`A`(a.py)" in found.message  # names 슬롯에 성분 전체가 들어간다
 
 

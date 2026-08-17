@@ -232,7 +232,7 @@ def test_finding_carries_the_complete_command() -> None:
     assert ids(findings) == ["LNT-DEP-001"]
     assert "--with 'selectolax>=0.3'" in findings[0].message
     assert "--with 'definitely-not-installed-xyz'" in findings[0].message
-    assert "`--with` 는 **선언적**" in findings[0].message
+    assert "`--with` is **declarative**" in findings[0].message
 
 
 def test_unreadable_requirement_in_known_is_not_dropped() -> None:

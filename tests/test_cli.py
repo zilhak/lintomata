@@ -1251,7 +1251,7 @@ def test_안내_명령이_등록소의_선언을_전부_포함한다(
     assert "--with 'definitely-not-installed-xyz'" in out
     assert "--with 'pydantic>=2'" in out
     assert "--with 'packaging>=23'" in out
-    assert "`--with` 는 **선언적**" in out
+    assert "`--with` is **declarative**" in out
 
 
 def test_등록소가_비어도_안내가_나온다(

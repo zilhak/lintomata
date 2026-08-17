@@ -71,7 +71,7 @@ def test_namespaceless_reference_rejected() -> None:
     """`${X}` 는 미정의 환경변수인지 config 오타인지 구분 못 하므로 에러다."""
     with pytest.raises(LintomataError) as exc:
         collect_placeholders("${BUTTONSCRIPT}")
-    assert "네임스페이스" in exc.value.message
+    assert "namespace" in exc.value.message
     assert exc.value.findings[0].status == "error"
 
 
@@ -90,7 +90,7 @@ def test_uppercase_namespace_rejected() -> None:
 def test_empty_reference_name_rejected() -> None:
     with pytest.raises(LintomataError) as exc:
         collect_placeholders("${env.}")
-    assert "이름" in exc.value.message
+    assert "the name is empty" in exc.value.message
 
 
 @pytest.mark.parametrize(

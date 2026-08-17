@@ -476,7 +476,7 @@ def test_stage1_missing_fixture_field_blames_the_test(project: Project) -> None:
     findings = project.run(node_test)
 
     assert ids(findings) == ["LNT-TEST-001"]
-    assert "테스트 정의가 잘못됐습니다" in findings[0].message
+    assert "The test definition is what is wrong here" in findings[0].message
 
 
 def test_stage1_wrong_fixture_type_blames_the_test(project: Project) -> None:
@@ -771,7 +771,10 @@ def test_bytes_fixture_relative_path_is_caught(project: Project) -> None:
     findings = project.run(node_test)
 
     assert ids(findings) == ["LNT-TEST-001"]
-    assert "LNT-PATH-001" in findings[0].message or "절대경로" in findings[0].message
+    assert (
+        "LNT-PATH-001" in findings[0].message
+        or "must be absolute" in findings[0].message
+    )
 
 
 def test_file_marker_must_be_alone(project: Project) -> None:

@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 
 import pytest
 
@@ -23,6 +25,9 @@ from lintomata.locale import (
     slots_of,
     translate,
 )
+from lintomata.rules import RULES
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(autouse=True)
@@ -74,6 +79,51 @@ def test_reference_syntax_is_not_a_slot() -> None:
     """문구에 그대로 들어 있는 `${env.X}` 는 자리표시자가 아니다 (점이 있다)."""
     assert slots_of("use ${env.HOME} or ${ref.sc_1}") == frozenset()
     assert slots_of("{path} under ${env.X}") == frozenset({"path"})
+
+
+def test_ko_covers_every_rule_string() -> None:
+    """규칙 69개의 `message`+`guide` 138개가 전부 `ko` 에 있다.
+
+    빠져도 영어가 나갈 뿐 도구는 돈다 — 그래서 **테스트가 아니면 아무도 모른다.**
+    """
+    entries = catalog("ko")
+    missing = [
+        (rule.id, field)
+        for rule in RULES.values()
+        for field in ("message", "guide")
+        if getattr(rule, field) not in entries
+    ]
+    assert missing == []
+
+
+def test_rules_md_quotes_the_ko_catalog() -> None:
+    """★ `docs/rules.md` 의 guide 열은 `ko.json` 에서 **인용한 것**이다.
+
+    원문이 둘이면 반드시 갈린다 (`schema.md` 2절). 표 칸에 줄바꿈을 넣을 수 없으므로
+    `guide` 안의 개행은 `<br>` 로 적는다 — 그것만 되돌려 글자 단위로 대조한다.
+    """
+    text = (ROOT / "docs" / "rules.md").read_text(encoding="utf-8")
+    entries = catalog("ko")
+
+    quoted: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if len(cells) != 5:
+            continue
+        match = re.match(r"^`(LNT-[A-Z]+-\d{3})`$", cells[0])
+        if match:
+            quoted[match.group(1)] = cells[4].replace("<br>", "\n")
+
+    assert set(quoted) == set(RULES), "rules.md 의 규칙 행이 테이블과 다르다"
+    drifted = [
+        rule_id
+        for rule_id, guide in quoted.items()
+        if guide != entries.get(RULES[rule_id].guide, RULES[rule_id].guide)
+    ]
+    assert drifted == []
 
 
 def test_every_catalog_entry_is_a_nonempty_string() -> None:

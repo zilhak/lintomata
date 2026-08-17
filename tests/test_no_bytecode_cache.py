@@ -236,4 +236,4 @@ def test_updated_script_is_not_masked_by_stale_bytecode(
     assert code != 0, f"`N = 2` 인데 `N = 1` 기대가 통과했다 — 거짓 통과다:\n{out}"
     # 기댓값 불일치는 단위테스트 하네스가 `LNT-TEST-004` **오류**로 낸다 (종료 코드 2).
     assert "LNT-TEST-004" in out, out
-    assert "기대: {'n': 1} / 실제: {'n': 2}" in out, out
+    assert "Expected: {'n': 1} / actual: {'n': 2}" in out, out

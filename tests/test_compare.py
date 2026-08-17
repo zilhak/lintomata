@@ -898,7 +898,7 @@ def test_배선_오류는_target_수만큼_중복되지_않는다(tmp_path):
 
     result, _ = run(pipeline, config, tmp_path)
 
-    wiring = [f for f in result.findings if "서로 다른 앞단" in f.message]
+    wiring = [f for f in result.findings if "more than one distinct upstream node" in f.message]
     assert len(wiring) == 1
     assert assert_four_states(pipeline, result)["shape"] == "error"
 

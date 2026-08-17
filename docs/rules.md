@@ -62,6 +62,17 @@ LNT-CONTRACT-003        길지만 사람이 타이핑할 일이 없다.
 **`guide` 는 에러 메시지에 이어붙는다.** 별도 필드로 리포트에 나가지 않는다(`schema.md` 11절).
 **정적 검사가 못 잡는 것을 메우는 자리**이므로, 문구가 곧 AI 자기 수정 루프의 성능이다.
 
+### ★ 이 문서의 한글 문구는 `ko.json` 에서 인용한 것이다
+
+**`rules.py` 의 원문은 영어다** (`schema.md` 2절 「출력 언어」). 한글 정본은 카탈로그
+`src/lintomata/locale/ko.json` 이고, 위의 엔트리 예시와 아래 표의 **`guide` 열은 거기서
+그대로 옮겨온 것**이다. **원문이 둘이면 반드시 갈리므로**
+`tests/test_locale.py::test_rules_md_quotes_the_ko_catalog` 가 글자 단위 일치를 강제한다.
+→ guide 를 고칠 때는 `rules.py`(영어) 와 `ko.json`(한글) 을 고치고, 이 표는 거기서 **다시 옮긴다.**
+
+- 표 칸에는 줄바꿈을 넣을 수 없으므로 `guide` 안의 개행은 **`<br>`** 로 적는다.
+- `잡는 것` 열은 인용이 아니라 **요약**이다 — `message` 원문과 글자가 같지 않아도 된다.
+
 ---
 
 ## 2. 초기 규칙 테이블
@@ -157,9 +168,9 @@ LNT-CONTRACT-003        길지만 사람이 타이핑할 일이 없다.
 
 | ID | name | when | 잡는 것 | guide |
 |---|---|---|---|---|
-| `LNT-DEP-001` | dependency-missing | N | 헤더에 선언한 패키지가 **현재 환경에 없다** | 노드 스크립트는 lintomata 와 **같은 프로세스**에 로드되므로 `import` 가 lintomata 가 설치된 환경에서 풀립니다. 격리 환경을 만들어 주지 않으니 그 환경에 함께 설치하세요: {install} |
-| `LNT-DEP-002` | dependency-header-malformed | N | **헤더 형식이 잘못됐다** (TOML 파싱 실패, `dependencies` 가 배열이 아님, PEP 508 이 아님, 블록 중복) | 헤더는 `# /// script` 로 열고 `# ///` 로 닫으며, 사이의 각 줄은 `# ` 로 시작하는 TOML 입니다. `dependencies` 는 PEP 508 문자열의 배열입니다. **헤더가 아예 없어도 됩니다** — stdlib 만 쓰는 스크립트에는 필요 없습니다 |
-| `LNT-DEP-003` | dependency-version-unsatisfied | N | 패키지는 있는데 **설치된 버전이 선언한 요구를 만족하지 않는다** | 환경에는 패키지가 한 벌만 깔립니다. 설치된 것을 요구에 맞추거나 ({install}) 헤더의 요구를 실제로 쓰는 버전에 맞추세요 |
+| `LNT-DEP-001` | dependency-missing | N | 헤더에 선언한 패키지가 **현재 환경에 없다** | 노드 스크립트는 lintomata 와 **같은 프로세스**에 로드되므로 `import` 가 lintomata 가 설치된 환경에서 풀립니다. 격리 환경을 만들어 주지 않으니 그 환경에 함께 설치하세요: {install}<br>⚠ `--with` 는 **선언적**이라 적은 것만 남습니다 — 위 명령은 등록소에 선언된 것을 전부 포함하고 있으니 **그대로** 쓰세요. 일부만 적으면 나머지가 지워집니다 |
+| `LNT-DEP-002` | dependency-header-malformed | N | **헤더 형식이 잘못됐다** (TOML 파싱 실패, `dependencies` 가 배열이 아님, PEP 508 이 아님, 블록 중복) | 헤더는 `# /// script` 로 열고 `# ///` 로 닫으며, 사이의 각 줄은 `# ` 로 시작하는 TOML 입니다. `dependencies` 는 PEP 508 문자열의 배열입니다:<br>  # /// script<br>  # requires-python = ">=3.11"<br>  # dependencies = ["selectolax>=0.3"]<br>  # ///<br>헤더가 아예 없어도 됩니다 — stdlib 만 쓰는 스크립트에는 필요 없습니다 |
+| `LNT-DEP-003` | dependency-version-unsatisfied | N | 패키지는 있는데 **설치된 버전이 선언한 요구를 만족하지 않는다** | 환경에는 패키지가 한 벌만 깔립니다. 설치된 것을 요구에 맞추거나 ({install}) 헤더의 요구를 실제로 쓰는 버전에 맞추세요.<br>⚠ `--with` 는 **선언적**이라 적은 것만 남습니다 — 위 명령은 등록소에 선언된 것을 전부 포함하고 있으니 **그대로** 쓰세요. 일부만 적으면 나머지가 지워집니다 |
 
 **헤더가 없는 것이 정상이다.** stdlib 만 쓰는 스크립트가 대부분이고, 그러면 검사할 것이 없다.
 
@@ -211,7 +222,7 @@ LNT-CONTRACT-003        길지만 사람이 타이핑할 일이 없다.
 |---|---|---|---|---|
 | `LNT-REG-001` | hash-mismatch | R | 등록소 파일의 해시가 등록 당시와 다르다 | 등록된 파일이 검사를 거치지 않고 변경됐습니다. 삭제 후 재등록하세요 |
 | `LNT-REG-002` | ref-not-found | P R | `${ref.<id>}` 가 등록소에 없다 | 참조한 id 가 없습니다 (삭제됐거나 오타). `lintomata list` 로 확인하세요: {id} |
-| `LNT-REG-003` | ref-kind-mismatch | N P | `${ref.<id>}` 의 접두가 그 자리가 요구하는 종류와 다르다 | 이 자리에는 {expected} 가 와야 합니다. 준 것: {given} (접두 `sc_`=스크립트 `nd_`=노드 `pl_`=파이프라인 `sp_`=Spec) |
+| `LNT-REG-003` | ref-kind-mismatch | N P | `${ref.<id>}` 의 접두가 그 자리가 요구하는 종류와 다르다 | 이 자리에는 {expected} 가 와야 합니다. 준 것: {given} (접두 `sc_`=스크립트 `lb_`=라이브러리 `nd_`=노드 `pl_`=파이프라인 `sp_`=Spec) |
 | `LNT-REG-004` | ref-broken | — | **삭제**된 대상을 참조하는 상위가 있다 (**목록 표시**) | 참조 대상이 삭제되어 구성이 깨졌습니다. 없어진 참조: {id}. 대상을 다시 등록하고 이 요소의 참조를 새 id 로 고치세요 |
 | `LNT-REG-005` | validation-broken | — | 참조 대상이 **수정**되어 상위 검증이 더는 통과하지 않는다 (**목록 표시**) | 참조 대상이 수정되어 이 구성의 검증이 무효화됐습니다. 실패한 규칙: {rule}. 이 요소를 고쳐 다시 `update` 하세요 |
 
@@ -230,11 +241,11 @@ LNT-CONTRACT-003        길지만 사람이 타이핑할 일이 없다.
 
 | ID | name | when | 잡는 것 | guide |
 |---|---|---|---|---|
-| `LNT-LIB-001` | library-slot-unwired | N | 스크립트가 요구하는 슬롯을 노드가 배선하지 않았다 | 스크립트의 `from lintomata_lib import <이름>` 은 **능력 선언**이고, 그 슬롯에 무엇을 쓸지는 **노드가** 정합니다. 노드 JSON 에 `"libraries": { "<이름>": "${ref.lb_...}" }` 를 넣으세요 — 절대경로(`${env.X}` 포함)도 됩니다. 배선이 빠진 슬롯: {names} |
-| `LNT-LIB-002` | library-slot-unused | N | 노드가 배선했는데 스크립트가 쓰지 않는다 | 노드의 `libraries` 는 스크립트가 요구한 슬롯에만 답합니다. 쓰지 않는 배선은 참조 그래프만 넓혀 **라이브러리를 고칠 때 상관없는 노드까지 재검증**하게 만듭니다. 남는 배선: {names} |
-| `LNT-LIB-003` | library-nested-import | LB | 라이브러리가 다른 라이브러리를 import 한다 | 라이브러리는 **한 층뿐**입니다 — 허용하면 그때부터 패키지 매니저를 만들게 됩니다. 그 함수를 이 파일 안에 두거나, 쓰는 쪽 스크립트가 두 슬롯을 각각 배선하세요 |
-| `LNT-LIB-004` | library-dataclass-forbidden | LB | 라이브러리가 `dataclass` 를 선언했다 (**v1 제한**) | v1 의 라이브러리는 **함수만** 제공합니다. 계약 타입이 스크립트 밖에서 생기면 계약 추출이 파일 하나만 파싱하므로 타입 레지스트리에 구멍이 납니다. 그 dataclass 는 쓰는 쪽 **스크립트로 옮기세요** |
-| `LNT-LIB-005` | library-import-form | N | 스크립트가 `lintomata_lib` 를 허용되지 않은 형태로 import 했다 | 허용되는 형태는 **모듈 최상단의 `from lintomata_lib import <이름>`** 하나뿐입니다. `import lintomata_lib` / `from lintomata_lib.<x> import y` / `import *` / 함수 안 import 는 **슬롯을 정적으로 뽑을 수 없어** 배선 검사가 무의미해집니다 |
+| `LNT-LIB-001` | library-slot-unwired | N | 스크립트가 요구하는 슬롯을 노드가 배선하지 않았다 | 스크립트의 `from lintomata_lib import <이름>` 은 **능력 선언**("이 슬롯이 필요합니다")이고, 그 슬롯에 무엇을 쓸지는 **노드가** 정합니다. 노드 JSON 에 `"libraries": { "<이름>": "${ref.lb_...}" }` 를 넣으세요 — 절대경로(`${env.X}` 포함)도 됩니다. 배선이 빠진 슬롯: {names} |
+| `LNT-LIB-002` | library-slot-unused | N | 노드가 배선했는데 스크립트가 쓰지 않는다 | 노드의 `libraries` 는 스크립트가 `from lintomata_lib import <이름>` 으로 요구한 슬롯에만 답합니다. 쓰지 않는 배선은 참조 그래프만 넓혀 **라이브러리를 고칠 때 상관없는 노드까지 재검증**하게 만듭니다. 그 배선을 빼거나, 스크립트에서 실제로 쓰세요. 남는 배선: {names} |
+| `LNT-LIB-003` | library-nested-import | LB | 라이브러리가 다른 라이브러리를 import 한다 | 라이브러리는 **한 층뿐**입니다 — 라이브러리끼리 import 를 허용하면 그때부터 패키지 매니저를 만들게 됩니다. 그 함수를 이 파일 안에 두거나, 쓰는 쪽 스크립트가 두 슬롯을 각각 배선하세요 |
+| `LNT-LIB-004` | library-dataclass-forbidden | LB | 라이브러리가 `dataclass` 를 선언했다 (**v1 제한**) | v1 의 라이브러리는 **함수만** 제공합니다. 노드 간 계약 타입이 스크립트 밖에서 생기면 계약 추출이 파일 하나만 파싱하므로 타입 레지스트리에 구멍이 납니다. 이 dataclass 는 그것을 쓰는 **스크립트로 옮기세요** |
+| `LNT-LIB-005` | library-import-form | N | 스크립트가 `lintomata_lib` 를 허용되지 않은 형태로 import 했다 | 허용되는 형태는 **모듈 최상단의 `from lintomata_lib import <이름>`** 하나뿐입니다. `import lintomata_lib` 나 `from lintomata_lib.<x> import y`, `import *`, 함수 안에서의 import 는 **슬롯을 정적으로 뽑을 수 없어** 배선 검사가 무의미해집니다 |
 
 **배선한 참조가 라이브러리가 아닌 경우(`${ref.sc_...}` 등)에는 새 규칙을 만들지 않았다** —
 `LNT-REG-003`(자리와 접두 불일치)이 이미 그 자리이고, 고치는 법도 같다(접두를 맞춘다).

@@ -353,10 +353,10 @@ def test_unresolved_reference_is_a_separate_rule_from_malformed() -> None:
     assert unresolved.guide != malformed.guide
 
     # -007 은 "전개 순서" 를 고치라고 한다. 네임스페이스를 붙이라고 하지 않는다.
-    assert "전개" in unresolved.guide
-    assert "네임스페이스" not in unresolved.guide
+    assert "expand" in unresolved.guide
+    assert "namespace" not in unresolved.guide
     # -006 은 반대다.
-    assert "네임스페이스" in malformed.guide
+    assert "namespace" in malformed.guide
 
 
 def test_unresolved_reference_renders_the_offending_reference() -> None:
