@@ -442,6 +442,10 @@ lintomata 는 lint 를 안 하는 도구가 아니다. **lint 의 대상을 AST 
 | `lintomata node test <id>` | 노드 단위테스트 (실제 실행) |
 | `lintomata check <spec-id>` | 검사 실행 |
 
+**출력 언어는 영어가 기본이다.** `--lang ko` 또는 등록소의 `config.json` 의 `locale` 로 바꾼다.
+`LANG` 자동 감지도 환경변수도 두지 않는다 — 리포트가 산출물이라 환경마다 달라지면 안 된다.
+**`config.json` 에는 표현만 들어간다. 판정에 영향을 주는 값은 못 들어간다.** (`docs/schema.md` 2절)
+
 **CLI 가 유일한 표면이다.** AI 가 쓰고 등록하면 그 자리에서 걸리는 것이 저작 루프의 핵심인데,
 그건 `add` 가 규칙 id·자연어 가이드·종료 코드 `2` 를 돌려주는 것으로 이미 성립한다.
 
