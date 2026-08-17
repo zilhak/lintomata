@@ -43,6 +43,7 @@ from packaging.utils import canonicalize_name
 
 from lintomata import rules
 from lintomata.errors import Finding
+from lintomata.locale import message
 
 __all__ = [
     "BLOCK_TYPE",
@@ -97,7 +98,16 @@ def read_header(source: str, path: str) -> tuple[Declared, list[Finding]]:
     if not blocks:
         return Declared(), []
     if len(blocks) > 1:
-        return Declared(), [_malformed(path, f"`{BLOCK_TYPE}` 블록이 {len(blocks)}개입니다")]
+        return Declared(), [
+            _malformed(
+                path,
+                message(
+                    "there are {count} `{type}` blocks",
+                    count=len(blocks),
+                    type=BLOCK_TYPE,
+                ),
+            )
+        ]
 
     content = "".join(
         line[2:] if line.startswith("# ") else line[1:]
@@ -106,17 +116,25 @@ def read_header(source: str, path: str) -> tuple[Declared, list[Finding]]:
     try:
         raw = tomllib.loads(content)
     except tomllib.TOMLDecodeError as exc:
-        return Declared(), [_malformed(path, f"TOML 을 읽을 수 없습니다 ({exc})")]
+        return Declared(), [
+            _malformed(path, message("cannot read the TOML ({detail})", detail=exc))
+        ]
 
     requires_python = raw.get("requires-python", "")
     if not isinstance(requires_python, str):
-        return Declared(), [_malformed(path, "`requires-python` 이 문자열이 아닙니다")]
+        return Declared(), [
+            _malformed(path, message("`requires-python` is not a string"))
+        ]
 
     declared = raw.get("dependencies", [])
     if not isinstance(declared, list):
-        return Declared(), [_malformed(path, "`dependencies` 가 배열이 아닙니다")]
+        return Declared(), [
+            _malformed(path, message("`dependencies` is not an array"))
+        ]
     if not all(isinstance(item, str) for item in declared):
-        return Declared(), [_malformed(path, "`dependencies` 의 원소가 문자열이 아닙니다")]
+        return Declared(), [
+            _malformed(path, message("an element of `dependencies` is not a string"))
+        ]
 
     return Declared(
         present=True,
@@ -160,7 +178,14 @@ def check_dependencies(
             requirement = Requirement(raw)
         except InvalidRequirement as exc:
             findings.append(
-                _malformed(path, f"`dependencies` 의 `{raw}` 를 읽을 수 없습니다 ({exc})")
+                _malformed(
+                    path,
+                    message(
+                        "cannot read `{item}` in `dependencies` ({detail})",
+                        item=raw,
+                        detail=exc,
+                    ),
+                )
             )
             continue
         if requirement.marker is not None and not requirement.marker.evaluate():
@@ -237,13 +262,16 @@ def missing_module_hint(source: str, module: str) -> str:
         except InvalidRequirement:
             continue
         if canonicalize_name(name) == root:
-            return (
-                f"이 모듈은 스크립트의 PEP 723 헤더에 `{raw}` 로 선언돼 있지만 "
-                "지금 환경에 없습니다. 노드 스크립트는 lintomata 와 같은 환경에서 "
-                f"`import` 가 풀립니다 — 그쪽에 함께 설치하세요: {install_command(raw)}\n"
-                "⚠ `--with` 는 **선언적**이라 적은 것만 남습니다. 다른 스크립트가 "
-                "요구하는 것이 있으면 **전부 함께** 적으세요 "
-                "(`lintomata script list` / `show <id>` 의 선언 의존성)."
+            return message(
+                "This module is declared as `{item}` in the script's PEP 723 "
+                "header, but it is not in the current environment. A node script "
+                "resolves its `import`s in the same environment as lintomata — "
+                "install it there: {command}\n"
+                "⚠ `--with` is **declarative**: only what you list survives. If "
+                "other scripts need packages too, list **all of them together** "
+                "(see the declared deps in `lintomata script list` / `show <id>`).",
+                item=raw,
+                command=install_command(raw),
             )
     return ""
 
@@ -263,10 +291,12 @@ def missing_submodule_hint(module: str) -> str:
     root = module.split(".", 1)[0]
     if not root or root == module or not _is_importable(root):
         return ""
-    return (
-        f"`{root}` 패키지는 설치돼 있으나 그 안에 `{module}` 이 없습니다. "
-        "설치 문제가 아니라 **모듈 경로가 틀린 것**입니다 — 이름을 확인하거나, "
-        "그 패키지 버전에 그 모듈이 있는지 확인하세요."
+    return message(
+        "The `{root}` package is installed, but it has no `{module}` inside. This "
+        "is not an installation problem — **the module path is wrong**. Check the "
+        "name, or check whether that version of the package has that module.",
+        root=root,
+        module=module,
     )
 
 

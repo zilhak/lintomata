@@ -32,6 +32,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message
 from lintomata.model import EntryKind, Spec
 from lintomata.store.entries import Store
 
@@ -112,15 +113,25 @@ def _check_spec_shape(raw: object, path: str) -> list[Finding]:
 def _read(path: Path) -> str:
     if not path.is_file():
         raise LintomataError(
-            f"등록할 파일이 없습니다: {path}\n"
-            "경로를 확인하세요. 등록소는 파일을 복사해 보관하므로 원본이 있어야 합니다."
+            message(
+                "No such file to register: {path}\n"
+                "Check the path. The registry keeps a copy, so the original must "
+                "exist at registration time.",
+                path=path,
+            )
         )
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         raise LintomataError(
-            f"등록할 파일이 UTF-8 이 아닙니다: {path} ({exc.reason}, byte {exc.start})\n"
-            "등록 대상은 `.py` 스크립트와 `.json` 문서뿐이고 둘 다 UTF-8 이어야 합니다."
+            message(
+                "The file to register is not UTF-8: {path} ({reason}, byte {offset})\n"
+                "Only `.py` scripts and `.json` documents can be registered, and "
+                "both must be UTF-8.",
+                path=path,
+                reason=exc.reason,
+                offset=exc.start,
+            )
         ) from exc
 
 
@@ -129,12 +140,20 @@ def _parse_json(text: str, path: Path) -> dict[str, object]:
         raw = json.loads(text)
     except json.JSONDecodeError as exc:
         raise LintomataError(
-            f"JSON 을 읽을 수 없습니다: {path} ({exc})\n"
-            "노드·파이프라인·Spec 은 전부 JSON 문서입니다. 문법을 확인하세요."
+            message(
+                "Cannot read the JSON: {path} ({detail})\n"
+                "Nodes, pipelines and Specs are all JSON documents. Fix the syntax.",
+                path=path,
+                detail=exc,
+            )
         ) from exc
     if not isinstance(raw, dict):
         raise LintomataError(
-            f"JSON 의 최상위가 객체가 아닙니다: {path}\n"
-            "네 층 문서는 전부 최상위가 객체(`{...}`)입니다."
+            message(
+                "The top level of the JSON is not an object: {path}\n"
+                "All four layers are documents whose top level is an object "
+                "(`{...}`).",
+                path=path,
+            )
         )
     return raw

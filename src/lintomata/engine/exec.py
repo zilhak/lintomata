@@ -31,6 +31,7 @@ from pydantic import BaseModel, ValidationError
 from lintomata import deps
 from lintomata.checks.script import RESULT_FN, ScriptContract
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message, translate
 from lintomata.model import LIBRARY_NAMESPACE
 from lintomata.typesys.primitives import PRIMITIVES, TypeRef, element_type, is_list
 from lintomata.typesys.registry import TypeKey, TypeRegistry
@@ -122,8 +123,11 @@ def load_script(path: Path, libraries: Mapping[str, Path] | None = None) -> Modu
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
         raise LintomataError(
-            f"스크립트를 모듈로 읽을 수 없습니다: {path}\n"
-            "노드 스크립트는 `.py` 파일 하나여야 합니다."
+            message(
+                "Cannot load the script as a module: {path}\n"
+                "A node script must be a single `.py` file.",
+                path=path,
+            )
         )
     module = importlib.util.module_from_spec(spec)
     setattr(module, RESULT_FN, _return_result)
@@ -156,7 +160,9 @@ def _installed_libraries(libraries: Mapping[str, Path]) -> Iterator[None]:
     `sys.modules` 에 남는다. 여기서 걷는 것은 `lintomata_lib` **네임스페이스**뿐이다.
     """
     package = ModuleType(LIBRARY_NAMESPACE)
-    package.__doc__ = "lintomata 가 노드 배선에 따라 심어주는 라이브러리 네임스페이스."
+    package.__doc__ = (
+        "The library namespace lintomata installs from the node's wiring."
+    )
     installed = [LIBRARY_NAMESPACE]
     saved = {LIBRARY_NAMESPACE: sys.modules.get(LIBRARY_NAMESPACE)}
 
@@ -191,8 +197,11 @@ def _load_library(path: Path) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
         raise LintomataError(
-            f"라이브러리를 모듈로 읽을 수 없습니다: {path}\n"
-            "라이브러리는 `.py` 파일 하나여야 합니다."
+            message(
+                "Cannot load the library as a module: {path}\n"
+                "A library must be a single `.py` file.",
+                path=path,
+            )
         )
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
@@ -201,9 +210,14 @@ def _load_library(path: Path) -> ModuleType:
     except BaseException as exc:  # noqa: BLE001 - 사용자 코드는 무엇이든 던질 수 있다
         sys.modules.pop(name, None)
         raise LintomataError(
-            f"라이브러리를 로드하다 예외가 났습니다: {path}\n"
-            f"{type(exc).__name__}: {exc}\n"
-            "라이브러리는 import 만으로 부작용이 없어야 합니다 — 함수 정의만 두세요."
+            message(
+                "Loading the library raised: {path}\n"
+                "{detail}\n"
+                "Importing a library must have no side effect — keep function "
+                "definitions only.",
+                path=path,
+                detail=f"{type(exc).__name__}: {exc}",
+            )
         ) from exc
     return module
 
@@ -217,14 +231,18 @@ def _load_failure(path: Path, exc: BaseException) -> str:
 
     그 밖의 예외(상수 계산 실패 등)에는 기존 안내가 그대로 맞다.
     """
-    head = f"스크립트를 로드하다 예외가 났습니다: {path}\n{type(exc).__name__}: {exc}\n"
+    head = message(
+        "Loading the script raised: {path}\n{detail}\n",
+        path=path,
+        detail=f"{type(exc).__name__}: {exc}",
+    )
     guide = _missing_module_guide(path, exc)
     if guide:
         return head + guide
-    return (
-        head + "모듈 최상위(import·상수 계산 등)에서 터진 것입니다. "
-        "노드 스크립트는 import 만으로 부작용이 없어야 하고, 실제 동작은 "
-        "`runNode(args)` 안에 두세요."
+    return head + message(
+        "It blew up at module top level (imports, constant computation …). "
+        "Importing a node script must have no side effect — put the actual work "
+        "inside `runNode(args)`."
     )
 
 
@@ -257,11 +275,13 @@ def _missing_module_guide(path: Path, exc: BaseException) -> str:
         # `ModuleNotFoundError` 가 아니라 그냥 `ImportError` 로 온다 — 네임스페이스
         # 자체는 (비어 있을지언정) 언제나 심겨 있기 때문이다.
         # 원인이 확정된 자리이므로 형제 파일 이야기는 얹지 않는다.
-        return (
-            f"`{LIBRARY_NAMESPACE}` 에는 **노드가 배선한 슬롯만** 들어옵니다 — "
-            "지금 이 스크립트에는 그 배선이 없습니다.\n"
-            '노드 JSON 에 `"libraries": { "<슬롯>": "${ref.lb_...}" }` 를 넣으세요 '
-            "(절대경로도 됩니다). 등록 시점이라면 `LNT-LIB-001` 이 같은 것을 짚습니다."
+        return message(
+            "`{namespace}` only ever holds **the library slots the node wired** — "
+            "this script has no such wiring.\n"
+            'Add `"libraries": { "<slot>": "${ref.lb_...}" }` to the node JSON '
+            "(an absolute path works too). At registration time `LNT-LIB-001` "
+            "points at the same thing.",
+            namespace=LIBRARY_NAMESPACE,
         )
 
     if not isinstance(exc, ModuleNotFoundError):
@@ -282,19 +302,22 @@ def _missing_module_guide(path: Path, exc: BaseException) -> str:
         hint = deps.missing_module_hint(source, exc.name)
         declared = f"{hint}\n" if hint else ""
 
-    return (
-        f"{declared}"
-        f"못 찾은 모듈: `{exc.name}`. **형제 파일 import 는 되지 않습니다** — "
-        "스크립트가 있는 디렉터리는 `sys.path` 에 없고, 등록하면 스크립트 파일 "
-        "하나만 등록소로 복사되므로 옆 파일은 따라오지 않습니다.\n"
-        "공용 로직은 셋 중 하나로 풉니다: (1) **라이브러리로 등록해 노드가 배선**한다 "
-        "— `lintomata library add <파일>` 후 노드 JSON 에 "
-        '`"libraries": { "<슬롯>": "${ref.lb_...}" }`, 스크립트에서 '
-        "`from lintomata_lib import <슬롯>` (프로젝트 고유 판정 로직은 이쪽입니다). "
-        "(2) 판정 함수를 공유하는 대신 **그 판정을 하는 노드를 재사용**한다. "
-        "(3) 범용 서드파티라면 작은 패키지로 만들어 lintomata 환경에 설치한다 — "
-        "`uv tool install lintomata --with <패키지>` 후 PEP 723 헤더에 선언하면 "
-        "등록 시점에 확인됩니다."
+    return declared + message(
+        "Module not found: `{module}`. **Importing a sibling file does not work** "
+        "— the directory the script sits in is not on `sys.path`, and "
+        "registration copies the script file alone into the registry, so the file "
+        "next to it does not come along.\n"
+        "Shared logic goes one of three ways: (1) **register it as a library and "
+        "let the node wire it** — `lintomata library add <file>`, then "
+        '`"libraries": { "<slot>": "${ref.lb_...}" }` in the node JSON and '
+        "`from lintomata_lib import <slot>` in the script (this is the way for "
+        "project-specific decision logic). (2) Instead of sharing the function, "
+        "**reuse the node that makes that decision**. (3) If it is generic "
+        "third-party code, make it a small package and install it into the "
+        "lintomata environment — `uv tool install lintomata --with <package>`, "
+        "then declare it in the PEP 723 header so it is checked at registration "
+        "time.",
+        module=exc.name,
     )
 
 
@@ -314,9 +337,13 @@ def as_mapping(value: Any) -> dict[str, Any]:
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {f.name: getattr(value, f.name) for f in dataclasses.fields(value)}
     raise LintomataError(
-        f"dataclass 로 볼 수 없는 값입니다: {value!r} ({type(value).__name__})\n"
-        "노드 사이를 오가는 값은 스크립트가 선언한 dataclass 여야 합니다 "
-        "(`schema.md` 7절 — 복합 타입은 무조건 dataclass)."
+        message(
+            "This value cannot be read as a dataclass: {value} ({type})\n"
+            "Values travelling between nodes must be dataclasses declared by the "
+            "script (`schema.md` §7 — a composite type is always a dataclass).",
+            value=repr(value),
+            type=type(value).__name__,
+        )
     )
 
 
@@ -332,19 +359,32 @@ def _instantiate(
     cls = getattr(module, type_name, None)
     if spec is None or cls is None:
         raise LintomataError(
-            f"스크립트에 dataclass `{type_name}` 이 없습니다: {contract.path} ({where})\n"
-            "`Args` 가 선언한 타입 이름과 실제 클래스 이름이 같아야 합니다."
+            message(
+                "The script has no dataclass `{type}`: {path} ({where})\n"
+                "The type name `Args` declares and the actual class name must "
+                "match.",
+                type=type_name,
+                path=contract.path,
+                where=where,
+            )
         )
     data = as_mapping(raw)
     kwargs: dict[str, Any] = {}
     for field in spec.fields:
         if field.name not in data:
             raise LintomataError(
-                f"`{type_name}.{field.name}` 에 채울 값이 없습니다 "
-                f"({where}, {contract.path})\n"
-                f"들어온 값의 필드: {', '.join(sorted(data)) or '(없음)'}. "
-                "선언한 필드는 전부 채워져야 합니다 — `Optional` 이 없으므로 "
-                "비워 둘 자리가 없습니다."
+                message(
+                    "There is no value to fill `{type}.{field}` with "
+                    "({where}, {path})\n"
+                    "Fields present in the incoming value: {fields}. Every "
+                    "declared field must be filled — there is no `Optional`, so "
+                    "nothing may be left empty.",
+                    type=type_name,
+                    field=field.name,
+                    where=where,
+                    path=contract.path,
+                    fields=", ".join(sorted(data)) or translate("(none)"),
+                )
             )
         kwargs[field.name] = _coerce(module, field.type, data[field.name], contract, where)
     return cls(**kwargs)
@@ -357,7 +397,13 @@ def _coerce(
     if is_list(ref):
         if not isinstance(value, (list, tuple)):
             raise LintomataError(
-                f"`{ref}` 자리에 리스트가 아닌 값이 왔습니다: {value!r} ({where})"
+                message(
+                    "A non-list value arrived where `{type}` was declared: "
+                    "{value} ({where})",
+                    type=ref,
+                    value=repr(value),
+                    where=where,
+                )
             )
         return [_coerce(module, element_type(ref), item, contract, where) for item in value]
     if ref.name in PRIMITIVES:
@@ -385,9 +431,12 @@ def build_args(
     args_cls = getattr(module, "Args", None)
     if args_spec is None or args_cls is None:
         raise LintomataError(
-            f"`Args` dataclass 를 찾을 수 없습니다: {contract.path}\n"
-            "모든 노드 스크립트는 `Args` 라는 이름의 dataclass 를 선언하고 "
-            "`runNode(args: Args)` 형태여야 합니다."
+            message(
+                "No `Args` dataclass found: {path}\n"
+                "Every node script declares a dataclass named `Args` and takes "
+                "the form `runNode(args: Args)`.",
+                path=contract.path,
+            )
         )
 
     sources: dict[str, Any] = {
@@ -400,15 +449,25 @@ def build_args(
     for field in args_spec.fields:
         if field.name not in sources:
             raise LintomataError(
-                f"`Args` 에 모르는 필드가 있습니다: {field.name!r} ({contract.path})\n"
-                "`Args` 의 필드는 `input` / `params` / `state` 뿐입니다."
+                message(
+                    "`Args` has an unknown field: {field} ({path})\n"
+                    "The fields of `Args` are `input` / `params` / `state`, "
+                    "nothing else.",
+                    field=repr(field.name),
+                    path=contract.path,
+                )
             )
         value = sources[field.name]
         if field.name == "input" and value is None:
             raise LintomataError(
-                f"`Args.input` 을 선언했는데 앞단 값이 없습니다: {contract.path}\n"
-                "파이프라인의 이 노드에 `inputs` 배선을 넣거나, 입력을 안 쓰면 "
-                "`Args` 에서 `input` 필드를 지우세요 (쓰는 것만 선언합니다)."
+                message(
+                    "`Args.input` is declared but no upstream value arrived: "
+                    "{path}\n"
+                    "Either add an `inputs` wiring to this node in the pipeline, "
+                    "or — if the node takes no input — delete the `input` field "
+                    "from `Args` (declare only what you use).",
+                    path=contract.path,
+                )
             )
         kwargs[field.name] = _coerce(
             module, field.type, value, contract, f"Args.{field.name}"
@@ -435,8 +494,12 @@ def invoke(module: ModuleType, args: Any) -> Any:
     entry = getattr(module, ENTRYPOINT, None)
     if entry is None or not callable(entry):
         raise LintomataError(
-            f"진입점 `{ENTRYPOINT}(args)` 가 없습니다: {getattr(module, '__file__', '?')}\n"
-            "진입점 이름은 전 노드 타입 공통으로 고정입니다."
+            message(
+                "No entry point `{entrypoint}(args)`: {path}\n"
+                "The entry point name is fixed and the same for every node type.",
+                entrypoint=ENTRYPOINT,
+                path=getattr(module, "__file__", "?"),
+            )
         )
     file = getattr(module, "__file__", "") or ""
     try:
@@ -445,10 +508,16 @@ def invoke(module: ModuleType, args: Any) -> Any:
         # 늦은 import 가 `runNode` 안에서 터지는 경우도 있다 — 같은 안내를 준다.
         guide = _missing_module_guide(Path(file), exc) if file else ""
         raise LintomataError(
-            f"`{ENTRYPOINT}` 가 예외를 냈습니다: {file or '?'}\n"
-            f"{type(exc).__name__}: {exc}\n"
-            "스크립트 예외는 위반이 아니라 **오류**입니다 — 기획과 다른 것이 아니라 "
-            "검사 자체가 못 돈 것입니다. 스크립트를 고치세요."
+            message(
+                "`{entrypoint}` raised: {path}\n"
+                "{detail}\n"
+                "A script exception is not a violation, it is an **error** — "
+                "nothing differs from the plan, the check itself could not run. "
+                "Fix the script.",
+                entrypoint=ENTRYPOINT,
+                path=file or "?",
+                detail=f"{type(exc).__name__}: {exc}",
+            )
             + (f"\n{guide}" if guide else "")
         ) from exc
 
@@ -468,7 +537,7 @@ def validate_input(
     if not contract.input_type:
         return []  # 입력을 안 받는 노드 — 볼 것이 없다
     return _validate(contract, contract.input_type, value, registry, path=path, node=node,
-                     where="`Args.input`", hint="앞단 노드의 출력이")
+                     where="`Args.input`", hint=translate("the upstream node's output"))
 
 
 def validate_output(
@@ -487,7 +556,8 @@ def validate_output(
     if not contract.output_type:
         return []  # `LNT-CONTRACT-003` 이 등록 시점에 이미 잡았다
     return _validate(contract, contract.output_type, value, registry, path=path, node=node,
-                     where="반환 타입", hint="`returnResult()` 로 내보낸 값이")
+                     where=translate("the return type"),
+                     hint=translate("the value emitted by `returnResult()`"))
 
 
 def _validate(
@@ -515,12 +585,17 @@ def _validate(
                 status="error",
                 path=path,
                 node=node,
-                message=(
-                    f"{where}(`{type_name}`) 과 실제 값이 맞지 않습니다: "
-                    f"{contract.path}\n"
-                    f"{exc}\n"
-                    f"{hint} 선언된 dataclass 와 같은 필드·타입을 가져야 합니다. "
-                    "값이 아니라 선언이 틀렸다면 스크립트의 dataclass 를 고치세요."
+                message=message(
+                    "{where} (`{type}`) does not match the actual value: {path}\n"
+                    "{detail}\n"
+                    "{hint} must have the same fields and types as the declared "
+                    "dataclass. If the declaration is what is wrong rather than "
+                    "the value, fix the dataclass in the script.",
+                    where=where,
+                    type=type_name,
+                    path=contract.path,
+                    detail=exc,
+                    hint=hint,
                 ),
             )
         ]

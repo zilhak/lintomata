@@ -35,6 +35,7 @@ from lintomata import deps, refs, rules
 from lintomata.checks import script as script_checks
 from lintomata.checks.script import ScriptContract
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message
 from lintomata.model import LIBRARY_NAMESPACE, Node
 from lintomata.store.entries import Store
 
@@ -197,7 +198,11 @@ def _resolve_one(
         return None, [
             Finding(
                 status="error",
-                message=f"`libraries.{slot}` 가 문자열이 아닙니다: {value!r}",
+                message=message(
+                    "`libraries.{slot}` is not a string: {value}",
+                    slot=slot,
+                    value=repr(value),
+                ),
             )
         ]
 

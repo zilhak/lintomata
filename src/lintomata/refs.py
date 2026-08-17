@@ -47,6 +47,7 @@ from typing import Any, NoReturn
 
 from lintomata import rules
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message, translate
 from lintomata.model import ENGINE_STATE_FIELDS as _ENGINE_STATE_FIELDS
 from lintomata.model import ID_PREFIXES, EntryKind
 
@@ -84,12 +85,14 @@ _BRACE_C = re.compile(r"\$\{[^{}]*\}")
 **정본은 `model.ENGINE_STATE_FIELDS`** — `engine/state.py`·`checks/script.py` 와 같은 것을 본다."""
 
 _KIND_LABEL: dict[EntryKind, str] = {
-    "script": "스크립트(`sc_`)",
-    "library": "라이브러리(`lb_`)",
-    "node": "노드(`nd_`)",
-    "pipeline": "파이프라인(`pl_`)",
-    "spec": "Spec(`sp_`)",
+    "script": "script (`sc_`)",
+    "library": "library (`lb_`)",
+    "node": "node (`nd_`)",
+    "pipeline": "pipeline (`pl_`)",
+    "spec": "Spec (`sp_`)",
 }
+"""**원문은 영어다** (`schema.md` 2절). 쓰는 자리에서 `translate()` 한다 —
+이 dict 는 import 시점에 확정되는데 로케일은 그보다 늦게 정해진다."""
 
 
 def _fail(
@@ -108,18 +111,18 @@ def _fail(
     **구체값**만 담는다 (어느 환경변수였는지, 전개 결과가 무엇이었는지).
     """
     item = rules.finding(rule_id, status="error", fields=fields)
-    message = f"{detail}\n{item.message}" if detail else item.message
-    raise LintomataError(message, [item.model_copy(update={"message": message})])
+    text = f"{detail}\n{item.message}" if detail else item.message
+    raise LintomataError(text, [item.model_copy(update={"message": text})])
 
 
-def _fail_plain(message: str) -> NoReturn:
+def _fail_plain(text: str) -> NoReturn:
     """규칙 id 가 붙지 않는 오류.
 
     **규칙이 없는 자리에만 쓴다.** "참조가 아니다"(`nd_abc`) 나 "자리가 다르다"
     (`${env.HOME}` 를 `${ref....}` 자리에) 는 참조 문법이 깨진 것이 아니라서
     `LNT-REF-006` 에 해당하지 않는다 — 억지로 묶으면 가이드가 엉뚱해진다.
     """
-    raise LintomataError(message, [Finding(status="error", message=message)])
+    raise LintomataError(text, [Finding(status="error", message=text)])
 
 
 class Placeholder:
@@ -205,7 +208,11 @@ def _fail_unresolved(raw: str, original: str) -> NoReturn:
     이미 붙어 있으므로 `-006` 의 가이드를 주면 AI 가 엉뚱한 곳을 고친다.
     고쳐야 할 것은 **전개 순서 내지 빠진 config 값**이다.
     """
-    _fail("LNT-REF-007", detail=f"원본: {original!r}", fields={"ref": raw})
+    _fail(
+        "LNT-REF-007",
+        detail=message("Written as: {raw}", raw=repr(original)),
+        fields={"ref": raw},
+    )
 
 
 def is_ref(value: str) -> bool:
@@ -237,15 +244,23 @@ def parse_ref(value: str, expected: EntryKind | None = None) -> tuple[EntryKind,
         (k for prefix, k in ID_PREFIXES.items() if entry_id.startswith(prefix)), None
     )
     if kind is None:
-        known = " / ".join(_KIND_LABEL[k] for k in ID_PREFIXES.values())
+        known = " / ".join(translate(_KIND_LABEL[k]) for k in ID_PREFIXES.values())
         _fail(
             "LNT-REG-003",
-            fields={"expected": f"{known} 중 하나", "given": f"{entry_id} (모르는 접두)"},
+            fields={
+                "expected": message("one of {kinds}", kinds=known),
+                "given": message("{id} (unknown prefix)", id=entry_id),
+            },
         )
     if expected is not None and kind != expected:
         _fail(
             "LNT-REG-003",
-            fields={"expected": _KIND_LABEL[expected], "given": f"{_KIND_LABEL[kind]} ({entry_id})"},
+            fields={
+                "expected": translate(_KIND_LABEL[expected]),
+                "given": message(
+                    "{kind} ({id})", kind=translate(_KIND_LABEL[kind]), id=entry_id
+                ),
+            },
         )
     return kind, entry_id
 
@@ -266,8 +281,12 @@ def _fail_not_ref(value: object) -> NoReturn:
         if m is not None and _wellformed(value) is None:
             _fail_malformed(value)
     _fail_plain(
-        f"`${{ref.<id>}}` 형태가 아닙니다: {value!r}\n"
-        f"참조는 값 전체가 참조 하나여야 합니다 (예: ${{ref.nd_e5f6a7b8}})."
+        message(
+            "Not in `${ref.<id>}` form: {value}\n"
+            "A reference must be the whole value, one reference and nothing else "
+            "(e.g. ${ref.nd_e5f6a7b8}).",
+            value=repr(value),
+        )
     )
 
 
@@ -309,7 +328,11 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
     `refs` 는 그 검사에 쓸 기제(`expand_path`)만 제공한다.
     """
     if not value:
-        _fail("LNT-PATH-001", detail="경로가 비어 있습니다.", fields={"path": repr(value)})
+        _fail(
+            "LNT-PATH-001",
+            detail=message("The path is empty."),
+            fields={"path": repr(value)},
+        )
 
     # ① `~` 전개 — `~` 와 `~user` 를 `os.path.expanduser` 가 처리한다.
     tilde = os.path.expanduser(value)
@@ -340,7 +363,7 @@ def expand_path(value: str, env: Mapping[str, str]) -> Path:
     if not os.path.isabs(expanded):
         _fail(
             "LNT-PATH-001",
-            detail=f"원본: {value!r}",
+            detail=message("Written as: {raw}", raw=repr(value)),
             fields={"path": repr(expanded)},
         )
     return Path(expanded)
@@ -364,10 +387,18 @@ def _fail_if_unresolved(expanded: str, original: str) -> None:
     rest = expanded[at:]
     close = rest.find("}")
     if close < 0:
-        _fail("LNT-REF-006", detail=f"닫히지 않았습니다 (원본: {original!r})", fields={"ref": rest})
+        _fail(
+            "LNT-REF-006",
+            detail=message("Never closed (written as: {raw})", raw=repr(original)),
+            fields={"ref": rest},
+        )
     raw = rest[: close + 1]
     if _wellformed(raw) is None:
-        _fail("LNT-REF-006", detail=f"원본: {original!r}", fields={"ref": raw})
+        _fail(
+            "LNT-REF-006",
+            detail=message("Written as: {raw}", raw=repr(original)),
+            fields={"ref": raw},
+        )
     _fail_unresolved(raw, original)
 
 
@@ -409,7 +440,11 @@ def _config_lookup(name: str, config: Mapping[str, Any], target: str) -> Any:
     if name in config:
         return config[name]
     if target:
-        _fail("LNT-CMP-004", detail=f"현재 target: {target}", fields={"name": name})
+        _fail(
+            "LNT-CMP-004",
+            detail=message("Current target: {target}", target=target),
+            fields={"name": name},
+        )
     _fail("LNT-CONFIG-001", fields={"names": name})
 
 
@@ -429,7 +464,9 @@ def _state_lookup(name: str, state: Mapping[str, Any]) -> Any:
         known = ", ".join(sorted(_ENGINE_STATE_FIELDS))
         _fail(
             "LNT-STATE-001",
-            detail=f"엔진이 주는 것은 {known} 뿐입니다.",
+            detail=message(
+                "The engine only provides {names}.", names=known
+            ),
             fields={"name": name},
         )
     if name not in state:

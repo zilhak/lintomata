@@ -31,7 +31,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 __all__ = [
     "DEFAULT_LOCALE",
@@ -40,6 +40,8 @@ __all__ = [
     "catalog",
     "config_locale",
     "current_locale",
+    "fill",
+    "message",
     "resolve_locale",
     "scan_option",
     "set_locale",
@@ -116,6 +118,35 @@ def translate(text: str) -> str:
     if _current == DEFAULT_LOCALE:
         return text
     return catalog(_current).get(text, text)
+
+
+def fill(template: str, fields: Mapping[str, object]) -> str:
+    """`{식별자}` 자리표시자를 `fields` 로 치환한다.
+
+    **모르는 이름은 그대로 둔다.** 문구에 `` `{...}` `` 처럼 자리표시자가 아닌
+    중괄호가 그대로 들어 있는 자리가 있고(코드 예시), 번역이 원문에 없는 슬롯을
+    만들어낼 수도 있다. 거기서 `KeyError` 로 터지면 **번역 오타가 도구를 못 돌게
+    만든다** — 그건 lint 결과가 아니라 도구가 못 돈 것이 되어버린다.
+    어긋난 카탈로그는 `slot_mismatches` 가 테스트에서 잡는다.
+
+    ★ `str.format` 을 쓰지 않는 이유가 이것이다.
+    """
+    return SLOT_RE.sub(
+        lambda m: str(fields[m.group(1)]) if m.group(1) in fields else m.group(0),
+        template,
+    )
+
+
+def message(template: str, /, **fields: object) -> str:
+    """원문 → 번역 → 자리표시자 치환. **오류 문구를 만드는 유일한 통로다.**
+
+    ★ **자리표시자를 f-string 으로 미리 박으면 안 된다.** 그러면 값이 섞인 문자열이
+    카탈로그의 키가 되어 **어떤 번역과도 맞지 않는다** — 경로 하나 바뀔 때마다
+    다른 키가 된다. 값은 `{path}` 처럼 슬롯으로 남기고 여기서 채운다.
+
+    `raise LintomataError(message("… {path} …", path=path))` 가 표준 형태다.
+    """
+    return fill(translate(template), fields)
 
 
 # ── 로케일 결정 ──────────────────────────────────────────────────────────────

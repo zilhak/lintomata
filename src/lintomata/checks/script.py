@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING, Iterable
 
 from lintomata import deps, rules
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message
 from lintomata.model import ENGINE_STATE_FIELDS, LIBRARY_NAMESPACE, NodeType
 from lintomata.typesys.primitives import TypeRef, check_allowed, parse_type
 from lintomata.typesys.registry import DataclassSpec, FieldSpec
@@ -425,9 +426,10 @@ def check_library_imports(source: str, path: str) -> list[Finding]:
             elif any(alias.name == "*" for alias in node.names):
                 form = f"from {LIBRARY_NAMESPACE} import *"
             elif id(node) not in allowed:
-                form = (
-                    f"함수/클래스 안의 from {LIBRARY_NAMESPACE} import "
-                    + ", ".join(alias.name for alias in node.names)
+                form = message(
+                    "`from {namespace} import {names}` inside a function/class",
+                    namespace=LIBRARY_NAMESPACE,
+                    names=", ".join(alias.name for alias in node.names),
                 )
         if form and form not in seen:
             seen.add(form)
@@ -539,9 +541,15 @@ def _parse(source: str, path: str) -> ast.Module:
         return ast.parse(source, filename=path)
     except SyntaxError as exc:
         raise LintomataError(
-            f"스크립트를 파싱할 수 없습니다: {path} ({exc.lineno}행: {exc.msg}). "
-            "노드 스크립트는 문법이 올바른 파이썬 파일이어야 합니다 — "
-            "검사기는 파일을 돌리지 않고 `ast` 로 읽기만 하므로 문법 오류는 검사 자체를 막습니다."
+            message(
+                "Cannot parse the script: {path} (line {line}: {detail}). "
+                "A node script must be a syntactically valid Python file — the "
+                "checker never runs the file, it only reads it with `ast`, so a "
+                "syntax error stops the check itself.",
+                path=path,
+                line=exc.lineno,
+                detail=exc.msg,
+            )
         ) from exc
 
 

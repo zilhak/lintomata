@@ -78,6 +78,7 @@ from lintomata.engine import drive as drive_loop
 from lintomata.engine import exec as node_exec
 from lintomata.engine.runtime import VERDICT_PASSED
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message, translate
 from lintomata.model import Node, NodeTest, TestCase
 from lintomata.store.entries import Store
 from lintomata.typesys.registry import TypeKey
@@ -124,25 +125,37 @@ def load_node_test(path: Path, env: Mapping[str, str]) -> tuple[NodeTest | None,
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError) as exc:
         raise LintomataError(
-            f"테스트 파일을 읽을 수 없습니다: {path} ({exc})\n"
-            "`<노드파일>.test.json` 은 UTF-8 JSON 파일이어야 합니다."
+            message(
+                "Cannot read the test file: {path} ({detail})\n"
+                "`<node file>.test.json` must be a UTF-8 JSON file.",
+                path=path,
+                detail=exc,
+            )
         ) from exc
     except json.JSONDecodeError as exc:
         raise LintomataError(
-            f"테스트 파일이 JSON 이 아닙니다: {path} ({exc})\n"
-            "`<노드파일>.test.json` 의 구조는 `schema.md` 14절을 따르세요."
+            message(
+                "The test file is not JSON: {path} ({detail})\n"
+                "Follow the `<node file>.test.json` structure in `schema.md` §14.",
+                path=path,
+                detail=exc,
+            )
         ) from exc
 
     if not isinstance(raw, Mapping):
         raise LintomataError(
-            f"테스트 파일의 최상위가 객체가 아닙니다: {path} ({type(raw).__name__})\n"
-            "`{\"node\": ..., \"cases\": [...]}` 형태여야 합니다."
+            message(
+                "The top level of the test file is not an object: {path} ({type})\n"
+                'It must have the form `{"node": ..., "cases": [...]}`.',
+                path=path,
+                type=type(raw).__name__,
+            )
         )
 
     try:
         node_test = NodeTest.model_validate(dict(raw))
     except ValidationError as exc:
-        return None, shape_findings(exc, label, "노드 테스트")
+        return None, shape_findings(exc, label, "node unit test")
 
     findings = _check_node_ref(node_test.node, label, env)
     if findings:
@@ -367,12 +380,20 @@ def _read_json(path: Path) -> dict[str, Any]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise LintomataError(
-            f"노드 파일을 읽을 수 없습니다: {path} ({exc})\n"
-            "노드 파일은 UTF-8 JSON 이어야 합니다."
+            message(
+                "Cannot read the node file: {path} ({detail})\n"
+                "A node file must be UTF-8 JSON.",
+                path=path,
+                detail=exc,
+            )
         ) from exc
     if not isinstance(raw, Mapping):
         raise LintomataError(
-            f"노드 파일의 최상위가 객체가 아닙니다: {path} ({type(raw).__name__})"
+            message(
+                "The top level of the node file is not an object: {path} ({type})",
+                path=path,
+                type=type(raw).__name__,
+            )
         )
     return dict(raw)
 
@@ -447,7 +468,7 @@ def run_case(
                     "LNT-TEST-003",
                     node=who,
                     fields={
-                        "declared": contract.output_type or "(선언 없음)",
+                        "declared": contract.output_type or translate("(not declared)"),
                         "actual": _describe(output),
                     },
                 ),
@@ -529,21 +550,36 @@ def _materialize(value: Any, env: Mapping[str, str], contract: ScriptContract) -
 def _read_bytes(value: Mapping[str, Any], env: Mapping[str, str], contract: ScriptContract) -> bytes:
     if len(value) != 1:
         raise LintomataError(
-            f"`{FILE_KEY}` 는 그 객체의 유일한 키여야 합니다: {sorted(value)} ({contract.path})\n"
-            f'`bytes` 필드는 `{{"{FILE_KEY}": "<절대경로>"}}` 로만 씁니다.'
+            message(
+                "`{key}` must be the only key of that object: {keys} ({path})\n"
+                'A `bytes` field is written only as `{"{key}": "<absolute path>"}`.',
+                key=FILE_KEY,
+                keys=sorted(value),
+                path=contract.path,
+            )
         )
     target = value[FILE_KEY]
     if not isinstance(target, str):
         raise LintomataError(
-            f"`{FILE_KEY}` 의 값이 경로 문자열이 아닙니다: {target!r} ({contract.path})"
+            message(
+                "The value of `{key}` is not a path string: {value} ({path})",
+                key=FILE_KEY,
+                value=repr(target),
+                path=contract.path,
+            )
         )
     path = refs.expand_path(target, env)  # 경로 규칙 위반은 규칙 id 를 달고 나간다
     try:
         return path.read_bytes()
     except OSError as exc:
         raise LintomataError(
-            f"fixture 파일을 읽을 수 없습니다: {path} ({exc})\n"
-            f'`{FILE_KEY}` 가 가리키는 파일이 실재해야 합니다.'
+            message(
+                "Cannot read the fixture file: {path} ({detail})\n"
+                "The file `{key}` points at must exist.",
+                path=path,
+                detail=exc,
+                key=FILE_KEY,
+            )
         ) from exc
 
 
@@ -572,7 +608,12 @@ def check_action_transparency(case: TestCase, input_value: Any, output_value: An
     return [
         _with_detail(
             rules.finding("LNT-TEST-005", fields={}),
-            f"케이스: {case.name}\n입력: {_repr(given)}\n반환: {_repr(got)}",
+            message(
+                "case: {name}\ninput: {input}\nreturned: {output}",
+                name=case.name,
+                input=_repr(given),
+                output=_repr(got),
+            ),
         )
     ]
 
@@ -619,9 +660,13 @@ def check_reckon_contrast(
         return [
             _with_detail(
                 rules.finding("LNT-TEST-006", status="violation", fields={}),
-                "`input` 이 같고 `params` 만 다른 케이스 쌍이 없습니다 "
-                f"(케이스 {len(cases)}개 중 판정을 읽을 수 있는 것 "
-                f"{sum(1 for item in verdicts if item is not None)}개).",
+                message(
+                    "There is no pair of cases with the same `input` and "
+                    "different `params` (of {total} cases, {readable} yield a "
+                    "readable decision).",
+                    total=len(cases),
+                    readable=sum(1 for item in verdicts if item is not None),
+                ),
             )
         ]
 
@@ -629,10 +674,15 @@ def check_reckon_contrast(
     return [
         _with_detail(
             rules.finding("LNT-TEST-007", fields={}),
-            f"`{cases[left].name}` 과 `{cases[right].name}` 은 `params` 가 다른데 "
-            f"판정이 둘 다 {'통과' if verdicts[left] else '위반'}입니다.\n"
-            f"params: {_repr(cases[left].args.get('params'))} vs "
-            f"{_repr(cases[right].args.get('params'))}",
+            message(
+                "`{left}` and `{right}` have different `params`, yet both decide "
+                "{verdict}.\nparams: {left_params} vs {right_params}",
+                left=cases[left].name,
+                right=cases[right].name,
+                verdict=translate("pass" if verdicts[left] else "violation"),
+                left_params=_repr(cases[left].args.get("params")),
+                right_params=_repr(cases[right].args.get("params")),
+            ),
         )
     ]
 
@@ -686,7 +736,7 @@ def _repr(value: Any) -> str:
 def _describe(value: Any) -> str:
     """실제 반환값의 **모양**을 한 줄로. 타입 불일치 메시지에 쓴다."""
     if value is None:
-        return "(없음)"
+        return translate("(none)")
     try:
         data = node_exec.as_mapping(value)
     except LintomataError:

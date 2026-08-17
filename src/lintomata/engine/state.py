@@ -41,6 +41,7 @@ from typing import Any, Mapping
 
 from lintomata import refs
 from lintomata.errors import LintomataError
+from lintomata.locale import message
 from lintomata.model import ENGINE_STATE_FIELDS, States, Transition
 
 __all__ = ["ENGINE_FIELDS", "StateMachine"]
@@ -81,8 +82,12 @@ def _delay_ms(
         return 0
     if isinstance(raw, bool):  # bool 은 int 의 하위형이라 먼저 걸러낸다
         raise LintomataError(
-            f"전이의 `delay` 가 참/거짓입니다: {raw!r}\n"
-            "`delay` 는 밀리초 정수이거나 `${config.X}`·`${env.X}` 참조여야 합니다."
+            message(
+                "The transition's `delay` is a boolean: {value}\n"
+                "`delay` must be an integer number of milliseconds, or a "
+                "`${config.X}` / `${env.X}` reference.",
+                value=repr(raw),
+            )
         )
     if isinstance(raw, int):
         value: Any = raw
@@ -94,15 +99,25 @@ def _delay_ms(
             value = int(value.strip())
     if isinstance(value, bool) or not isinstance(value, int):
         raise LintomataError(
-            f"전이의 `delay` 가 정수로 풀리지 않았습니다: {raw!r} → {value!r}\n"
-            "`delay` 는 밀리초 정수입니다. `${config.X}` 로 받는다면 그 config 의 "
-            "`type` 을 `int` 로 선언하고 Spec 에서 정수를 채우세요. "
-            "`${env.X}` 로 받는다면 그 환경변수 값이 정수 형태여야 합니다."
+            message(
+                "The transition's `delay` did not expand to an integer: "
+                "{raw} → {value}\n"
+                "`delay` is an integer number of milliseconds. If it comes from "
+                "`${config.X}`, declare that config's `type` as `int` and fill an "
+                "integer in from the Spec. If it comes from `${env.X}`, that "
+                "environment variable's value must look like an integer.",
+                raw=repr(raw),
+                value=repr(value),
+            )
         )
     if value < 0:
         raise LintomataError(
-            f"전이의 `delay` 가 음수입니다: {value}\n"
-            "`delay` 는 전이까지 기다릴 밀리초이므로 0 이상이어야 합니다."
+            message(
+                "The transition's `delay` is negative: {value}\n"
+                "`delay` is how many milliseconds to wait before the transition, "
+                "so it must be 0 or more.",
+                value=value,
+            )
         )
     return value
 

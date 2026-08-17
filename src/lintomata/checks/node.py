@@ -40,6 +40,7 @@ from lintomata import refs, rules
 from lintomata.checks import script as script_checks
 from lintomata.checks.script import ScriptContract
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message, translate
 from lintomata.model import Node
 from lintomata.store.entries import Store
 
@@ -99,17 +100,23 @@ def shape_findings(exc: ValidationError, path: str, label: str) -> list[Finding]
     pydantic 에러는 구조화돼 있어 그대로 옮기면 AI 가 읽고 자기 수정하기 좋다.
     """
     made: list[Finding] = []
+    label = translate(label)
     for error in exc.errors():
-        where = ".".join(str(part) for part in error["loc"]) or "(최상위)"
+        where = ".".join(str(part) for part in error["loc"]) or translate("(top level)")
         made.append(
             Finding(
                 status="error",
                 path=path,
-                message=(
-                    f"{label} JSON 이 스키마에 맞지 않습니다 — `{where}`: {error['msg']}\n"
-                    f"입력값: {error.get('input')!r}\n"
-                    f"선언되지 않은 키는 쓸 수 없고(`extra=forbid`), 필수 키는 빠질 수 "
-                    f"없습니다. `schema.md` 의 {label} 구조를 그대로 따르세요."
+                message=message(
+                    "The {label} JSON does not match the schema — `{where}`: {detail}\n"
+                    "Input: {input}\n"
+                    "Undeclared keys are rejected (`extra=forbid`) and required keys "
+                    "cannot be omitted. Follow the {label} structure in `schema.md` "
+                    "exactly.",
+                    label=label,
+                    where=where,
+                    detail=error["msg"],
+                    input=repr(error.get("input")),
                 ),
             )
         )
@@ -133,7 +140,7 @@ def load_node(raw: Mapping[str, Any], path: str) -> tuple[Node | None, list[Find
     try:
         return Node.model_validate(dict(raw)), []
     except ValidationError as exc:
-        return None, shape_findings(exc, path, "노드")
+        return None, shape_findings(exc, path, "Node")
 
 
 def resolve_script(
@@ -170,9 +177,11 @@ def resolve_script(
                 status="error",
                 path=where,
                 node=node.info.name,
-                message=(
-                    f"노드의 `script` 가 문자열이 아닙니다: {resolved!r}\n"
-                    "`script` 에는 스크립트 파일의 절대경로 또는 `${ref.sc_...}` 가 옵니다."
+                message=message(
+                    "The node's `script` is not a string: {value}\n"
+                    "`script` takes the absolute path of the script file or "
+                    "`${ref.sc_...}`.",
+                    value=repr(resolved),
                 ),
             )
         ]
@@ -331,11 +340,20 @@ def _read_script(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         raise LintomataError(
-            f"스크립트가 UTF-8 이 아닙니다: {path} ({exc.reason}, byte {exc.start})\n"
-            "노드 스크립트는 Python 소스이고 UTF-8 이어야 합니다."
+            message(
+                "The script is not UTF-8: {path} ({reason}, byte {offset})\n"
+                "A node script is Python source and must be UTF-8.",
+                path=path,
+                reason=exc.reason,
+                offset=exc.start,
+            )
         ) from exc
     except OSError as exc:
         raise LintomataError(
-            f"스크립트를 읽을 수 없습니다: {path} ({exc})\n"
-            "파일 권한을 확인하세요."
+            message(
+                "Cannot read the script: {path} ({detail})\n"
+                "Check the file permissions.",
+                path=path,
+                detail=exc,
+            )
         ) from exc

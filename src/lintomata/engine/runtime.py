@@ -51,6 +51,8 @@ from lintomata.engine import exec as node_exec
 from lintomata.engine.result import NodeOutcome, RunResult
 from lintomata.engine.state import StateMachine
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message as _msg
+from lintomata.locale import translate
 from lintomata.model import Node, NodeType, Pipeline, PipelineNode, Spec
 from lintomata.report import Report, build_report, write_compare_report
 from lintomata.store.entries import Store
@@ -195,7 +197,7 @@ def run_plan_item(
     if source_path is None:
         return findings
 
-    raw, read_findings = _read_json(source_path, where, "파이프라인")
+    raw, read_findings = _read_json(source_path, where, "pipeline")
     findings.extend(read_findings)
     if raw is None:
         return findings
@@ -525,14 +527,19 @@ def _node_finding(node_id: str, node_type: NodeType, output: Any, path: str) -> 
             status="error",
             path=path,
             node=node_id,
-            message=(
-                f"Reckon 의 출력에 `{VERDICT_PASSED}: bool` 필드가 없습니다 "
-                f"(필드: {', '.join(sorted(data)) or '(없음)'})\n"
-                f"Reckon 은 판정을 내놓는 노드이므로 반환 dataclass 에 "
-                f"`{VERDICT_PASSED}: bool` 을 두어야 엔진이 통과/위반을 읽을 수 "
-                f"있습니다. 위반 설명은 `{VERDICT_MESSAGE}: str`, 규칙 이름은 "
-                f"`{VERDICT_RULE}: str` 로 함께 내보내면 리포트에 그대로 실립니다. "
-                "**판단은 스크립트가 하고 엔진은 그 결론을 읽기만 합니다.**"
+            message=_msg(
+                "The Reckon output has no `{passed}: bool` field "
+                "(fields: {fields})\n"
+                "A Reckon is the node that produces a decision, so its return "
+                "dataclass must carry `{passed}: bool` for the engine to read "
+                "pass/violation off it. Emit the violation text as "
+                "`{message}: str` and the rule name as `{rule}: str` alongside it "
+                "and they land in the report verbatim. **The script decides; the "
+                "engine only reads that conclusion.**",
+                passed=VERDICT_PASSED,
+                fields=", ".join(sorted(data)) or translate("(none)"),
+                message=VERDICT_MESSAGE,
+                rule=VERDICT_RULE,
             ),
         )
 
@@ -557,10 +564,12 @@ def _default_violation_message(data: Mapping[str, Any]) -> str:
     "어떤 규칙인지" 가 전달되지 않는다 (`CLAUDE.md` 의도 필드 절).
     """
     shown = ", ".join(f"{k}={v!r}" for k, v in sorted(data.items()) if k != VERDICT_PASSED)
-    return (
-        f"기획과 다릅니다. Verdict: {shown or '(설명 필드 없음)'}\n"
-        f"Reckon 의 반환 dataclass 에 `{VERDICT_MESSAGE}: str` 을 두면 이 자리에 "
-        "그 문구가 그대로 실립니다."
+    return _msg(
+        "Differs from the plan. Verdict: {verdict}\n"
+        "Put a `{message}: str` on the Reckon's return dataclass and its text "
+        "lands right here instead.",
+        verdict=shown or translate("(no explanatory field)"),
+        message=VERDICT_MESSAGE,
     )
 
 
@@ -626,9 +635,11 @@ def _load_nodes(
                     status="error",
                     path=path,
                     node=pn.id,
-                    message=(
-                        f"스크립트를 읽을 수 없습니다: {script_path} ({exc})\n"
-                        "노드 스크립트는 Python 소스이고 UTF-8 이어야 합니다."
+                    message=_msg(
+                        "Cannot read the script: {path} ({detail})\n"
+                        "A node script is Python source and must be UTF-8.",
+                        path=script_path,
+                        detail=exc,
                     ),
                 )
             )
@@ -675,7 +686,7 @@ def _load_node(
     )
     if source_path is None:
         return None, findings
-    raw, read_findings = _read_json(source_path, path, "노드", node_id=node_id)
+    raw, read_findings = _read_json(source_path, path, "node", node_id=node_id)
     findings.extend(read_findings)
     if raw is None:
         return None, findings
@@ -710,9 +721,12 @@ def _read_json(
                 status="error",
                 path=path,
                 node=node_id,
-                message=(
-                    f"{label} 파일을 읽을 수 없습니다: {source_path} ({exc})\n"
-                    f"{label} 파일은 UTF-8 JSON 이어야 합니다."
+                message=_msg(
+                    "Cannot read the {label} file: {path} ({detail})\n"
+                    "A {label} file must be UTF-8 JSON.",
+                    label=translate(label),
+                    path=source_path,
+                    detail=exc,
                 ),
             )
         ]
@@ -722,9 +736,11 @@ def _read_json(
                 status="error",
                 path=path,
                 node=node_id,
-                message=(
-                    f"{label} 파일의 최상위가 객체가 아닙니다: {source_path}\n"
-                    f"`schema.md` 의 {label} 구조를 그대로 따르세요."
+                message=_msg(
+                    "The top level of the {label} file is not an object: {path}\n"
+                    "Follow the {label} structure in `schema.md` exactly.",
+                    label=translate(label),
+                    path=source_path,
                 ),
             )
         ]

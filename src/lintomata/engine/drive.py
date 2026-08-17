@@ -45,6 +45,7 @@ from lintomata.checks.node import findings_of
 from lintomata.engine.result import NodeOutcome, RunResult
 from lintomata.engine.state import StateMachine
 from lintomata.errors import Finding, NotRunCause, LintomataError
+from lintomata.locale import message
 from lintomata.model import Node, Pipeline, PipelineNode
 from lintomata.store.entries import Store
 
@@ -101,10 +102,12 @@ def resolve_entry(
                 status="error",
                 path=path,
                 node=node_id,
-                message=(
-                    f"파일이 없습니다: {resolved}\n"
-                    f"원본: {value!r}. 경로가 맞는지, 참조한 환경변수 값이 맞는지 "
-                    "확인하세요."
+                message=message(
+                    "No such file: {path}\n"
+                    "Written as: {raw}. Check the path, and check the value of any "
+                    "environment variable it references.",
+                    path=resolved,
+                    raw=repr(value),
                 ),
             )
         ]

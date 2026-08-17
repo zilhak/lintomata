@@ -22,6 +22,7 @@ import re
 
 from lintomata import rules
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message
 
 __all__ = [
     "PRIMITIVES",
@@ -105,15 +106,22 @@ def parse_type(expr: str) -> TypeRef:
     text = expr.strip()
     if not text:
         raise LintomataError(
-            "타입 표기가 비어 있습니다. "
-            "`int` `float` `str` `bool` `bytes` `list[T]` 또는 선언한 dataclass 이름을 쓰세요."
+            message(
+                "The type expression is empty. Write `int` `float` `str` `bool` "
+                "`bytes` `list[T]` or the name of a declared dataclass."
+            )
         )
     node, pos = _parse_union(text, 0)
     pos = _skip_ws(text, pos)
     if pos != len(text):
         raise LintomataError(
-            f"타입 표기 {expr!r} 를 해석할 수 없습니다 ({pos} 번째 글자 뒤가 남았습니다). "
-            "`list[Button]` 처럼 이름과 대괄호만으로 쓰세요."
+            message(
+                "Cannot parse the type expression {expr} (trailing text after "
+                "character {pos}). Write a name and brackets only, as in "
+                "`list[Button]`.",
+                expr=repr(expr),
+                pos=pos,
+            )
         )
     return node
 
@@ -132,7 +140,9 @@ def element_type(t: TypeRef) -> TypeRef:
     """`list[T]` 의 `T`. 리스트가 아니면 오류."""
     if not is_list(t):
         raise LintomataError(
-            f"{t} 는 `list[T]` 가 아니므로 원소 타입이 없습니다."
+            message(
+                "{type} is not a `list[T]`, so it has no element type.", type=t
+            )
         )
     return t.args[0]
 
@@ -208,8 +218,13 @@ def _parse_single(text: str, pos: int) -> tuple[TypeRef, int]:
     match = _IDENT_RE.match(text, pos)
     if match is None:
         raise LintomataError(
-            f"타입 표기 {text!r} 의 {pos} 번째 위치에서 타입 이름을 찾지 못했습니다. "
-            "`int` `float` `str` `bool` `bytes` `list[T]` 또는 선언한 dataclass 이름을 쓰세요."
+            message(
+                "No type name found at character {pos} of the type expression "
+                "{expr}. Write `int` `float` `str` `bool` `bytes` `list[T]` or "
+                "the name of a declared dataclass.",
+                pos=pos,
+                expr=repr(text),
+            )
         )
     name = match.group(0)
     pos = _skip_ws(text, match.end())
@@ -228,6 +243,10 @@ def _parse_single(text: str, pos: int) -> tuple[TypeRef, int]:
                 pos += 1
                 break
             raise LintomataError(
-                f"타입 표기 {text!r} 의 대괄호가 닫히지 않았습니다. `list[Button]` 처럼 쓰세요."
+                message(
+                    "The brackets in the type expression {expr} are never closed. "
+                    "Write it as `list[Button]`.",
+                    expr=repr(text),
+                )
             )
     return TypeRef(name, tuple(args)), pos

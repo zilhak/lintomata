@@ -28,7 +28,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from lintomata.errors import Finding, NotRunCause, Status, LintomataError
-from lintomata.locale import SLOT_RE, translate
+from lintomata.locale import SLOT_RE, fill, translate
+from lintomata.locale import message as _msg
 
 __all__ = [
     "RuleWhen",
@@ -779,7 +780,7 @@ RULES: dict[str, Rule] = {rule.id: rule for rule in _TABLE}
 """규칙 id → 규칙. `rules.md` 2절의 69개."""
 
 if len(RULES) != len(_TABLE):  # pragma: no cover - 테이블 오타 방지용 자기 검증
-    raise LintomataError("규칙 테이블에 중복 id 가 있습니다")
+    raise LintomataError(_msg("The rule table has duplicate ids"))
 
 
 def get_rule(rule_id: str) -> Rule:
@@ -788,8 +789,11 @@ def get_rule(rule_id: str) -> Rule:
         return RULES[rule_id]
     except KeyError:
         raise LintomataError(
-            f"등록되지 않은 규칙 id 입니다: {rule_id!r}. "
-            "규칙 id 는 `rules.md` 2절 테이블에 있는 것만 쓸 수 있습니다."
+            _msg(
+                "Unknown rule id: {id}. Only the ids listed in the table in "
+                "`rules.md` §2 can be used.",
+                id=repr(rule_id),
+            )
         ) from None
 
 
@@ -805,15 +809,9 @@ def rules_for(when: RuleWhen) -> list[Rule]:
 def _fill(template: str, fields: dict[str, object]) -> str:
     """`{식별자}` 자리표시자를 `fields` 로 치환한다. 누락 검증은 호출자가 이미 했다.
 
-    **모르는 이름은 그대로 둔다.** 원문의 슬롯은 호출자가 이미 검증했으므로 이 경우는
-    *번역이 원문에 없는 슬롯을 만들어낸 것* 뿐이고, 그때 `KeyError` 로 터지면
-    번역 오타가 도구를 못 돌게 만든다. 그런 카탈로그는 `slot_mismatches` 가
-    테스트에서 잡는다 — 실행 시점에 죽일 일이 아니다.
+    **치환기는 `locale.fill` 하나다** — 오류 문구도 같은 것을 쓴다. 두 벌로 두면 갈린다.
     """
-    return _SLOT_RE.sub(
-        lambda m: str(fields[m.group(1)]) if m.group(1) in fields else m.group(0),
-        template,
-    )
+    return fill(template, fields)
 
 
 def _render(rule_id: str, fields: dict[str, object]) -> str:
@@ -831,10 +829,14 @@ def _render(rule_id: str, fields: dict[str, object]) -> str:
     missing = [name for name in rule.slots if name not in fields]
     if missing:
         raise LintomataError(
-            f"규칙 {rule_id} 의 자리표시자 값이 주어지지 않았습니다: "
-            f"{', '.join(missing)}. "
-            f"이 규칙이 요구하는 자리표시자는 {', '.join(rule.slots)} 입니다 "
-            "(`rules.Rule.slots`). 값은 `fields` 딕셔너리로 넘깁니다."
+            _msg(
+                "No value was given for placeholders of rule {id}: {missing}. "
+                "This rule requires the placeholders {slots} (`rules.Rule.slots`). "
+                "Pass the values in the `fields` dict.",
+                id=rule_id,
+                missing=", ".join(missing),
+                slots=", ".join(rule.slots),
+            )
         )
     message = _fill(translate(rule.message), fields)
     guide = _fill(translate(rule.guide), fields)

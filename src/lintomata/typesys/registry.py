@@ -47,6 +47,7 @@ from pydantic import BaseModel, ConfigDict, create_model
 
 from lintomata import rules
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message as _msg
 from lintomata.typesys.primitives import TypeRef, element_type, is_list, is_primitive
 
 __all__ = ["TypeKey", "FieldSpec", "DataclassSpec", "TypeRegistry"]
@@ -183,17 +184,24 @@ class TypeRegistry:
         if existing is not None:
             if existing.raw_set() != spec.raw_set():
                 raise LintomataError(
-                    f"dataclass `{spec.name}` 가 같은 스크립트({spec.origin or '?'}) 안에서 "
-                    "서로 다른 정의로 두 번 선언됐습니다. "
-                    "한 스크립트 안에서 같은 이름은 같은 필드 구성이어야 합니다 — "
-                    "다른 개념이면 이름을 다르게 두세요."
+                    _msg(
+                        "The dataclass `{name}` is declared twice with different "
+                        "definitions inside the same script ({origin}). Within one "
+                        "script the same name must have the same field set — if it "
+                        "is a different concept, give it a different name.",
+                        name=spec.name,
+                        origin=spec.origin or "?",
+                    )
                 )
             return
         names = [f.name for f in spec.fields]
         if len(set(names)) != len(names):
             raise LintomataError(
-                f"dataclass `{spec.name}` 에 같은 이름의 필드가 두 번 있습니다. "
-                "필드 이름은 dataclass 안에서 유일해야 합니다."
+                _msg(
+                    "The dataclass `{name}` has the same field name twice. Field "
+                    "names must be unique within a dataclass.",
+                    name=spec.name,
+                )
             )
         self._specs[key] = spec
         self._invalidate()
@@ -295,11 +303,13 @@ class TypeRegistry:
             path=owner.origin,
             node=owner.name,
             fields={"type": str(t), "file": owner.origin},
-            message=(
-                f"{where} 의 필드 타입 `{t}` 를 해석할 수 없습니다. "
-                "쓸 수 있는 타입은 `int` `float` `str` `bool` `bytes` `list[T]` 와 "
-                "**같은 스크립트가** 선언한 dataclass 뿐입니다 — 다른 스크립트의 dataclass 는 "
-                "이름으로 참조할 수 없습니다."
+            message=_msg(
+                "Cannot resolve the field type `{type}` of {where}. The types you "
+                "can use are `int` `float` `str` `bool` `bytes` `list[T]` and the "
+                "dataclasses declared by **the same script** — a dataclass from "
+                "another script cannot be referenced by name.",
+                type=t,
+                where=where,
             ),
         )
 
@@ -322,16 +332,21 @@ class TypeRegistry:
     def _require_normalized(self) -> None:
         if not self._normalized:
             raise LintomataError(
-                "TypeRegistry 를 정규화하지 않고 조회했습니다. "
-                "`register()` 를 전부 부른 뒤 `normalize()` 를 한 번 부르고 조회하세요."
+                _msg(
+                    "The TypeRegistry was queried before it was normalized. Call "
+                    "every `register()` first, then `normalize()` once, then query."
+                )
             )
 
     def _require_known(self, key: TypeKey) -> None:
         if key not in self._specs:
             raise LintomataError(
-                f"dataclass {TypeKey(*key)} 가 등록되어 있지 않습니다. "
-                "스크립트가 선언한 dataclass 만 타입으로 쓸 수 있고, "
-                "조회 키는 `(origin, name)` 입니다."
+                _msg(
+                    "The dataclass {key} is not registered. Only dataclasses "
+                    "declared by a script can be used as types, and the lookup key "
+                    "is `(origin, name)`.",
+                    key=TypeKey(*key),
+                )
             )
 
     # --- 조회 ------------------------------------------------------------
@@ -432,7 +447,13 @@ class TypeRegistry:
                         fields={
                             "names": ", ".join(str(m) for m in ordered),
                             "field": fname,
-                            "types": f"{owner} 는 {owner_canon} / {member} 는 {canon}",
+                            "types": _msg(
+                                "{owner} says {owner_type} / {member} says {member_type}",
+                                owner=owner,
+                                owner_type=owner_canon,
+                                member=member,
+                                member_type=canon,
+                            ),
                         },
                     )
                 seen[fname] = (member, canon)

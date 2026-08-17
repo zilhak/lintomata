@@ -63,6 +63,7 @@ from lintomata.engine import exec as node_exec
 from lintomata.engine.result import NodeOutcome, RunResult
 from lintomata.engine.state import StateMachine
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message
 from lintomata.model import Node, Pipeline, PipelineNode
 from lintomata.report import CompareReport, build_compare_report
 from lintomata.store.entries import Store
@@ -125,10 +126,11 @@ def run_compare_pipeline(
             Finding(
                 status="error",
                 path=path,
-                message=(
-                    f"비교 엔진이 `kind: {pipeline.info.kind}` 파이프라인을 받았습니다.\n"
-                    "비교 구동은 `info.kind` 가 `compare` 인 파이프라인 전용입니다. "
-                    "값 검증 파이프라인은 값 검증 엔진으로 돌리세요."
+                message=message(
+                    "The compare engine was handed a `kind: {kind}` pipeline.\n"
+                    "Compare driving is only for pipelines whose `info.kind` is "
+                    "`compare`. Run a verify pipeline on the verify engine.",
+                    kind=pipeline.info.kind,
                 ),
             )
         )
@@ -332,11 +334,13 @@ def _resolve_one(
                     status="error",
                     path=path,
                     node=node_id,
-                    message=(
-                        f"실행 시점인데 노드의 `script` 가 아직 안 풀렸습니다: "
-                        f"{node.script!r} (target: {target})\n"
-                        "Spec 의 `config.targets.<이름>` 또는 공통 `config` 에서 "
-                        "이 값을 채우세요."
+                    message=message(
+                        "It is run time and the node's `script` is still "
+                        "unexpanded: {value} (target: {target})\n"
+                        "Fill this value in from the Spec's "
+                        "`config.targets.<name>` or from the shared `config`.",
+                        value=repr(node.script),
+                        target=target,
                     ),
                 )
             )
@@ -356,9 +360,11 @@ def _resolve_one(
                 status="error",
                 path=path,
                 node=node_id,
-                message=(
-                    f"스크립트를 읽을 수 없습니다: {script_path} ({exc})\n"
-                    "노드 스크립트는 Python 소스이고 UTF-8 이어야 합니다."
+                message=message(
+                    "Cannot read the script: {path} ({detail})\n"
+                    "A node script is Python source and must be UTF-8.",
+                    path=script_path,
+                    detail=exc,
                 ),
             )
         )
@@ -490,11 +496,12 @@ def _mark_unprepared(
                     status="error",
                     path=path,
                     node=pn.id,
-                    message=(
-                        "이 노드의 스크립트가 일부 target 에서 준비되지 않았습니다: "
-                        f"{', '.join(missing)}\n"
-                        "비교는 target 전부의 값이 모여야 성립합니다. 위의 오류를 "
-                        "먼저 고치세요."
+                    message=message(
+                        "This node's script is not ready on some targets: "
+                        "{targets}\n"
+                        "A comparison only holds once every target has produced a "
+                        "value. Fix the errors above first.",
+                        targets=", ".join(missing),
                     ),
                 )
             )
@@ -618,11 +625,13 @@ def _run_targets(
                     status="error",
                     path=path,
                     node=pn.id,
-                    message=(
-                        f"target `{target}` 의 스크립트가 출력 타입을 선언하지 "
-                        f"않았습니다: {contract.path}\n"
-                        "출력은 `returnResult()` 로 dataclass 를 내보내야 합니다 — "
-                        "비교는 그 구조를 보고 합니다."
+                    message=message(
+                        "The script for target `{target}` declares no output "
+                        "type: {path}\n"
+                        "The output must leave through `returnResult()` as a "
+                        "dataclass — the comparison reads that structure.",
+                        target=target,
+                        path=contract.path,
                     ),
                 )
             )
@@ -705,21 +714,25 @@ def _verdict(
             status="pass",
             path=path,
             node=node_id,
-            message=(
-                f"대상 {len(outputs)}개가 같은 값을 내놨습니다: "
-                f"{', '.join(sorted(outputs))}"
+            message=message(
+                "All {count} targets produced the same value: {targets}",
+                count=len(outputs),
+                targets=", ".join(sorted(outputs)),
             ),
         )
     return Finding(
         status="violation",
         path=path,
         node=node_id,
-        message=(
-            "대상 간 출력이 다릅니다.\n"
-            + "\n".join(f"  {name}: {outputs[name]!r}" for name in outputs)
-            + "\n판정은 목록 전부가 같은 값을 뱉느냐입니다 — 하나만 어긋나도 위반입니다. "
-            "무시해도 되는 차이(좌표 반올림·타임스탬프 등)라면 비교용 데이터를 "
-            "내보내는 스크립트에서 정규화하세요. 엔진은 `==` 만 압니다."
+        message=message(
+            "The targets produced different outputs.\n"
+            "{outputs}\n"
+            "The decision is whether every target in the list yields the same "
+            "value — one mismatch is a violation. If a difference is safe to "
+            "ignore (rounded coordinates, timestamps …), normalize it in the "
+            "script that emits the data for comparison. The engine only knows "
+            "`==`.",
+            outputs="\n".join(f"  {name}: {outputs[name]!r}" for name in outputs),
         ),
     )
 
@@ -732,9 +745,12 @@ def _script_error(
         status="error",
         path=path,
         node=node_id,
-        message=(
-            f"target `{target}` 의 스크립트가 예외로 끝났습니다: {script_path}\n"
-            f"{type(exc).__name__}: {exc}"
+        message=message(
+            "The script for target `{target}` ended in an exception: {path}\n"
+            "{detail}",
+            target=target,
+            path=script_path,
+            detail=f"{type(exc).__name__}: {exc}",
         ),
     )
 

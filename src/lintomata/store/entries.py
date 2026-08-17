@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from lintomata import deps
 from lintomata.errors import LintomataError
+from lintomata.locale import message
 from lintomata.model import ID_PREFIXES, EntryKind
 from lintomata.refs import PLACEHOLDER_RE
 
@@ -167,9 +168,12 @@ def default_home() -> Path:
     home = Path(os.path.expanduser(raw))
     if not home.is_absolute():
         raise LintomataError(
-            f"LINTOMATA_HOME 이 절대경로가 아닙니다: {raw}\n"
-            "등록소 경로는 cwd 와 무관해야 합니다. "
-            "`/home/me/.lintomata` 나 `~/.lintomata` 처럼 절대경로로 지정하세요."
+            message(
+                "`LINTOMATA_HOME` is not an absolute path: {path}\n"
+                "A registry path must not depend on cwd. Point it at an absolute "
+                "path such as `/home/me/.lintomata` or `~/.lintomata`.",
+                path=raw,
+            )
         )
     return home
 
@@ -184,8 +188,12 @@ def new_id(kind: EntryKind) -> str:
     prefix = _PREFIX_OF.get(kind)
     if prefix is None:
         raise LintomataError(
-            f"등록소가 모르는 종류입니다: {kind}\n"
-            f"쓸 수 있는 종류: {', '.join(sorted(_PREFIX_OF))}"
+            message(
+                "The registry does not know this kind: {kind}\n"
+                "Available kinds: {kinds}",
+                kind=kind,
+                kinds=", ".join(sorted(_PREFIX_OF)),
+            )
         )
     return f"{prefix}{uuid.uuid4().hex[:8]}"
 
@@ -227,17 +235,27 @@ def _read_source(source: Path) -> tuple[Path, str]:
         path = path.resolve()
     if not path.is_file():
         raise LintomataError(
-            f"등록할 파일이 없습니다: {path}\n"
-            "경로를 확인하세요. 등록소는 파일을 복사해 보관하므로 원본이 있어야 합니다."
+            message(
+                "No such file to register: {path}\n"
+                "Check the path. The registry keeps a copy, so the original must "
+                "exist at registration time.",
+                path=path,
+            )
         )
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         # raw 예외로 새면 "도구가 못 돈 것" 이 규칙 id 도 가이드도 없이 나간다.
         raise LintomataError(
-            f"등록할 파일이 UTF-8 이 아닙니다: {path} ({exc.reason}, byte {exc.start})\n"
-            "등록 대상은 `.py` 스크립트와 `.json` 문서뿐이고 둘 다 UTF-8 이어야 합니다. "
-            "파일 인코딩을 UTF-8 로 바꿔 다시 등록하세요."
+            message(
+                "The file to register is not UTF-8: {path} ({reason}, byte {offset})\n"
+                "Only `.py` scripts and `.json` documents can be registered, and "
+                "both must be UTF-8. Re-encode the file as UTF-8 and register it "
+                "again.",
+                path=path,
+                reason=exc.reason,
+                offset=exc.start,
+            )
         ) from exc
     return path, text
 
@@ -275,16 +293,27 @@ class Store:
             # 손상은 반반이다 — 깨진 JSON 이거나 깨진 인코딩이거나.
             # 한쪽만 감싸면 나머지 절반이 raw 예외로 샌다.
             raise LintomataError(
-                f"등록소 인덱스가 UTF-8 이 아닙니다: {path} "
-                f"({exc.reason}, byte {exc.start})\n"
-                "`registry.json` 이 손상됐습니다. 손으로 고치지 말고 등록소를 다시 만드세요."
+                message(
+                    "The registry index is not UTF-8: {path} "
+                    "({reason}, byte {offset})\n"
+                    "`registry.json` is damaged. Do not hand-edit it — rebuild the "
+                    "registry.",
+                    path=path,
+                    reason=exc.reason,
+                    offset=exc.start,
+                )
             ) from exc
         try:
             raw = json.loads(text)
         except json.JSONDecodeError as exc:
             raise LintomataError(
-                f"등록소 인덱스를 읽을 수 없습니다: {path} ({exc})\n"
-                "`registry.json` 이 손상됐습니다. 손으로 고치지 말고 등록소를 다시 만드세요."
+                message(
+                    "Cannot read the registry index: {path} ({detail})\n"
+                    "`registry.json` is damaged. Do not hand-edit it — rebuild the "
+                    "registry.",
+                    path=path,
+                    detail=exc,
+                )
             ) from exc
         return RegistryIndex.model_validate(raw)
 
@@ -364,9 +393,13 @@ class Store:
         entry = index.entries.get(entry_id)
         if entry is None:
             raise LintomataError(
-                f"등록소에 없는 id 입니다: {entry_id}\n"
-                "삭제됐거나 오타입니다. `lintomata <종류> list` 로 확인하세요 "
-                "(접두 `sc_`=스크립트 `lb_`=라이브러리 `nd_`=노드 `pl_`=파이프라인 `sp_`=Spec)."
+                message(
+                    "No such id in the registry: {id}\n"
+                    "It was deleted, or it is a typo. Check with `lintomata <kind> "
+                    "list` (prefix `sc_`=script `lb_`=library `nd_`=node "
+                    "`pl_`=pipeline `sp_`=Spec).",
+                    id=entry_id,
+                )
             )
         return entry
 
@@ -380,8 +413,12 @@ class Store:
         entry = index.entries.get(entry_id)
         if entry is None:
             raise LintomataError(
-                f"등록소에 없는 id 입니다: {entry_id}\n"
-                "수정은 이미 등록된 것에만 됩니다. 새 것이면 `add` 를 쓰세요."
+                message(
+                    "No such id in the registry: {id}\n"
+                    "`update` only replaces something already registered. For a "
+                    "new one, use `add`.",
+                    id=entry_id,
+                )
             )
 
         shutil.copyfile(path, self._file_path(entry.kind, entry_id))
@@ -410,8 +447,12 @@ class Store:
         entry = index.entries.pop(entry_id, None)
         if entry is None:
             raise LintomataError(
-                f"등록소에 없는 id 입니다: {entry_id}\n"
-                "이미 삭제됐거나 오타입니다. `lintomata <종류> list` 로 확인하세요."
+                message(
+                    "No such id in the registry: {id}\n"
+                    "It is already deleted, or it is a typo. Check with `lintomata "
+                    "<kind> list`.",
+                    id=entry_id,
+                )
             )
         self._file_path(entry.kind, entry_id).unlink(missing_ok=True)
         # 테스트는 노드 정의 묶음의 일부다 — 노드가 사라지면 함께 사라진다.
@@ -529,17 +570,27 @@ class Store:
         path = self.path_of(entry_id)
         if not path.is_file():
             raise LintomataError(
-                f"등록소 파일이 없습니다: {path}\n"
-                "인덱스에는 있는데 실제 파일이 사라졌습니다. 삭제 후 재등록하세요."
+                message(
+                    "No such registry file: {path}\n"
+                    "The index has it but the file itself is gone. Remove the "
+                    "entry and register it again.",
+                    path=path,
+                )
             )
         try:
             return path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             raise LintomataError(
-                f"등록소 파일이 UTF-8 이 아닙니다: {path} "
-                f"({exc.reason}, byte {exc.start})\n"
-                "등록소 파일이 등록 이후에 직접 수정된 것으로 보입니다. "
-                "원본을 UTF-8 로 고쳐 `update` 로 다시 등록하세요."
+                message(
+                    "The registry file is not UTF-8: {path} "
+                    "({reason}, byte {offset})\n"
+                    "It looks like the registry file was edited directly after "
+                    "registration. Fix the original as UTF-8 and register it again "
+                    "with `update`.",
+                    path=path,
+                    reason=exc.reason,
+                    offset=exc.start,
+                )
             ) from exc
 
     def verify_hash(self, entry_id: str) -> bool:

@@ -57,6 +57,7 @@ from lintomata.checks.contracts import ScriptCache
 from lintomata.checks.node import dedupe, findings_of, shape_findings
 from lintomata.checks.script import ScriptContract
 from lintomata.errors import Finding, LintomataError
+from lintomata.locale import message, translate
 from lintomata.model import Node, NodeType, Pipeline
 from lintomata.store.entries import Store
 from lintomata.typesys.primitives import (
@@ -86,7 +87,7 @@ __all__ = [
 ]
 
 
-_UNDECLARED = "(선언 없음)"
+_UNDECLARED = "(not declared)"
 """타입 선언이 아예 없는 자리를 `{out}`/`{in}` 슬롯에 적을 때 쓰는 표기."""
 
 
@@ -98,7 +99,7 @@ def load_pipeline(raw: Mapping[str, Any], path: str) -> tuple[Pipeline | None, l
     try:
         return Pipeline.model_validate(dict(raw)), []
     except ValidationError as exc:
-        return None, shape_findings(exc, path, "파이프라인")
+        return None, shape_findings(exc, path, "Pipeline")
 
 
 def build_dag(pipeline: Pipeline) -> dict[str, list[str]]:
@@ -294,8 +295,12 @@ def _compare_wiring(
 ) -> list[Finding]:
     out_name = upstream.output_type
     in_name = downstream.input_type
-    out_label = f"`{out_name or _UNDECLARED}` (노드 {upstream_id})"
-    in_label = f"`{in_name or _UNDECLARED}` (노드 {downstream_id})"
+    out_label = message(
+        "`{type}` (node {node})", type=out_name or translate(_UNDECLARED), node=upstream_id
+    )
+    in_label = message(
+        "`{type}` (node {node})", type=in_name or translate(_UNDECLARED), node=downstream_id
+    )
 
     if not out_name or not in_name:
         return [
@@ -354,11 +359,12 @@ def check_state_mapping(
             Finding(
                 status="error",
                 path=source_path,
-                message=(
-                    f"`states.initial` 이 `states.values` 에 없습니다: "
-                    f"{pipeline.states.initial!r}\n"
-                    f"선언된 상태: {', '.join(pipeline.states.values) or '(없음)'}. "
-                    "초기 상태가 상태 집합 밖이면 어떤 `when` 도 판정할 수 없습니다."
+                message=message(
+                    "`states.initial` is not in `states.values`: {initial}\n"
+                    "Declared states: {values}. If the initial state is outside the "
+                    "state set, no `when` can ever be decided.",
+                    initial=repr(pipeline.states.initial),
+                    values=", ".join(pipeline.states.values) or translate("(none)"),
                 ),
             )
         )
@@ -651,10 +657,11 @@ def check_compare(
                 Finding(
                     status="error",
                     path=source_path,
-                    message=(
-                        "`kind: verify` 인데 `targets` / `compare` 가 채워져 있습니다.\n"
-                        "이 둘은 `kind: compare` 전용입니다. 비교 파이프라인이면 "
-                        "`info.kind` 를 `compare` 로 바꾸고, 아니면 두 섹션을 지우세요."
+                    message=message(
+                        "`kind: verify`, yet `targets` / `compare` are filled in.\n"
+                        "Those two belong to `kind: compare` only. If this is a "
+                        "compare pipeline, set `info.kind` to `compare`; otherwise "
+                        "delete both sections."
                     ),
                 )
             )
@@ -793,10 +800,11 @@ def check_pipeline(
                     status="error",
                     path=source_path,
                     node=pn.id,
-                    message=(
-                        f"노드 id 가 중복됩니다: {pn.id!r}\n"
-                        "`inputs` 가 id 로 배선을 만드므로 id 는 파이프라인 안에서 "
-                        "유일해야 합니다. 한쪽 이름을 바꾸세요."
+                    message=message(
+                        "Duplicate node id: {id}\n"
+                        "`inputs` wires nodes by id, so an id must be unique within "
+                        "the pipeline. Rename one of them.",
+                        id=repr(pn.id),
                     ),
                 )
             )
@@ -913,9 +921,11 @@ def _load_referenced_node(
                 status="error",
                 path=source_path,
                 node=node_id,
-                message=(
-                    f"노드 파일을 읽을 수 없습니다: {path} ({exc})\n"
-                    "노드 파일은 UTF-8 JSON 이어야 합니다."
+                message=message(
+                    "Cannot read the node file: {path} ({detail})\n"
+                    "A node file must be UTF-8 JSON.",
+                    path=path,
+                    detail=exc,
                 ),
             )
         ]
@@ -925,9 +935,10 @@ def _load_referenced_node(
                 status="error",
                 path=source_path,
                 node=node_id,
-                message=(
-                    f"노드 파일의 최상위가 객체가 아닙니다: {path}\n"
-                    "`info` / `type` / `script` 를 갖는 JSON 객체여야 합니다."
+                message=message(
+                    "The top level of the node file is not an object: {path}\n"
+                    "It must be a JSON object with `info` / `type` / `script`.",
+                    path=path,
                 ),
             )
         ]
@@ -1049,10 +1060,12 @@ def _resolved_contract(
                     status="error",
                     path=source_path,
                     node=node_id,
-                    message=(
-                        f"실행 시점인데 노드의 `script` 가 아직 안 풀렸습니다: "
-                        f"{node.script!r}\n"
-                        "Spec 의 `config`(또는 `targets.<이름>`)에서 이 값을 채우세요."
+                    message=message(
+                        "It is run time and the node's `script` is still "
+                        "unexpanded: {value}\n"
+                        "Fill this value in from the Spec's `config` (or "
+                        "`targets.<name>`).",
+                        value=repr(node.script),
                     ),
                 )
             )
@@ -1066,9 +1079,11 @@ def _resolved_contract(
                 status="error",
                 path=source_path,
                 node=node_id,
-                message=(
-                    f"스크립트를 읽을 수 없습니다: {path} ({exc})\n"
-                    "노드 스크립트는 Python 소스이고 UTF-8 이어야 합니다."
+                message=message(
+                    "Cannot read the script: {path} ({detail})\n"
+                    "A node script is Python source and must be UTF-8.",
+                    path=path,
+                    detail=exc,
                 ),
             )
         )
