@@ -10,6 +10,43 @@
 > Act 가 타입 검사를 받는 이유(투명성은 면제가 아니다) 가 전부 여기 있다.
 > 본문의 "Step" 표기는 그 병렬 진행의 흔적이다.
 
+> ## ⚠️ 계약 개정 R8 (2026-08-18) — **R7~R1 보다 우선한다. 노드 어휘 개명**
+>
+> 초판의 인지과학 어휘를 **평이한 동사·명사**로 갈았다. 개명 사유와 폐기 근거는
+> `schema.md` 16절, 새 어휘의 개념 정의는 5절에 있다. **동작은 하나도 바뀌지 않았다** —
+> 기계적 개명이고 테스트 1020개가 그대로 통과한다.
+>
+> ### R8-1. `NodeType` 의 값 다섯이 전부 바뀐다
+> ```
+> vantage → prepare    sense  → collect    perceive → extract
+> reckon  → judge      action → act
+> ```
+> 산출물 어휘도 함께: `Scene`→`Context`, `Sensum`→`Data`, `Percept`→`Meaning`
+> (`Verdict` 는 유지). **산출물 이름은 엔진이 강제하지 않는다** — 반환 타입은
+> 구조로 매칭하므로 이건 문서·예제의 권장 어휘다. `NodeType` 만 진짜 계약이다.
+>
+> **하위 호환 alias 를 두지 않는다.** 옛 `"type": "sense"` 는 `NodeType` Literal 에서
+> 즉시 오류다. 조용히 받아주는 것보다 즉시 실패하는 편이 이 도구의 신뢰 모델에 맞는다.
+>
+> ### R8-2. 공개 시그니처 두 개의 이름이 따라 바뀐다
+> ```python
+> check_action_transparency  →  check_act_transparency     # testing/harness.py
+> check_reckon_contrast      →  check_judge_contrast       # testing/harness.py
+> ```
+> 인자·반환은 그대로다. 내부 헬퍼 `_skip_actions` → `_skip_acts`(`checks/pipeline.py`).
+>
+> ### R8-3. 규칙 **id 는 하나도 바뀌지 않는다** ★
+> id 에 타입명이 들어가지 않는 설계였던 덕에 `LNT-CONTRACT-005` 등은 전부 그대로다.
+> 따라 바뀐 것은 **슬러그 6개**뿐: `reckon-expected-missing`·`reckon-verdict-missing`·
+> `reckon-no-contrast-pair`·`reckon-expected-ignored` → `judge-*`,
+> `action-io-differ`·`action-not-transparent` → `act-*`.
+> → **규칙 id 에 도메인 어휘를 넣지 않는 것이 개명 비용을 결정했다.** 새 규칙을 만들 때도 지킬 것.
+>
+> ### R8-4. `cli.py` 는 개명 대상이 아니었다
+> 노드 타입을 한 번도 언급하지 않는다. 거기 있는 `action=` 은 전부 argparse 의
+> `add_argument(action="store_true")` 와 `add_subparsers(dest="action")` 이다.
+> **기계 치환에서 이 파일을 제외해야 한다** — 다음에 비슷한 일괄 치환을 할 때도 마찬가지다.
+
 > ## ⚠️ 계약 개정 R7 (2026-08-16, conductor) — **R6~R1 보다 우선한다. 등록 종류 `library` 신설**
 >
 > `schema.md` 6.5절이 확정한 **다섯 번째 등록 종류**를 들인다. 형제 파일 `import` 가

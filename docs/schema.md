@@ -1207,6 +1207,9 @@ lintomata test-node <node>       → 실제 실행. 명시적으로 돌린다
 | 폐기 | 왜 |
 |---|---|
 | **프로그램 → 기획 추출** | 형상에서 기획을 역으로 뽑는 방법이 없다. 함께 사라진 것: provenance 구분, VRT 퇴화 위험, **"스키마가 기계 생성 가능해야 한다"는 제약** |
+| **초판의 인지과학 어휘** — `Vantage`/`Sense`/`Perceive`/`Reckon` + `Scene`/`Sensum`/`Percept` | 감각(sensation)/지각(perception) 구분을 그대로 옮겼는데, **충돌 회피를 과하게 의식해 읽는 사람이 뜻을 모르는 단어**를 골랐다 — `Sensum`(라틴어), `Percept`(인지과학 전문어), `Reckon`(고어·방언 뉘앙스). 게다가 `Vantage`·`Action` 만 명사여서 품사도 어긋나 "노드 = 하는 일"이라는 감각이 깨졌다. → **`prepare`/`collect`/`extract`/`judge`/`act` + `Context`/`Data`/`Meaning`** 으로 개명(5절, `MODULES.md` R8). **평이한 단어를 먼저 고르고, 실제 충돌이 있을 때만 다음 후보로 간다** |
+| **① 산출물을 `Env` 로** | 개명 때 "환경"에 가장 충실한 후보였으나 **`${env.X}` 참조 네임스페이스가 이미 그 단어를 점유**한다(전체 275곳). 환경변수와 노드 산출물이 같은 문서에서 `env` 로 섞이면 AI 가 헷갈린다 → `Context` |
+| **`Judge` 회피** | LLM-as-judge 와 겹친다고 피했으나 **정체성이 말 그대로 판정**이라 혼동이 생기지 않는다. 명명 원칙의 "정체성이 같은 공용 개념은 그대로 쓴다"에 해당한다 |
 | **노드 `skipWhen` / skip 전파 / 노드 상태 `skipped`** | skip 은 엔진 개념이 아니다. 스크립트가 `return input` 할 뿐 (10절) |
 | **전이 조건 표현식 언어** | 이건 lint 다. "실패했으니 다른 경로로"가 없다 |
 | **"구간형 Collect 를 상태+condition 으로"** | 그냥 `Prepare` + `Collect` 두 개다. 특수 문법이 애초에 불필요했다 (5절) |
