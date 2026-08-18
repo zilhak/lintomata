@@ -207,7 +207,7 @@ def all_same(values: Mapping[str, Any]) -> bool:
 
     "둘을 짝지어 비교"가 아니라 **전체가 한 값으로 일치하느냐**를 묻는다. 그래서
     대상이 셋이든 열이든 판정 방식이 같고, 하나만 어긋나면 위반이다.
-    비교는 `Meaning` 층에서 한다 — `Data` 는 비교 대상이 아니다.
+    비교는 `Meaning` 에서 한다 — `Data` 는 비교 대상이 아니다.
     """
     outputs = list(values.values())
     return all(item == outputs[0] for item in outputs[1:])
