@@ -1,4 +1,4 @@
-"""비교용 Perceive (target: alpha) — 시맨틱 마크업에서 버튼을 인식한다.
+"""비교용 Extract (target: alpha) — 시맨틱 마크업에서 버튼을 인식한다.
 
 target 마다 **인식 스크립트가 다른 것이 설계**다. HTML 이 완전히 달라도 개념 층
 (버튼 개수와 라벨)이 같으면 통과한다. input/output 타입은 노드에 귀속되어 공통이다.
@@ -13,22 +13,22 @@ from lintomata_lib import buttons
 
 
 @dataclass
-class Sensum:
+class Data:
     source: str
     html: str
 
 
 @dataclass
 class Args:
-    input: Sensum
+    input: Data
 
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
     labels: list[str]
 
 
-def runNode(args: Args) -> Percept:
+def runNode(args: Args) -> Meaning:
     labels = buttons.collect(args.input.html, lambda tag, attrs: tag == "button")
-    return returnResult(Percept(count=len(labels), labels=labels))
+    return returnResult(Meaning(count=len(labels), labels=labels))

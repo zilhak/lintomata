@@ -72,7 +72,7 @@ def runNode(args: Args) -> Verdict:
 
 
 def test_good_script_passes() -> None:
-    assert sc.check_script(GOOD, PATH, "reckon") == []
+    assert sc.check_script(GOOD, PATH, "judge") == []
 
 
 def test_contract_extracted() -> None:
@@ -146,16 +146,16 @@ def test_args_unknown_field() -> None:
 
 
 def test_args_field_omission_is_allowed() -> None:
-    """입력이 없는 Vantage — `input` 을 아예 두지 않는다. 위반이 아니다."""
+    """입력이 없는 Prepare — `input` 을 아예 두지 않는다. 위반이 아니다."""
     source = (
         "from dataclasses import dataclass\n\n\n"
         "@dataclass\nclass Params:\n    url: str\n\n\n"
         "@dataclass\nclass Args:\n    params: Params\n\n\n"
-        "@dataclass\nclass Scene:\n    handle: str\n\n\n"
-        "def runNode(args: Args) -> Scene:\n"
-        "    return returnResult(Scene(handle=args.params.url))\n"
+        "@dataclass\nclass Context:\n    handle: str\n\n\n"
+        "def runNode(args: Args) -> Context:\n"
+        "    return returnResult(Context(handle=args.params.url))\n"
     )
-    assert sc.check_script(source, PATH, "vantage") == []
+    assert sc.check_script(source, PATH, "prepare") == []
 
 
 def test_state_reserved_prefix() -> None:
@@ -351,7 +351,7 @@ def test_file_io_and_network_are_free() -> None:
 # --- 노드 타입별 형식 요구 -------------------------------------------------
 
 
-def test_reckon_without_params_is_caught() -> None:
+def test_judge_without_params_is_caught() -> None:
     source = (
         "from dataclasses import dataclass\n\n\n"
         "@dataclass\nclass Args:\n    input: str\n\n\n"
@@ -359,14 +359,14 @@ def test_reckon_without_params_is_caught() -> None:
         "def runNode(args: Args) -> Verdict:\n"
         "    return returnResult(Verdict(ok=args.input == 'expected'))\n"
     )
-    assert "LNT-CONTRACT-005" in ids(sc.check_script(source, PATH, "reckon"))
+    assert "LNT-CONTRACT-005" in ids(sc.check_script(source, PATH, "judge"))
     # 노드 타입을 모르면(스크립트 단독 등록) 타입별 요구는 안 돈다
     assert "LNT-CONTRACT-005" not in ids(sc.check_script(source, PATH))
-    # 같은 스크립트라도 Perceive 라면 요구가 없다
-    assert "LNT-CONTRACT-005" not in ids(sc.check_script(source, PATH, "perceive"))
+    # 같은 스크립트라도 Extract 라면 요구가 없다
+    assert "LNT-CONTRACT-005" not in ids(sc.check_script(source, PATH, "extract"))
 
 
-def test_reckon_with_empty_params_dataclass_is_caught() -> None:
+def test_judge_with_empty_params_dataclass_is_caught() -> None:
     """`params` 필드만 있고 안이 비면 기댓값을 받을 자리가 없다."""
     source = (
         "from dataclasses import dataclass\n\n\n"
@@ -374,10 +374,10 @@ def test_reckon_with_empty_params_dataclass_is_caught() -> None:
         "@dataclass\nclass Args:\n    input: str\n    params: Params\n\n\n"
         "def runNode(args: Args):\n    return returnResult(args.input)\n"
     )
-    assert "LNT-CONTRACT-005" in ids(sc.check_script(source, PATH, "reckon"))
+    assert "LNT-CONTRACT-005" in ids(sc.check_script(source, PATH, "judge"))
 
 
-def test_reckon_without_verdict_field_is_caught() -> None:
+def test_judge_without_verdict_field_is_caught() -> None:
     """**등록 시점에 잡는다** (R4-4). 런타임까지 미루면 리포트가 아니라 오류가 난다 —
     `schema.md` 6절이 형식 제한의 목적으로 적어둔 "돌리기 전에 잡아 자기 수정 신호를
     준다" 가 정확히 이 자리다."""
@@ -391,18 +391,18 @@ def test_reckon_without_verdict_field_is_caught() -> None:
         "def runNode(args: Args) -> Verdict:\n"
         "    return returnResult(Verdict(note='x'))\n"
     )
-    assert "LNT-CONTRACT-007" in ids(sc.check_script(missing, PATH, "reckon"))
+    assert "LNT-CONTRACT-007" in ids(sc.check_script(missing, PATH, "judge"))
     # 노드 타입을 모르면(스크립트 단독 등록) 타입별 요구는 안 돈다
     assert "LNT-CONTRACT-007" not in ids(sc.check_script(missing, PATH))
     # 판정 노드가 아니면 요구가 없다
-    assert "LNT-CONTRACT-007" not in ids(sc.check_script(missing, PATH, "perceive"))
+    assert "LNT-CONTRACT-007" not in ids(sc.check_script(missing, PATH, "extract"))
 
     ok = header + (
         "@dataclass\nclass Verdict:\n    passed: bool\n    message: str\n\n\n"
         "def runNode(args: Args) -> Verdict:\n"
         "    return returnResult(Verdict(passed=True, message='x'))\n"
     )
-    assert sc.check_script(ok, PATH, "reckon") == []
+    assert sc.check_script(ok, PATH, "judge") == []
 
 
 def test_verdict_field_must_be_bool() -> None:
@@ -415,7 +415,7 @@ def test_verdict_field_must_be_bool() -> None:
         "def runNode(args: Args) -> Verdict:\n"
         "    return returnResult(Verdict(passed='yes'))\n"
     )
-    assert "LNT-CONTRACT-007" in ids(sc.check_script(source, PATH, "reckon"))
+    assert "LNT-CONTRACT-007" in ids(sc.check_script(source, PATH, "judge"))
 
 
 def test_verdict_field_name_matches_the_engine() -> None:
@@ -433,11 +433,11 @@ def test_non_dataclass_output_defers_to_contract_003() -> None:
         "@dataclass\nclass Args:\n    input: str\n    params: Params\n\n\n"
         "def runNode(args: Args) -> str:\n    return returnResult(args.input)\n"
     )
-    found = only(sc.check_script(source, PATH, "reckon"), "LNT-CONTRACT")
+    found = only(sc.check_script(source, PATH, "judge"), "LNT-CONTRACT")
     assert found == ["LNT-CONTRACT-003"]
 
 
-def test_action_must_be_transparent() -> None:
+def test_act_must_be_transparent() -> None:
     header = (
         "from dataclasses import dataclass\n\n\n"
         "@dataclass\nclass Form:\n    selector: str\n\n\n"
@@ -448,20 +448,20 @@ def test_action_must_be_transparent() -> None:
         "def runNode(args: Args) -> Other:\n"
         "    return returnResult(Other(selector=args.input.selector))\n"
     )
-    assert "LNT-CONTRACT-006" in ids(sc.check_script(differ, PATH, "action"))
+    assert "LNT-CONTRACT-006" in ids(sc.check_script(differ, PATH, "act"))
 
     same = header + "def runNode(args: Args) -> Form:\n    return returnResult(args.input)\n"
-    assert sc.check_script(same, PATH, "action") == []
+    assert sc.check_script(same, PATH, "act") == []
 
 
-def test_action_without_input_is_caught() -> None:
+def test_act_without_input_is_caught() -> None:
     """input 이 없으면 `input == output` 이 성립할 수 없다."""
     source = (
         "from dataclasses import dataclass\n\n\n"
         "@dataclass\nclass Args:\n    params: str\n\n\n"
         "def runNode(args: Args):\n    return returnResult(args.params)\n"
     )
-    assert "LNT-CONTRACT-006" in ids(sc.check_script(source, PATH, "action"))
+    assert "LNT-CONTRACT-006" in ids(sc.check_script(source, PATH, "act"))
 
 
 PASSTHROUGH = (
@@ -472,26 +472,26 @@ PASSTHROUGH = (
     "    return returnResult(args.input)\n"
 )
 """**통과형** — CLAUDE.md 가 조건 분기의 표준 표현으로 못박은
-*"스크립트가 그냥 `input` 을 반환한다"*. Action 의 교과서적 모습이기도 하다."""
+*"스크립트가 그냥 `input` 을 반환한다"*. Act 의 교과서적 모습이기도 하다."""
 
 
 def test_passthrough_output_type_comes_from_input() -> None:
     """`returnResult(args.input)` 에서 출력 타입을 못 뽑으면 `output_type` 이 비고
-    **교과서적 Action 이 `LNT-CONTRACT-006` 으로 오탐된다.**"""
+    **교과서적 Act 가 `LNT-CONTRACT-006` 으로 오탐된다.**"""
     contract, _ = sc.extract_contract(PASSTHROUGH, PATH)
     assert (contract.input_type, contract.output_type) == ("Form", "Form")
-    assert sc.check_script(PASSTHROUGH, PATH, "action") == []
+    assert sc.check_script(PASSTHROUGH, PATH, "act") == []
 
 
-@pytest.mark.parametrize("node_type", ["vantage", "sense", "perceive", "reckon", "action"])
-def test_passthrough_is_not_an_action_only_concern(node_type: str) -> None:
+@pytest.mark.parametrize("node_type", ["prepare", "collect", "extract", "judge", "act"])
+def test_passthrough_is_not_an_act_only_concern(node_type: str) -> None:
     """조건 분기의 표준 표현이므로 **모든 노드 타입**에서 성립해야 한다.
 
-    Reckon 만 기댓값 자리(`-005`)와 판정 자리(`-007`)를 따로 요구한다 —
+    Judge 만 기댓값 자리(`-005`)와 판정 자리(`-007`)를 따로 요구한다 —
     둘 다 통과형과 무관한 요구다.
     """
     findings = only(sc.check_script(PASSTHROUGH, PATH, node_type), "LNT-CONTRACT")
-    expected = ["LNT-CONTRACT-005", "LNT-CONTRACT-007"] if node_type == "reckon" else []
+    expected = ["LNT-CONTRACT-005", "LNT-CONTRACT-007"] if node_type == "judge" else []
     assert findings == expected
 
 
@@ -505,7 +505,7 @@ def test_passthrough_follows_the_actual_param_name() -> None:
 
 
 def test_passthrough_of_a_non_input_field_is_not_the_input_type() -> None:
-    """`args.params` 는 입력이 아니다 — 통과형으로 오인하면 Action 검사가 무의미해진다."""
+    """`args.params` 는 입력이 아니다 — 통과형으로 오인하면 Act 검사가 무의미해진다."""
     source = (
         "from dataclasses import dataclass\n\n\n"
         "@dataclass\nclass Form:\n    selector: str\n\n\n"
@@ -558,7 +558,7 @@ def test_output_type_from_return_result_argument() -> None:
     )
     contract, _ = sc.extract_contract(source, PATH)
     assert contract.output_type == "Form"
-    assert sc.check_script(source, PATH, "action") == []
+    assert sc.check_script(source, PATH, "act") == []
 
 
 # --- TOOL — 실행 시점 -----------------------------------------------------
@@ -604,19 +604,19 @@ def test_plain_path_argument_is_not_a_tool_call() -> None:
 
 def test_two_scripts_each_declare_args_independently() -> None:
     """registry 키가 `(origin, name)` 인 이유 — 두 스크립트의 `Args` 가 안 부딪힌다."""
-    sense = (
+    collect = (
         "from dataclasses import dataclass\n\n\n"
         "@dataclass\nclass Args:\n    input: str\n\n\n"
         "def runNode(args: Args):\n    return returnResult(args.input)\n"
     )
-    reckon = (
+    judge = (
         "from dataclasses import dataclass\n\n\n"
         "@dataclass\nclass Params:\n    expected: int\n\n\n"
         "@dataclass\nclass Args:\n    input: str\n    params: Params\n\n\n"
         "def runNode(args: Args):\n    return returnResult(args.input)\n"
     )
-    a, _ = sc.extract_contract(sense, "/abs/a.py")
-    b, _ = sc.extract_contract(reckon, "/abs/b.py")
+    a, _ = sc.extract_contract(collect, "/abs/a.py")
+    b, _ = sc.extract_contract(judge, "/abs/b.py")
 
     assert a.dataclasses["Args"].origin == "/abs/a.py"
     assert b.dataclasses["Args"].origin == "/abs/b.py"
@@ -711,14 +711,14 @@ def _every_finding() -> list[Finding]:
             PATH,
         )
     )  # 004·TYPE-001/002/003·STATE-001
-    collected.extend(sc.check_script(GOOD.replace("input: Html", "input: str"), PATH, "action"))
+    collected.extend(sc.check_script(GOOD.replace("input: Html", "input: str"), PATH, "act"))
     collected.extend(
         sc.check_script(
             "from dataclasses import dataclass\n\n\n"
             "@dataclass\nclass Args:\n    input: str\n\n\n"
             "def runNode(args: Args):\n    return returnResult(args.input)\n",
             PATH,
-            "reckon",
+            "judge",
         )
     )  # 005
     collected.extend(
@@ -730,7 +730,7 @@ def _every_finding() -> list[Finding]:
             "def runNode(args: Args) -> Verdict:\n"
             "    return returnResult(Verdict(note='판정을 안 담았다'))\n",
             PATH,
-            "reckon",
+            "judge",
         )
     )  # 007
     collected.extend(
@@ -773,15 +773,15 @@ from dataclasses import dataclass
 from lintomata_lib import buttons, menus
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
 
 @dataclass
 class Args:
-    input: Percept
+    input: Meaning
 
-def runNode(args: Args) -> Percept:
-    return returnResult(Percept(count=buttons.count(menus.of(args.input))))
+def runNode(args: Args) -> Meaning:
+    return returnResult(Meaning(count=buttons.count(menus.of(args.input))))
 """
 
 

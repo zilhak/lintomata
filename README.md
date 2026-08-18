@@ -12,8 +12,8 @@ Spec (JSON)  →  Pipeline (JSON)  →  Node (JSON)  →  Script (.py)
    기획           DAG 구성           동작 정의        실제 동작
 ```
 
-**lintomata 에 내장된 동작은 하나도 없다.** 다섯 노드 타입(Vantage / Sense / Perceive /
-Reckon / Action)의 본체는 전부 사용자가 공급하는 스크립트이고, lintomata 가 파는 것은
+**lintomata 에 내장된 동작은 하나도 없다.** 다섯 노드 타입(Prepare / Collect / Extract /
+Judge / Act)의 본체는 전부 사용자가 공급하는 스크립트이고, lintomata 가 파는 것은
 **파이프라인 엔진과 스키마**다.
 
 ## 이름

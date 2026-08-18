@@ -1,4 +1,4 @@
-"""비교용 Perceive (target: beta) — 클래스 이름으로 버튼을 인식한다.
+"""비교용 Extract (target: beta) — 클래스 이름으로 버튼을 인식한다.
 
 `class` 에 `btn` 토큰이 있으면 버튼으로 본다. 마크업은 `span` 이지만 사람에게는
 버튼이므로 개념 층에서는 alpha 와 같은 값이 나와야 한다.
@@ -13,24 +13,24 @@ from lintomata_lib import buttons
 
 
 @dataclass
-class Sensum:
+class Data:
     source: str
     html: str
 
 
 @dataclass
 class Args:
-    input: Sensum
+    input: Data
 
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
     labels: list[str]
 
 
-def runNode(args: Args) -> Percept:
+def runNode(args: Args) -> Meaning:
     labels = buttons.collect(
         args.input.html, lambda tag, attrs: "btn" in attrs.get("class", "").split()
     )
-    return returnResult(Percept(count=len(labels), labels=labels))
+    return returnResult(Meaning(count=len(labels), labels=labels))

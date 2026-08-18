@@ -19,20 +19,20 @@ from dataclasses import dataclass
 
 
 @dataclass
-class Sensum:
+class Data:
     source: str
     html: str
 
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
 
 
 @dataclass
 class Args:
-    input: Sensum
+    input: Data
 
 
-def runNode(args: Args) -> Percept:
-    return returnResult(Percept(count=args.input.html.count("<button")))
+def runNode(args: Args) -> Meaning:
+    return returnResult(Meaning(count=args.input.html.count("<button")))

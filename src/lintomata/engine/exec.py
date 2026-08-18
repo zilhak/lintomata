@@ -421,7 +421,7 @@ def build_args(
 ) -> Any:
     """스크립트가 선언한 `Args` 인스턴스를 만든다.
 
-    **세 필드는 쓰는 것만 선언한다** — 입력이 없는 Vantage 는 `input` 필드를
+    **세 필드는 쓰는 것만 선언한다** — 입력이 없는 Prepare 는 `input` 필드를
     아예 두지 않으므로, 선언에 없는 필드는 채우지 않는다.
 
     반대로 **선언한 필드는 반드시 채운다.** `input` 을 선언했는데 배선이 없으면
@@ -550,7 +550,7 @@ def validate_output(
 ) -> list[Finding]:
     """반환값이 선언된 출력 타입에 맞는지.
 
-    Action 의 **값 동일성**(input == output)은 여기서 보지 않는다 —
+    Act 의 **값 동일성**(input == output)은 여기서 보지 않는다 —
     그 검사의 자리는 단위테스트다 (`LNT-TEST-005`).
     """
     if not contract.output_type:

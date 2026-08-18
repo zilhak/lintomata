@@ -367,31 +367,31 @@ _TABLE: tuple[Rule, ...] = (
     ),
     _rule(
         "LNT-CONTRACT-005",
-        "reckon-expected-missing",
+        "judge-expected-missing",
         (_N,),
-        "This is a Reckon node, but `Args.params` has no expected-value field. "
+        "This is a Judge node, but `Args.params` has no expected-value field. "
         "(file: {file})",
-        "A Reckon takes its expected value from the Spec. Hard-coding it in the "
+        "A Judge takes its expected value from the Spec. Hard-coding it in the "
         "script turns the Spec file into an empty shell — editing the plan would no "
         "longer change the decision. Declare the expected-value field on "
         "`Args.params`",
     ),
     _rule(
         "LNT-CONTRACT-006",
-        "action-io-differ",
+        "act-io-differ",
         (_N,),
-        "This is an Action node, but its input type and output type differ. "
+        "This is an Act node, but its input type and output type differ. "
         "(file: {file})",
-        "An Action passes data straight through. The `Args.input` type and the "
-        "return type must be the same. If you need to transform, use a Perceive",
+        "An Act passes data straight through. The `Args.input` type and the "
+        "return type must be the same. If you need to transform, use a Extract",
     ),
     _rule(
         "LNT-CONTRACT-007",
-        "reckon-verdict-missing",
+        "judge-verdict-missing",
         (_N,),
-        "This is a Reckon node, but its output dataclass has no decision field "
+        "This is a Judge node, but its output dataclass has no decision field "
         "`passed: bool`. (file: {file})",
-        "A Reckon is the node that **decides** — the engine needs `passed: bool` on "
+        "A Judge is the node that **decides** — the engine needs `passed: bool` on "
         "the output dataclass to tell `pass` from `violation`. Without it nobody "
         "finds out until the run, and at that point you get an error instead of a "
         "report",
@@ -640,24 +640,24 @@ _TABLE: tuple[Rule, ...] = (
     ),
     _rule(
         "LNT-TEST-005",
-        "action-not-transparent",
+        "act-not-transparent",
         (_T,),
-        "This is an Action node, but the returned value differs from the input.",
-        "An Action must pass data straight through. Cause the side effect and leave "
+        "This is an Act node, but the returned value differs from the input.",
+        "An Act must pass data straight through. Cause the side effect and leave "
         "the value alone",
     ),
     _rule(
         "LNT-TEST-006",
-        "reckon-no-contrast-pair",
+        "judge-no-contrast-pair",
         (_T,),
-        "The Reckon test has no pass/violation contrast pair.",
+        "The Judge test has no pass/violation contrast pair.",
         "Put in one passing case and one violating case that share the same `input` "
         "and differ only in `params` — that pair is what proves the expected value "
         "is actually used",
     ),
     _rule(
         "LNT-TEST-007",
-        "reckon-expected-ignored",
+        "judge-expected-ignored",
         (_T,),
         "Both halves of the contrast pair decide the same way.",
         "The expected value changed and the decision did not — the script is "
@@ -757,7 +757,7 @@ _TABLE: tuple[Rule, ...] = (
         (_LB,),
         "A library declares a `dataclass`: {name}",
         "A v1 library provides **functions only**. If a contract type between nodes "
-        "is born outside a script, contract extraction — which parses a single file "
+        "is born outside a script, contract extract — which parses a single file "
         "— leaves a hole in the type registry. **Move this dataclass into the "
         "script** that uses it",
     ),

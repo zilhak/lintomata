@@ -1,0 +1,5 @@
+{
+  "info": { "name": "bad-judge-hardcoded", "description": "기댓값을 하드코딩한 Judge — 단위테스트가 잡아야 한다" },
+  "type": "judge",
+  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/invalid/bad_judge_hardcoded.py"
+}

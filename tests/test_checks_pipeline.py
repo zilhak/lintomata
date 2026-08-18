@@ -2,7 +2,7 @@
 
 **경계를 짚는다.** 특히 이 넷은 구현을 되돌리면 반드시 깨진다:
 
-1. **Action 투명성** — `X→Action→Y` 와 `X→Y` 의 판정이 같아야 한다
+1. **Act 투명성** — `X→Act→Y` 와 `X→Y` 의 판정이 같아야 한다
 2. **순환 검출** — `inputs` 가 엣지이므로 별도 `edges` 없이 잡아야 한다
 3. **비교 파이프라인** — `script`·`params` 는 갈려도 되고 input/output/state 는 갈리면 위반.
    **target 이 3개 이상**인 경우까지 본다 (2개만 보면 짝비교 가정이 숨는다)
@@ -78,7 +78,7 @@ def test_build_dag_takes_edges_from_inputs_only():
         make(
             nodes=[
                 n("page"),
-                n("html", inputs={"scene": "page"}),
+                n("html", inputs={"context": "page"}),
                 n("form", inputs={"a": "html", "b": "html"}),
             ]
         )
@@ -213,7 +213,7 @@ def test_wiring_reports_missing_declaration():
 def test_check_wiring_types_requires_node_types():
     """`node_types` 는 **필수 인자**다 (MODULES.md R3-5).
 
-    없으면 어느 노드가 Action 인지 알 방법이 없어 투명성 구현이 원리적으로 불가능하다.
+    없으면 어느 노드가 Act 인지 알 방법이 없어 투명성 구현이 원리적으로 불가능하다.
     기본값을 두면 부르는 쪽이 조용히 빠뜨린다.
     """
     contracts = {"x": contract("x.py", output_fields={"count": "int"})}
@@ -222,10 +222,10 @@ def test_check_wiring_types_requires_node_types():
         pipe.check_wiring_types(make(nodes=[n("x")]), contracts, registry, "p.json")
 
 
-def test_action_is_transparent_verdict_is_identical_with_and_without_it():
-    """★ `X ──▶ Action ──▶ Y` 와 `X ──▶ Y` 의 판정이 **같아야** 한다.
+def test_act_is_transparent_verdict_is_identical_with_and_without_it():
+    """★ `X ──▶ Act ──▶ Y` 와 `X ──▶ Y` 의 판정이 **같아야** 한다.
 
-    상·하단 대조에서 Action 을 건너뛴다 — 안 그러면 "어디에나 끼워 넣는다" 가
+    상·하단 대조에서 Act 를 건너뛴다 — 안 그러면 "어디에나 끼워 넣는다" 가
     타입 체계와 충돌한다.
     """
     x = contract("x.py", output_fields={"count": "int"})
@@ -236,15 +236,15 @@ def test_action_is_transparent_verdict_is_identical_with_and_without_it():
     through = wired(
         [n("x"), n("click", inputs={"v": "x"}), n("y", inputs={"v": "click"})],
         {"x": x, "click": click, "y": y},
-        node_types={"x": "sense", "click": "action", "y": "reckon"},
+        node_types={"x": "collect", "click": "act", "y": "judge"},
     )
     assert direct == through == []
 
 
-def test_action_transparency_does_not_hide_a_real_mismatch():
-    """상·하단이 안 맞으면 Action 을 껴도 **판정(통과/위반)이 같다.**
+def test_act_transparency_does_not_hide_a_real_mismatch():
+    """상·하단이 안 맞으면 Act 를 껴도 **판정(통과/위반)이 같다.**
 
-    Finding 목록이 완전히 같을 것까지 요구하지는 않는다 — Action 자신의 계약도
+    Finding 목록이 완전히 같을 것까지 요구하지는 않는다 — Act 자신의 계약도
     대조 대상이라(R3-3) 낀 배선에서는 결과가 더 나올 수 있다.
     """
     x = contract("x.py", output_fields={"count": "int"})
@@ -255,18 +255,18 @@ def test_action_transparency_does_not_hide_a_real_mismatch():
     through = wired(
         [n("x"), n("click", inputs={"v": "x"}), n("y", inputs={"v": "click"})],
         {"x": x, "click": click, "y": y},
-        node_types={"x": "sense", "click": "action", "y": "reckon"},
+        node_types={"x": "collect", "click": "act", "y": "judge"},
     )
     assert bool(direct) == bool(through) is True
     assert set(ids(direct)) == set(ids(through)) == {"LNT-TYPE-004"}
     assert "y" in {item.node for item in through}
 
 
-def test_action_contract_itself_is_checked_against_its_producer():
+def test_act_contract_itself_is_checked_against_its_producer():
     """★ R3-3 — 투명하다는 것은 **타입검사 면제가 아니다.**
 
-    `X.out={count}` / `Action.in=out={junk}` / `Y.in={count}` 는 상·하단만 보면
-    통과지만, Action 스크립트는 실제로 그 데이터를 `Args.input` 으로 받는다.
+    `X.out={count}` / `Act.in=out={junk}` / `Y.in={count}` 는 상·하단만 보면
+    통과지만, Act 스크립트는 실제로 그 데이터를 `Args.input` 으로 받는다.
     실행 시점 계약 위반이 될 것을 등록 시점에 잡는다.
     """
     x = contract("x.py", output_fields={"count": "int"})
@@ -276,16 +276,16 @@ def test_action_contract_itself_is_checked_against_its_producer():
     findings = wired(
         [n("x"), n("click", inputs={"v": "x"}), n("y", inputs={"v": "click"})],
         {"x": x, "click": click, "y": y},
-        node_types={"x": "sense", "click": "action", "y": "reckon"},
+        node_types={"x": "collect", "click": "act", "y": "judge"},
     )
     assert ids(findings) == ["LNT-TYPE-004"]
     assert findings[0].node == "click"
 
 
-def test_action_transparency_holds_with_an_empty_node_types_map():
-    """어느 노드가 Action 인지 모르는 채로 대조해도 판정이 달라지면 안 된다.
+def test_act_transparency_holds_with_an_empty_node_types_map():
+    """어느 노드가 Act 인지 모르는 채로 대조해도 판정이 달라지면 안 된다.
 
-    올바른 Action 은 `input == output`(`LNT-CONTRACT-006`)이므로 건너뛰든
+    올바른 Act 는 `input == output`(`LNT-CONTRACT-006`)이므로 건너뛰든
     엣지를 그대로 대조하든 결론이 같다.
     """
     x = contract("x.py", output_fields={"count": "int"})
@@ -295,13 +295,13 @@ def test_action_transparency_holds_with_an_empty_node_types_map():
     contracts = {"x": x, "click": click, "y": y}
 
     assert wired(nodes, contracts) == []
-    assert wired(nodes, contracts, node_types={"click": "action"}) == []
+    assert wired(nodes, contracts, node_types={"click": "act"}) == []
 
 
-def test_action_chain_is_skipped_all_the_way_up():
-    """Action 이 여러 개 이어져도 상·하단 대조는 **끝까지 거슬러 올라간다.**
+def test_act_chain_is_skipped_all_the_way_up():
+    """Act 가 여러 개 이어져도 상·하단 대조는 **끝까지 거슬러 올라간다.**
 
-    셋(`X.out` · 각 Action 의 `in`/`out` · `Y.in`)이 전부 같은 정의이므로
+    셋(`X.out` · 각 Act 의 `in`/`out` · `Y.in`)이 전부 같은 정의이므로
     낀 배선과 안 낀 배선의 판정이 같다.
     """
     x = contract("x.py", output_fields={"count": "int"})
@@ -317,13 +317,13 @@ def test_action_chain_is_skipped_all_the_way_up():
     findings = wired(
         nodes,
         {"x": x, "a1": a1, "a2": a2, "y": y},
-        node_types={"x": "sense", "a1": "action", "a2": "action", "y": "reckon"},
+        node_types={"x": "collect", "a1": "act", "a2": "act", "y": "judge"},
     )
     assert findings == []
 
 
-def test_action_chain_still_carries_the_upstream_definition_to_the_far_end():
-    """중간 Action 이 여럿이어도 `Y.in` 은 **`X.out` 과** 대조된다."""
+def test_act_chain_still_carries_the_upstream_definition_to_the_far_end():
+    """중간 Act 가 여럿이어도 `Y.in` 은 **`X.out` 과** 대조된다."""
     x = contract("x.py", output_fields={"count": "int"})
     y = contract("y.py", input_fields={"label": "str"})
     a1 = contract("a1.py", input_fields={"count": "int"}, output_fields={"count": "int"})
@@ -336,7 +336,7 @@ def test_action_chain_still_carries_the_upstream_definition_to_the_far_end():
             n("y", inputs={"v": "a2"}),
         ],
         {"x": x, "a1": a1, "a2": a2, "y": y},
-        node_types={"x": "sense", "a1": "action", "a2": "action", "y": "reckon"},
+        node_types={"x": "collect", "a1": "act", "a2": "act", "y": "judge"},
     )
     assert ids(findings) == ["LNT-TYPE-004"]
     assert findings[0].node == "y"
@@ -757,7 +757,7 @@ def build_project(tmp_path, monkeypatch, *, wiring_ok=True):
     stub_reachability(monkeypatch)
 
     node_files = {}
-    for name, kind in (("capture", "sense"), ("detect", "perceive")):
+    for name, kind in (("capture", "collect"), ("detect", "extract")):
         path = tmp_path / f"{name}.json"
         path.write_text(
             json.dumps(
@@ -867,7 +867,7 @@ def test_check_pipeline_defers_unresolvable_target_scripts_without_complaining(
         json.dumps(
             {
                 "info": {"name": "detect", "description": "d"},
-                "type": "perceive",
+                "type": "extract",
                 "script": "${config.buttonScript}",
             }
         ),
@@ -911,7 +911,7 @@ def compare_project(tmp_path, monkeypatch, outs):
         json.dumps(
             {
                 "info": {"name": "detect", "description": "d"},
-                "type": "perceive",
+                "type": "extract",
                 "script": "${config.buttonScript}",
             }
         ),
@@ -979,8 +979,8 @@ def test_recheck_resolved_runs_script_checks_on_target_scripts(
     )
     assert ids(findings) == ["LNT-BAN-002"]
     assert findings[0].node == "detectButtons"
-    # 노드 타입을 같이 넘겨야 Reckon·Action 형식 검사가 성립한다.
-    assert set(stub.seen_types) == {(str(p), "perceive") for p in scripts.values()}
+    # 노드 타입을 같이 넘겨야 Judge·Act 형식 검사가 성립한다.
+    assert set(stub.seen_types) == {(str(p), "extract") for p in scripts.values()}
 
 
 def test_recheck_resolved_는_target_스크립트의_라이브러리_배선도_본다(
@@ -1072,7 +1072,7 @@ def verify_project(tmp_path, monkeypatch, *, detect_input, state_fields=None):
             json.dumps(
                 {
                     "info": {"name": name, "description": "d"},
-                    "type": "sense" if name == "capture" else "perceive",
+                    "type": "collect" if name == "capture" else "extract",
                     "script": script,
                 }
             ),

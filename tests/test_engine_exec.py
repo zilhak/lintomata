@@ -16,11 +16,11 @@ from lintomata.engine import exec as node_exec
 from lintomata.errors import LintomataError
 from lintomata.typesys.registry import TypeRegistry
 
-VANTAGE = """
+PREPARE = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
@@ -31,8 +31,8 @@ VANTAGE = """
     class Args:
         params: Params
 
-    def runNode(args: Args) -> Scene:
-        return returnResult(Scene(url=args.params.url))
+    def runNode(args: Args) -> Context:
+        return returnResult(Context(url=args.params.url))
 """
 
 NESTED = """
@@ -113,12 +113,12 @@ def registry_for(*contracts) -> TypeRegistry:
 
 def test_returnResult_는_엔진이_넣어_준다(tmp_path: Path) -> None:
     """스크립트 어디에도 정의가 없는 고정 이름이다 — 안 넣어 주면 전부 `NameError`."""
-    module, _ = loaded(tmp_path, "v", VANTAGE)
+    module, _ = loaded(tmp_path, "v", PREPARE)
     assert module.returnResult("그대로") == "그대로"
 
 
 def test_같은_이름의_스크립트가_충돌하지_않는다(tmp_path: Path) -> None:
-    one = script(tmp_path / "a", "same", VANTAGE)
+    one = script(tmp_path / "a", "same", PREPARE)
     two = script(tmp_path / "b", "same", NESTED)
     assert node_exec.load_script(one) is not node_exec.load_script(two)
 
@@ -138,8 +138,8 @@ def test_없는_파일은_오류다(tmp_path: Path) -> None:
 
 
 def test_선언에_없는_필드는_채우지_않는다(tmp_path: Path) -> None:
-    """입력이 없는 Vantage 는 `input` 필드를 아예 두지 않는다."""
-    module, contract = loaded(tmp_path, "v", VANTAGE)
+    """입력이 없는 Prepare 는 `input` 필드를 아예 두지 않는다."""
+    module, contract = loaded(tmp_path, "v", PREPARE)
     args = node_exec.build_args(module, contract, params={"url": "https://x"})
 
     assert args.params.url == "https://x"
@@ -165,19 +165,19 @@ def test_중첩_dataclass_와_리스트를_옮긴다(tmp_path: Path) -> None:
 
 def test_앞단_노드의_출력을_그대로_받는다(tmp_path: Path) -> None:
     """서로 다른 스크립트의 dataclass 라도 구조가 같으면 옮겨진다."""
-    producer, producer_contract = loaded(tmp_path, "v", VANTAGE)
+    producer, producer_contract = loaded(tmp_path, "v", PREPARE)
     made = node_exec.invoke(
         producer, node_exec.build_args(producer, producer_contract, params={"url": "abcd"})
     )
 
-    consumer_body = VANTAGE.replace(
-        "class Args:\n        params: Params", "class Args:\n        input: Scene"
+    consumer_body = PREPARE.replace(
+        "class Args:\n        params: Params", "class Args:\n        input: Context"
     ).replace("args.params.url", "args.input.url")
     consumer, consumer_contract = loaded(tmp_path, "c", consumer_body)
     args = node_exec.build_args(consumer, consumer_contract, input_value=made)
 
     assert args.input.url == "abcd"
-    assert isinstance(args.input, consumer.Scene)
+    assert isinstance(args.input, consumer.Context)
 
 
 def test_input_을_선언했는데_앞단이_없으면_오류다(tmp_path: Path) -> None:
@@ -217,7 +217,7 @@ def test_as_mapping_은_dataclass_가_아닌_값을_거부한다() -> None:
 
 
 def test_invoke_는_returnResult_값을_준다(tmp_path: Path) -> None:
-    module, contract = loaded(tmp_path, "v", VANTAGE)
+    module, contract = loaded(tmp_path, "v", PREPARE)
     args = node_exec.build_args(module, contract, params={"url": "https://x"})
     assert node_exec.invoke(module, args).url == "https://x"
 
@@ -276,8 +276,8 @@ def test_출력_검증도_같은_자리다(tmp_path: Path) -> None:
 
 
 def test_선언이_없으면_볼_것이_없다(tmp_path: Path) -> None:
-    """입력을 안 받는 Vantage 의 `Args.input` 은 아예 없다."""
-    module, contract = loaded(tmp_path, "v", VANTAGE)
+    """입력을 안 받는 Prepare 의 `Args.input` 은 아예 없다."""
+    module, contract = loaded(tmp_path, "v", PREPARE)
     registry = registry_for(contract)
 
     assert node_exec.validate_input(contract, None, registry, path="p", node="v") == []

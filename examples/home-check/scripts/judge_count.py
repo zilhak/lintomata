@@ -1,4 +1,4 @@
-"""Reckon — 판정. 지각한 것을 **기획과 대조**한다.
+"""Judge — 판정. 지각한 것을 **기획과 대조**한다.
 
 기댓값은 절대 하드코딩하지 않는다 — `Args.params` 로 Spec 이 준다. 그래야 기획을
 고치면 판정이 바뀌고, 같은 노드를 버튼에도 메뉴에도 쓸 수 있다.
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
     labels: list[str]
 
@@ -30,7 +30,7 @@ class Verdict:
 
 @dataclass
 class Args:
-    input: Percept
+    input: Meaning
     params: ExpectParams
 
 

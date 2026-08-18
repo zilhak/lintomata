@@ -25,12 +25,12 @@
     {
       "id": "html",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/read_html.json",
-      "inputs": { "scene": "page" }
+      "inputs": { "context": "page" }
     },
     {
       "id": "buttons",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/compare_buttons.json",
-      "inputs": { "sensum": "html" }
+      "inputs": { "data": "html" }
     }
   ]
 }

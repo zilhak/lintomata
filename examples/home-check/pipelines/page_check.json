@@ -7,7 +7,7 @@
 
   "config": {
     "pagePath": { "type": "str", "required": true, "path": true, "description": "검사할 HTML 파일의 절대경로" },
-    "auditLog": { "type": "str", "required": true, "path": true, "description": "Action 이 관측 사실을 남길 로그 파일" },
+    "auditLog": { "type": "str", "required": true, "path": true, "description": "Act 가 관측 사실을 남길 로그 파일" },
     "expectedButtonCount": { "type": "int", "required": true, "description": "기획이 정한 버튼 개수" },
     "expectedButtonLabels": { "type": "list[str]", "required": true, "description": "기획이 정한 버튼 라벨과 그 순서" },
     "expectedMenuCount": { "type": "int", "required": true, "description": "기획이 정한 메뉴 개수" },
@@ -29,25 +29,25 @@
     {
       "id": "readHtml",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/read_html.json",
-      "inputs": { "scene": "pickPage" }
+      "inputs": { "context": "pickPage" }
     },
     {
       "id": "audit",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/audit.json",
-      "inputs": { "sensum": "readHtml" },
+      "inputs": { "data": "readHtml" },
       "params": { "logPath": "${config.auditLog}", "startedAt": "${state.__startedAt}" }
     },
     {
       "id": "detectButtons",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/detect_buttons.json",
-      "inputs": { "sensum": "audit" },
+      "inputs": { "data": "audit" },
       "states": { "ready": "observed" },
       "when": { "state": "ready" }
     },
     {
       "id": "checkButtons",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/check_count.json",
-      "inputs": { "percept": "detectButtons" },
+      "inputs": { "meaning": "detectButtons" },
       "params": {
         "expectedCount": "${config.expectedButtonCount}",
         "expectedLabels": "${config.expectedButtonLabels}"
@@ -56,12 +56,12 @@
     {
       "id": "detectMenu",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/detect_menu.json",
-      "inputs": { "sensum": "audit" }
+      "inputs": { "data": "audit" }
     },
     {
       "id": "checkMenu",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/check_count.json",
-      "inputs": { "percept": "detectMenu" },
+      "inputs": { "meaning": "detectMenu" },
       "params": {
         "expectedCount": "${config.expectedMenuCount}",
         "expectedLabels": "${config.expectedMenuLabels}"

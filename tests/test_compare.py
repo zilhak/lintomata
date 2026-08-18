@@ -161,7 +161,7 @@ def write(tmp_path: Path, name: str, text: str) -> Path:
     return path
 
 
-def node_file(tmp_path: Path, name: str, script: str, kind: str = "perceive") -> str:
+def node_file(tmp_path: Path, name: str, script: str, kind: str = "extract") -> str:
     path = tmp_path / f"{name}.json"
     path.write_text(
         json.dumps(
@@ -499,7 +499,7 @@ def order_fixture(tmp_path: Path, targets: list[str]):
         },
         {
             "id": "watch",
-            "source": node_file(tmp_path, "watch", str(watch), kind="sense"),
+            "source": node_file(tmp_path, "watch", str(watch), kind="collect"),
             "inputs": {"input": "seed"},
             "states": {"phase": "active"},
             "when": {"state": "phase"},
@@ -700,7 +700,7 @@ def runNode(args: Args) -> Seen:
         },
         {
             "id": "watch",
-            "source": node_file(tmp_path, "watch", str(watcher), kind="sense"),
+            "source": node_file(tmp_path, "watch", str(watcher), kind="collect"),
             "states": {"phase": "active"},
             "when": {"state": "phase"},
         },
@@ -975,7 +975,7 @@ def env_config_fixture(tmp_path: Path):
     nodes = [
         {
             "id": "read",
-            "source": node_file(tmp_path, "read", str(script), kind="sense"),
+            "source": node_file(tmp_path, "read", str(script), kind="collect"),
             "params": {"pagePath": "${config.pagePath}"},
         }
     ]
@@ -1027,7 +1027,7 @@ def test_라이브러리를_못_풀면_그_노드는_준비에서_빠진다(tmp_
         json.dumps(
             {
                 "info": {"name": "detect-buttons", "description": "버튼 인식"},
-                "type": "perceive",
+                "type": "extract",
                 "script": str(script),
                 "libraries": {"buttons": str(tmp_path / "없다.py")},
             }

@@ -44,7 +44,7 @@ def check_registration(kind: EntryKind, source: Path, store: Store) -> list[Find
 
     빈 목록이면 통과 — 그때만 등록소에 저장된다.
     스크립트는 그 자체로도 검사되지만 노드 타입을 알아야 하는 검사
-    (Reckon 기댓값 필드, Action input==output)는 노드 등록 시에 돈다.
+    (Judge 기댓값 필드, Act input==output)는 노드 등록 시에 돈다.
 
     파일을 못 읽는 것은 **위반이 아니라 도구가 못 돈 것**이므로 `LintomataError` 다
     (`schema.md` 9절). 반면 내용이 규칙에 어긋나는 것은 전부 `Finding` 이다.

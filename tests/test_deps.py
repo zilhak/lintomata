@@ -49,12 +49,12 @@ class Args:
 
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
 
 
-def runNode(args: Args) -> Percept:
-    return returnResult(Percept(count=len(args.input.text)))
+def runNode(args: Args) -> Meaning:
+    return returnResult(Meaning(count=len(args.input.text)))
 '''
 
 NO_HEADER = WITH_HEADER.split("# ///\n", 1)[1]
@@ -194,11 +194,11 @@ def test_install_command_keeps_every_known_requirement() -> None:
     """★ `uv tool install --with` 는 **선언적**이라 적은 것만 남는다 —
     문제가 된 것 하나만 안내하면 그대로 따른 AI 가 **다른 스크립트의 의존성을 지운다.**"""
     command = deps.install_command(
-        "typing-extensions>=4", ["myproject-perceive-lib==0.1.0", "selectolax>=0.3"]
+        "typing-extensions>=4", ["myproject-extract-lib==0.1.0", "selectolax>=0.3"]
     )
     assert command == (
         "uv tool install lintomata "
-        "--with 'myproject-perceive-lib==0.1.0' "
+        "--with 'myproject-extract-lib==0.1.0' "
         "--with 'selectolax>=0.3' "
         "--with 'typing-extensions>=4'"
     )

@@ -7,7 +7,7 @@
 > **왜 남기나.** R1~R7 은 "왜 지금 구조가 이렇게 됐는지" 의 근거다 — 예를 들어
 > 타입 등록기의 키가 `(origin, name)` 인 이유(모든 노드 스크립트가 `Args` 를 선언한다),
 > 구동 루프가 `engine/drive.py` 하나인 이유(둘로 두었더니 실제로 갈렸다),
-> Action 이 타입 검사를 받는 이유(투명성은 면제가 아니다) 가 전부 여기 있다.
+> Act 가 타입 검사를 받는 이유(투명성은 면제가 아니다) 가 전부 여기 있다.
 > 본문의 "Step" 표기는 그 병렬 진행의 흔적이다.
 
 > ## ⚠️ 계약 개정 R7 (2026-08-16, conductor) — **R6~R1 보다 우선한다. 등록 종류 `library` 신설**
@@ -129,8 +129,8 @@
 > (Step 1 `typesys`, Step 2 `rules`, Step 3 `compare` 에 이어 **네 번째**다)
 > → 대역을 벗겨라. 파일 docstring 의 "Step 4-a 가 아직 stub 이라" 도 낡았다.
 >
-> ### R6-3. `LNT-TEST-005`(Action 값 동일성) Finding 에 `node` 가 비어 있다
-> 다른 TEST 규칙은 전부 `node=who` 인데 여기만 `fields={}` 로 나가 **Action 결과만 노드 이름 칸이 빈다.**
+> ### R6-3. `LNT-TEST-005`(Act 값 동일성) Finding 에 `node` 가 비어 있다
+> 다른 TEST 규칙은 전부 `node=who` 인데 여기만 `fields={}` 로 나가 **Act 결과만 노드 이름 칸이 빈다.**
 >
 > ### R6-4. `engine/state.py` 의 `_delay_ms` 가 `${env.X}` 를 전개하지 않는다
 > R5-1 이 params 를 통일했는데 **전이 `delay` 에 같은 문제가 남았다.**
@@ -145,7 +145,7 @@
 > | 지워도 778 전부 통과 | 어디 | 왜 문제인가 |
 > |---|---|---|
 > | `_report_exit_code` 의 **not_run 분기** | `cli.py` | R4-3 대로 `state_unreachable` not_run 은 **오류 없이도 난다** → **종료 코드가 조용히 0** 이 될 수 있다 |
-> | Reckon 대조쌍의 **`params` 상이 조건** | `harness.py` | 지우면 `input`·`params` 가 똑같은 중복 케이스 둘이 쌍으로 세어져 **`-007` 오탐** |
+> | Judge 대조쌍의 **`params` 상이 조건** | `harness.py` | 지우면 `input`·`params` 가 똑같은 중복 케이스 둘이 쌍으로 세어져 **`-007` 오탐** |
 > | 경로 Spec 의 **실행 전 정적 검사** | `cli.py` | 기존 테스트가 모델 검증만 태우고 `check_registration` 을 안 태운다 |
 > | `${env.X}` 를 마지막이 아닌 자리로 옮김 | `refs` 합성 | config 값이 `${state.X}` 를 품는 케이스가 없다 |
 >
@@ -173,7 +173,7 @@
 > *"테스트가 없는 것은 오류가 아니다"* 는 **등록·목록 층**의 이야기지 **실행 요청**의 이야기가 아니다.
 >
 > ### R6-11. (기록만) `expand_all` 이 리터럴 `${...}` 기댓값을 불가능하게 만든다
-> params 의 잔여 `${` 를 전부 막으므로, 템플릿 문자열을 기댓값으로 쓰는 Reckon 은 쓸 수 없다.
+> params 의 잔여 `${` 를 전부 막으므로, 템플릿 문자열을 기댓값으로 쓰는 Judge 는 쓸 수 없다.
 > R5-1 이 그렇게 지시했으므로 계약대로다. **이스케이프 문법을 지금 만들지 않는다** — 필요해지면 그때.
 
 
@@ -231,7 +231,7 @@
 > 깨짐 표시는 상태 보고고, 등록 거부는 도구가 진행을 못 한 것이다. **바꾸지 마라.**
 >
 > ### R5-6. (기록만) `script add` 가 `LNT-CONTRACT-005/-006/-007` 을 건너뛰는 것은 **설계대로**다
-> 스크립트만으로는 노드 타입을 모른다. 판정 필드 없는 Reckon 스크립트는 **스크립트로는 등록되고
+> 스크립트만으로는 노드 타입을 모른다. 판정 필드 없는 Judge 스크립트는 **스크립트로는 등록되고
 > 노드로 등록할 때 걸린다.** 이게 네 층 분리의 자연스러운 귀결이다.
 
 
@@ -274,10 +274,10 @@
 >   **`not_run(state_unreachable)`** 이다 — 등록 실패가 아니다. **config 가 도달성을 바꾸는 것은 정상**이고
 >   (같은 파이프라인에 다른 Spec config), not run 은 애초에 정상 결과다
 >
-> ### R4-4. Reckon 출력의 판정 필드 = **`passed: bool`** (규칙 신설, rules.md **59개**)
-> 엔진이 Reckon 출력에서 통과/위반을 읽으려면 규약이 필요한데 어느 문서에도 없었다.
+> ### R4-4. Judge 출력의 판정 필드 = **`passed: bool`** (규칙 신설, rules.md **59개**)
+> 엔진이 Judge 출력에서 통과/위반을 읽으려면 규약이 필요한데 어느 문서에도 없었다.
 > 구현자가 `passed: bool` 로 정한 것을 **확정한다.**
-> → **`LNT-CONTRACT-007` reckon-verdict-missing** 을 신설했다. **등록 시점에 강제한다**
+> → **`LNT-CONTRACT-007` judge-verdict-missing** 을 신설했다. **등록 시점에 강제한다**
 > (`checks/script.py` 의 `check_node_type_form`) — 지금은 런타임에야 터져서
 > schema.md 6절 *"돌리기 전에 잡아 자기 수정 신호를 준다"* 와 어긋난다.
 >
@@ -349,28 +349,28 @@
 >
 > ### R3-2. `checks/script.py` — 통과형 `returnResult(args.input)` 에서 출력 타입을 못 뽑는다 ★
 > `_value_type` 이 `ast.Attribute`(`args.input`)를 처리하지 않아 `output_type=""` 이 되고
-> **교과서적 Action 이 `LNT-CONTRACT-006` 으로 오탐된다.** conductor 재현:
+> **교과서적 Act 가 `LNT-CONTRACT-006` 으로 오탐된다.** conductor 재현:
 > ```
 > def runNode(args: Args):          # 반환 어노테이션 없음
 >     return returnResult(args.input)
 > → input_type='Form', output_type='', ['LNT-CONTRACT-006']   ← 오탐
 > ```
-> Action 만의 문제가 아니다 — **CLAUDE.md 가 조건 분기의 표준 표현으로 못박은
+> Act 만의 문제가 아니다 — **CLAUDE.md 가 조건 분기의 표준 표현으로 못박은
 > "스크립트가 그냥 `input` 을 반환한다" 가 모든 노드 타입에서 깨진다.**
 > → `<진입점인자>.input` → `contract.input_type` 매핑을 추가한다.
 >
-> ### R3-3. **Action 자신의 계약도 대조한다** — `X.out == Action.in`
-> 지금은 `X.out={count:int}` / `Action.in=out={junk:str}` / `Y.in={count:int}` 가 무검사 통과한다.
+> ### R3-3. **Act 자신의 계약도 대조한다** — `X.out == Act.in`
+> 지금은 `X.out={count:int}` / `Act.in=out={junk:str}` / `Y.in={count:int}` 가 무검사 통과한다.
 >
-> **투명성의 뜻은 "Action 을 끼워도 X→Y 대응이 깨지지 않는다" 이지 "Action 은 타입검사 면제" 가 아니다.**
-> Action 스크립트는 실제로 그 데이터를 `Args.input` 으로 받는다. 불일치는 **실행 시 계약 위반
+> **투명성의 뜻은 "Act 를 끼워도 X→Y 대응이 깨지지 않는다" 이지 "Act 는 타입검사 면제" 가 아니다.**
+> Act 스크립트는 실제로 그 데이터를 `Args.input` 으로 받는다. 불일치는 **실행 시 계약 위반
 > (= 도구가 못 돈 것)** 이 되는데, 정적으로 잡을 수 있는 것을 런타임까지 미룰 이유가 없다 —
 > schema.md 6절이 **"AI 가 스크립트를 잘못 썼을 때 돌리기 전에 잡아 자기 수정 신호를 준다"** 를
 > 형식 제한의 명시적 목적으로 적어뒀다.
-> `input==output`(CONTRACT-006)이 이미 강제되므로 **`X.out == Action.in` 을 더하면 셋이 전부 같아진다**
+> `input==output`(CONTRACT-006)이 이미 강제되므로 **`X.out == Act.in` 을 더하면 셋이 전부 같아진다**
 > = schema.md 5절 "상단과 하단이 하나의 노드".
 >
-> → `check_wiring_types` 는 **Action 을 건너뛴 X→Y 대조에 더해 X.out == Action.in 도 본다.**
+> → `check_wiring_types` 는 **Act 를 건너뛴 X→Y 대조에 더해 X.out == Act.in 도 본다.**
 > 테스트 단언은 "낀 배선과 안 낀 배선의 **Finding 목록이 완전히 동일**" → **"판정(통과/위반)이 같다"** 로 완화.
 >
 > ### R3-4. 비교 파이프라인의 config 의존 검사는 **Spec 실행 시점**이다
@@ -401,7 +401,7 @@
 > def build_registry(...) -> TypeRegistry
 > def recheck_resolved(...) -> list[Finding]        # R3-4 신설
 > ```
-> **`node_types` 없이는 Action 투명성 구현이 원리적으로 불가능하다**(노드 타입을 알 방법이 없다).
+> **`node_types` 없이는 Act 투명성 구현이 원리적으로 불가능하다**(노드 타입을 알 방법이 없다).
 > 본문의 `check_wiring_types(pipeline, contracts, registry, source_path)` 는 계약 쪽 결함이었다.
 > `exempt` 는 `transitions.after` 로 상태만 미는 노드가 `LNT-GRAPH-002` 오탐이 되는 것을 막는다.
 >
@@ -481,7 +481,7 @@
 >
 > | 케이스 | 증상 |
 > |---|---|
-> | `sense.Args(input:str)` + `reckon.Args(input:str, params:P)`, `P(expected:int)` | `build_model(sense.Args)` → `LintomataError: 타입 P 를 ...` — **이 설계에서 가장 흔한 노드 조합**이 도구 오류로 터진다 |
+> | `collect.Args(input:str)` + `judge.Args(input:str, params:P)`, `P(expected:int)` | `build_model(collect.Args)` → `LintomataError: 타입 P 를 ...` — **이 설계에서 가장 흔한 노드 조합**이 도구 오류로 터진다 |
 > | `a.py: Btn(label:str), Args(input:Btn)` / `b.py: Widget(label:str), Args(input:Widget)` | `same_definition` 은 `True`(설계대로)인데 `build_model(b.Args)` 만 터진다. schema.md 7절 "이름이 달라도 구조가 같으면 같은 타입" 을 정면으로 못 쓰게 만든다 |
 > | `a.py: Button(icon:str), Small(x:int)` / `b.py: Button(label:str), Big(x:int, b:Button)` | `build_model(a.Small)` 에 `b` 필드가 생기고 **엉뚱한 `Button` 에 바인딩된다 — 예외조차 안 난다(조용한 오답)** |
 >
@@ -724,7 +724,7 @@ top-level 양방향 import 를 만들면 실제로 `ImportError` 로 터진다.
 ```python
 EntryKind    = Literal["script","node","pipeline","spec"]
 ID_PREFIXES: dict[str, EntryKind]        # {"sc_":"script","nd_":"node","pl_":"pipeline","sp_":"spec"}
-NodeType     = Literal["vantage","sense","perceive","reckon","action"]
+NodeType     = Literal["prepare","collect","extract","judge","act"]
 PipelineKind = Literal["verify","compare"]
 STRICT       = ConfigDict(extra="forbid")
 
@@ -1018,7 +1018,7 @@ class TypeRegistry:
 
 병합이 타입 검사를 느슨하게 만드는 게 아니다 — 병합은 표현 층에서만 일어난다.
 `ButtonCount(count:int) == MenuCount(count:int)` 로 판정되는 오배선 탐지력 약화는 **감수한다**
-(값의 의미는 Reckon 이 잡는다). 최소 필드 수 조건이나 "이 타입은 고유하다" 표시를 넣지 마라.
+(값의 의미는 Judge 가 잡는다). 최소 필드 수 조건이나 "이 타입은 고유하다" 표시를 넣지 마라.
 
 ---
 
@@ -1150,8 +1150,8 @@ def check_tool_calls(contract, tool: dict[str, object]) -> list[Finding]   # TOO
 필드를 추가해야 하면 conductor 에게 보고하고 이 문서를 먼저 고칠 것.
 
 **노드 타입별로 갈리는 유일한 검사가 `check_node_type_form` 이다:**
-- Reckon → `Args.params` 에 기댓값 필드 필수 (`LNT-CONTRACT-005`)
-- Action → `Args.input` 타입 == 반환 타입 (`LNT-CONTRACT-006`)
+- Judge → `Args.params` 에 기댓값 필드 필수 (`LNT-CONTRACT-005`)
+- Act → `Args.input` 타입 == 반환 타입 (`LNT-CONTRACT-006`)
 
 **완벽한 정적 검사는 목표가 아니다.** `__import__("ti"+"me")` 는 못 막는다.
 사전에 추측할 수 있는 행위만 막고 **에러 메시지의 자연어 가이드로 메운다** —
@@ -1206,8 +1206,8 @@ def check_compare(pipeline, contracts_by_target: dict[str, dict[str, ScriptContr
 
 **`inputs` 가 DAG 를 만든다.** 별도 `edges` 섹션이 없다 — 입력 참조가 곧 의존 관계다.
 
-**`check_wiring_types` 주의:** **Action 은 투명하다.**
-`X ──▶ Action ──▶ Y` 는 실은 `X ──▶ Y` 이므로 **Action 을 건너뛰고** 상·하단 계약을 대조한다.
+**`check_wiring_types` 주의:** **Act 는 투명하다.**
+`X ──▶ Act ──▶ Y` 는 실은 `X ──▶ Y` 이므로 **Act 를 건너뛰고** 상·하단 계약을 대조한다.
 
 **`check_compare` 주의:** target 별로 갈려도 되는 것은 **`script` 경로와 `Args.params` 뿐**이다.
 input/output/state 타입은 노드에 귀속되어 공통이어야 비교가 성립한다 (`LNT-CMP-002`).
@@ -1300,7 +1300,7 @@ lint 계열의 표준 신뢰 모델을 그대로 따른다.
 `load_script`/`invoke` 는 `ModuleNotFoundError` 가 났을 때 그 모듈이 PEP 723 헤더에
 선언돼 있으면 **설치 명령을 에러 메시지에 붙인다**(`deps.missing_module_hint`).
 
-**`build_args` 주의:** `Args` 의 세 필드는 **쓰는 것만 선언**돼 있다. 입력이 없는 Vantage 는
+**`build_args` 주의:** `Args` 의 세 필드는 **쓰는 것만 선언**돼 있다. 입력이 없는 Prepare 는
 `input` 필드가 아예 없으므로 **선언에 없는 필드를 채우면 안 된다.**
 
 스크립트가 예외를 내면 그건 **오류**(`error`)다 — 위반이 아니다.
@@ -1407,7 +1407,7 @@ def all_same(values: Mapping[str,Any]) -> bool
 **취합/분배는 엔진이 한다.** 스크립트는 자기 target 의 값 하나만 받고 하나만 내놓는다 →
 **스크립트의 모양이 값 검증 파이프라인과 완전히 같다.** 비교용이라고 시그니처가 달라지지 않는다.
 
-**Reckon 이 필요 없다** — Verdict 를 엔진이 만든다. "내장 동작 없음" 원칙과 충돌하지 않는다:
+**Judge 가 필요 없다** — Verdict 를 엔진이 만든다. "내장 동작 없음" 원칙과 충돌하지 않는다:
 **동등 비교는 도메인 지식이 아니라 일반 연산**이다.
 
 **★ 허용 오차도 무시 필드도 엔진에 두지 마라.** 정규화는 스크립트가 알아서 한다.
@@ -1429,8 +1429,8 @@ def run_case(node: Node, contract: ScriptContract, script_path: Path, case: Test
              env: Mapping[str,str]) -> tuple[Any, list[Finding]]
 def materialize_args(raw: Mapping[str,Any], contract: ScriptContract,
                      env: Mapping[str,str]) -> Any
-def check_action_transparency(case: TestCase, input_value: Any, output_value: Any) -> list[Finding]
-def check_reckon_contrast(cases: list[TestCase], outputs: list[Any]) -> list[Finding]
+def check_act_transparency(case: TestCase, input_value: Any, output_value: Any) -> list[Finding]
+def check_judge_contrast(cases: list[TestCase], outputs: list[Any]) -> list[Finding]
 ```
 
 **케이스마다 순서대로 3단계:** ① `args` 가 `Args` 선언에 맞나(`LNT-TEST-001` — **테스트 쪽이
@@ -1438,13 +1438,13 @@ def check_reckon_contrast(cases: list[TestCase], outputs: list[Any]) -> list[Fin
 ③ 반환값이 선언된 출력 타입에 맞나(`-003`).
 
 **노드 타입별 추가:**
-- Action → **값 동일성**(`-005`). 사용자가 `expect` 를 안 써도 된다 — **기대값이 곧 입력**
-- Reckon → **기댓값 반응성**. `input` 이 같고 `params` 만 다른 **통과/위반 쌍**이 없으면
+- Act → **값 동일성**(`-005`). 사용자가 `expect` 를 안 써도 된다 — **기대값이 곧 입력**
+- Judge → **기댓값 반응성**. `input` 이 같고 `params` 만 다른 **통과/위반 쌍**이 없으면
   **경고**(`-006`), 있는데 판정이 같으면 **오류**(`-007`)
 
 **`bytes` fixture** 는 `{"$file": "<절대경로>"}` 로 주고 `materialize_args` 가 읽어 채운다.
 
-**★ 결정성 검사(2회 실행 비교)를 넣지 마라** — Perceive 안에서 AI 를 부르면 당연히 실패한다.
+**★ 결정성 검사(2회 실행 비교)를 넣지 마라** — Extract 안에서 AI 를 부르면 당연히 실패한다.
 
 ---
 

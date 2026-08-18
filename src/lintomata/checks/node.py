@@ -8,8 +8,8 @@
 | 스크립트가 `runNode(args: Args)` / `returnResult()` 형태인지 | `LNT-CONTRACT-001`~`003` |
 | `Args` 필드가 `input`/`params`/`state` 중에서만 쓰였는지 | `LNT-CONTRACT-004` |
 | 선언된 타입이 primitive 집합 + dataclass 뿐인지 | `LNT-TYPE-001`~`003` |
-| Reckon 이면 `Args.params` 에 기댓값 필드가 있는지 | `LNT-CONTRACT-005` |
-| Action 이면 input 타입 == output 타입인지 | `LNT-CONTRACT-006` |
+| Judge 이면 `Args.params` 에 기댓값 필드가 있는지 | `LNT-CONTRACT-005` |
+| Act 이면 input 타입 == output 타입인지 | `LNT-CONTRACT-006` |
 | 금지 패턴이 없는지 | `LNT-BAN-001`~`004` |
 | `Args.state` 필드 이름에 `__` 접두를 쓰지 않았는지 | `LNT-STATE-001` |
 | 스크립트가 요구한 라이브러리 슬롯이 전부 배선됐는지 | `LNT-LIB-001` / `-002` |
@@ -254,8 +254,8 @@ def check_node(
     성공하면 그 스크립트의 `ScriptContract` 를 함께 준다 — 파이프라인 검사가 이걸 쓴다.
 
     스크립트를 **돌리지 않는다.** `checks.script` 가 `ast` 로 읽어 선언과 형식만 본다.
-    노드 타입을 함께 넘기는 것이 이 자리의 핵심이다 — Reckon 의 기댓값 필드 요구와
-    Action 의 input==output 요구는 **노드 타입을 알아야만** 검사할 수 있다.
+    노드 타입을 함께 넘기는 것이 이 자리의 핵심이다 — Judge 의 기댓값 필드 요구와
+    Act 의 input==output 요구는 **노드 타입을 알아야만** 검사할 수 있다.
     """
     resolved, raw_findings = resolve_script(node, store=store, env=env)
     # `resolve_script` 는 파일 경로를 모른다 — 자리 표시는 여기서 채운다.

@@ -92,7 +92,7 @@ def test_new_id_prefix_per_kind() -> None:
 def test_add_issues_prefixed_id_per_kind(store: Store, tmp_path: Path) -> None:
     script = write(tmp_path / "detect.py", SCRIPT_SRC)
     library = write(tmp_path / "buttons.py", "def is_button(tag):\n    return True\n")
-    node = write(tmp_path / "detect.json", '{"type": "perceive"}')
+    node = write(tmp_path / "detect.json", '{"type": "extract"}')
     pipeline = write(tmp_path / "flow.json", '{"info": {}}')
     spec = write(tmp_path / "login.json", '{"plan": []}')
 
@@ -215,7 +215,7 @@ def test_test_json_gets_its_own_hash(store: Store, tmp_path: Path) -> None:
     **노드 해시와 섞지 않는다** — 한 해시로 합치면 테스트 유무가 노드 해시를 바꿔
     기존 등록 id 의 해시가 전부 달라진다.
     """
-    node = write(tmp_path / "detect.json", '{"info": {}, "type": "perceive"}')
+    node = write(tmp_path / "detect.json", '{"info": {}, "type": "extract"}')
     write(tmp_path / "detect.test.json", '{"node": "x", "cases": []}')
 
     entry = store.add("node", node)
@@ -233,7 +233,7 @@ def test_test_json_gets_its_own_hash(store: Store, tmp_path: Path) -> None:
 
 def test_no_test_json_means_no_test_hash(store: Store, tmp_path: Path) -> None:
     """**없는 것은 깨진 것이 아니다.**"""
-    node = write(tmp_path / "detect.json", '{"info": {}, "type": "perceive"}')
+    node = write(tmp_path / "detect.json", '{"info": {}, "type": "extract"}')
     entry = store.add("node", node)
 
     assert entry.test_hash == ""
@@ -241,7 +241,7 @@ def test_no_test_json_means_no_test_hash(store: Store, tmp_path: Path) -> None:
 
 
 def test_update_refreshes_the_test_hash(store: Store, tmp_path: Path) -> None:
-    node = write(tmp_path / "detect.json", '{"info": {}, "type": "perceive"}')
+    node = write(tmp_path / "detect.json", '{"info": {}, "type": "extract"}')
     test = write(tmp_path / "detect.test.json", '{"node": "x", "cases": []}')
     entry = store.add("node", node)
     before = entry.test_hash
@@ -327,7 +327,7 @@ def _chain(store: Store, tmp_path: Path) -> tuple[str, str, str, str]:
     sc = store.add("script", write(tmp_path / "detect.py", SCRIPT_SRC), name="detect")
     node_src = write(
         tmp_path / "detect.json",
-        json.dumps({"type": "perceive", "script": f"${{ref.{sc.id}}}"}),
+        json.dumps({"type": "extract", "script": f"${{ref.{sc.id}}}"}),
     )
     nd = store.add("node", node_src, name="detect-buttons")
     pipeline_src = write(
@@ -377,7 +377,7 @@ def test_add_records_declared_dependencies(store: Store, tmp_path: Path) -> None
 def test_dependencies_are_empty_without_header(store: Store, tmp_path: Path) -> None:
     """**헤더가 없는 것이 정상이다.** 스크립트가 아닌 종류도 마찬가지."""
     assert store.add("script", write(tmp_path / "a.py", SCRIPT_SRC)).dependencies == []
-    node = write(tmp_path / "a.json", json.dumps({"type": "sense"}))
+    node = write(tmp_path / "a.json", json.dumps({"type": "collect"}))
     assert store.add("node", node).dependencies == []
 
 

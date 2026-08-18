@@ -133,9 +133,9 @@ LNT-CONTRACT-003        길지만 사람이 타이핑할 일이 없다.
 | `LNT-CONTRACT-002` | entrypoint-missing | N | `runNode` 가 없거나 형태가 다르다 | 진입점 이름은 `runNode` 로 고정입니다. 인자는 하나이고 타입은 `Args` 여야 합니다 |
 | `LNT-CONTRACT-003` | return-missing | N | `returnResult()` 를 호출하지 않는다 — **출력 타입이 dataclass 가 아닌 경우(primitive·미확정)도 포함** | 출력은 `returnResult()` 로 내보냅니다. 반환 타입은 dataclass 이고 이름은 자유입니다 — 타입 동일성을 **구조로** 판정하므로 primitive 를 그대로 내보낼 수 없습니다 |
 | `LNT-CONTRACT-004` | args-unknown-field | N | `Args` 에 `input`/`params`/`state` 외의 필드가 있다 | `Args` 는 `input` / `params` / `state` 세 필드만 가질 수 있습니다. 쓰는 것만 선언하세요 |
-| `LNT-CONTRACT-005` | reckon-expected-missing | N | Reckon 인데 `Args.params` 에 기댓값 필드가 없다 | Reckon 은 기댓값을 Spec 에서 받아야 합니다. 스크립트에 하드코딩하면 기획 파일이 껍데기가 됩니다. `Args.params` 에 기댓값 필드를 선언하세요 |
-| `LNT-CONTRACT-006` | action-io-differ | N | Action 인데 input 타입과 output 타입이 다르다 | Action 은 데이터를 그대로 통과시킵니다. `Args.input` 타입과 반환 타입이 같아야 합니다. 변환이 필요하면 Perceive 를 쓰세요 |
-| `LNT-CONTRACT-007` | reckon-verdict-missing | N | Reckon 의 출력 dataclass 에 판정 필드 `passed: bool` 이 없다 | Reckon 은 **판정**을 내는 노드입니다 — 출력 dataclass 에 `passed: bool` 필드가 있어야 엔진이 통과/위반을 가릅니다. 이게 없으면 실행할 때까지 아무도 모르고, 그때는 리포트가 아니라 오류가 납니다 |
+| `LNT-CONTRACT-005` | judge-expected-missing | N | Judge 인데 `Args.params` 에 기댓값 필드가 없다 | Judge 는 기댓값을 Spec 에서 받아야 합니다. 스크립트에 하드코딩하면 기획 파일이 껍데기가 됩니다. `Args.params` 에 기댓값 필드를 선언하세요 |
+| `LNT-CONTRACT-006` | act-io-differ | N | Act 인데 input 타입과 output 타입이 다르다 | Act 는 데이터를 그대로 통과시킵니다. `Args.input` 타입과 반환 타입이 같아야 합니다. 변환이 필요하면 Extract 를 쓰세요 |
+| `LNT-CONTRACT-007` | judge-verdict-missing | N | Judge 의 출력 dataclass 에 판정 필드 `passed: bool` 이 없다 | Judge 는 **판정**을 내는 노드입니다 — 출력 dataclass 에 `passed: bool` 필드가 있어야 엔진이 통과/위반을 가릅니다. 이게 없으면 실행할 때까지 아무도 모르고, 그때는 리포트가 아니라 오류가 납니다 |
 
 ### STATE — 상태·상태머신
 
@@ -211,9 +211,9 @@ LNT-CONTRACT-003        길지만 사람이 타이핑할 일이 없다.
 | `LNT-TEST-002` | script-raised | T | `runNode` 가 예외를 냈다 | 스크립트가 예외로 끝났습니다: {exc} |
 | `LNT-TEST-003` | output-type-mismatch | T | 반환값이 선언된 출력 타입에 안 맞는다 | 선언한 출력 타입과 실제 반환값이 다릅니다. 선언: {declared} / 실제: {actual} |
 | `LNT-TEST-004` | expect-mismatch | T | `expect` 와 실제 값이 다르다 | 기대: {expect} / 실제: {actual} |
-| `LNT-TEST-005` | action-not-transparent | T | Action 인데 반환값이 입력과 다르다 | Action 은 데이터를 그대로 통과시켜야 합니다. 부작용만 일으키고 값은 건드리지 마세요 |
-| `LNT-TEST-006` | reckon-no-contrast-pair | T | Reckon 테스트에 통과/위반 대조쌍이 없다 (**경고**) | `input` 이 같고 `params` 만 다른 통과 케이스와 위반 케이스를 각각 두면 기댓값이 실제로 쓰이는지 검증됩니다 |
-| `LNT-TEST-007` | reckon-expected-ignored | T | 대조쌍의 판정이 같다 | 기댓값을 바꿨는데 판정이 안 바뀝니다 — 기댓값을 쓰지 않고 하드코딩하고 있습니다 |
+| `LNT-TEST-005` | act-not-transparent | T | Act 인데 반환값이 입력과 다르다 | Act 는 데이터를 그대로 통과시켜야 합니다. 부작용만 일으키고 값은 건드리지 마세요 |
+| `LNT-TEST-006` | judge-no-contrast-pair | T | Judge 테스트에 통과/위반 대조쌍이 없다 (**경고**) | `input` 이 같고 `params` 만 다른 통과 케이스와 위반 케이스를 각각 두면 기댓값이 실제로 쓰이는지 검증됩니다 |
+| `LNT-TEST-007` | judge-expected-ignored | T | 대조쌍의 판정이 같다 | 기댓값을 바꿨는데 판정이 안 바뀝니다 — 기댓값을 쓰지 않고 하드코딩하고 있습니다 |
 | `LNT-TEST-008` | test-node-mismatch | R | 단위테스트의 `node` 가 **요청한 노드와 다른 노드**를 가리킨다 | `lintomata node test <id>` 로 부르면 **그 id 의 노드가 정본**입니다. 테스트 정의의 `node` 가 다른 것을 가리키면 요청하지 않은 노드를 돌려 **거짓 리포트**가 됩니다. 요청: {requested} / 테스트가 가리키는 것: {declared} |
 
 ### REG — 등록소
@@ -290,7 +290,7 @@ LNT-CONTRACT-003        길지만 사람이 타이핑할 일이 없다.
 
 | `LNT-REF-007` unresolved-reference | Step 1-c 재리뷰 | R1-8 이 "잔여 `${` 를 에러로" 만 정하고 규칙 id 를 지정하지 않아 구현자가 `LNT-REF-006` 을 골랐다. 그런데 `${config.y}` 는 **문법이 정상**이다 — 잘못된 건 전개 순서다. `-006` 의 guide("네임스페이스를 반드시 붙입니다")를 받으면 AI 가 엉뚱한 곳을 고친다. **원인이 다르면 고치는 방법도 다르므로 규칙을 나눈다** |
 
-| `LNT-CONTRACT-007` reckon-verdict-missing | Step 3-a 리뷰 | 엔진이 Reckon 출력에서 통과/위반을 읽으려면 **판정 필드 규약**이 필요한데 어느 문서에도 없었다. 구현자가 `passed: bool` 로 정하고 돌렸지만 **등록 시점 강제가 없어** 필드 없는 Reckon 이 등록을 통과하고 런타임에야 터진다 — schema.md 6절의 *"돌리기 전에 잡아 자기 수정 신호를 준다"* 와 정면으로 어긋난다 |
+| `LNT-CONTRACT-007` judge-verdict-missing | Step 3-a 리뷰 | 엔진이 Judge 출력에서 통과/위반을 읽으려면 **판정 필드 규약**이 필요한데 어느 문서에도 없었다. 구현자가 `passed: bool` 로 정하고 돌렸지만 **등록 시점 강제가 없어** 필드 없는 Judge 가 등록을 통과하고 런타임에야 터진다 — schema.md 6절의 *"돌리기 전에 잡아 자기 수정 신호를 준다"* 와 정면으로 어긋난다 |
 
 | `LNT-GRAPH-003` ambiguous-input | Step 5 E2E | **등록은 통과하고 실행에서 터졌다.** `Args.input` 이 필드 하나인 것은 스크립트 계약에 이미 있고 파이프라인 JSON 만 봐도 판정 가능한데 실행까지 미뤄졌고, 게다가 **규칙 id 없는 맨 `Finding`** 이라 리포트에서 기계적으로 특정할 수 없었다. schema.md 6절의 *"돌리기 전에 잡아 자기 수정 신호를 준다"* 에 정면으로 걸린다 |
 

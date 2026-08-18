@@ -1,4 +1,4 @@
-"""Perceive — 지각. **메뉴가 몇 개이고 어떤 순서인가.**
+"""Extract — 지각. **메뉴가 몇 개이고 어떤 순서인가.**
 
 `<nav>` 안의 `<li>` 텍스트를 순서대로 뽑는다. 사람이 보는 것(메뉴 항목과 그 순서)만
 남기고 마크업의 형태는 버린다.
@@ -9,18 +9,18 @@ from html.parser import HTMLParser
 
 
 @dataclass
-class Sensum:
+class Data:
     source: str
     html: str
 
 
 @dataclass
 class Args:
-    input: Sensum
+    input: Data
 
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
     labels: list[str]
 
@@ -52,8 +52,8 @@ class _MenuReader(HTMLParser):
             self._buffer.append(data)
 
 
-def runNode(args: Args) -> Percept:
+def runNode(args: Args) -> Meaning:
     reader = _MenuReader()
     reader.feed(args.input.html)
     reader.close()
-    return returnResult(Percept(count=len(reader.labels), labels=reader.labels))
+    return returnResult(Meaning(count=len(reader.labels), labels=reader.labels))

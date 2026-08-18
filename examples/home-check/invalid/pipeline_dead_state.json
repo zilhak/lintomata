@@ -15,7 +15,7 @@
       "type": "str",
       "required": true,
       "path": true,
-      "description": "Action 이 관측 사실을 남길 로그 파일"
+      "description": "Act 가 관측 사실을 남길 로그 파일"
     },
     "expectedButtonCount": {
       "type": "int",
@@ -58,14 +58,14 @@
       "id": "readHtml",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/read_html.json",
       "inputs": {
-        "scene": "pickPage"
+        "context": "pickPage"
       }
     },
     {
       "id": "audit",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/audit.json",
       "inputs": {
-        "sensum": "readHtml"
+        "data": "readHtml"
       },
       "params": {
         "logPath": "${config.auditLog}",
@@ -76,7 +76,7 @@
       "id": "detectButtons",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/detect_buttons.json",
       "inputs": {
-        "sensum": "audit"
+        "data": "audit"
       },
       "states": {
         "ready": "observed"
@@ -89,7 +89,7 @@
       "id": "checkButtons",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/check_count.json",
       "inputs": {
-        "percept": "detectButtons"
+        "meaning": "detectButtons"
       },
       "params": {
         "expectedCount": "${config.expectedButtonCount}",
@@ -100,14 +100,14 @@
       "id": "detectMenu",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/detect_menu.json",
       "inputs": {
-        "sensum": "audit"
+        "data": "audit"
       }
     },
     {
       "id": "checkMenu",
       "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/check_count.json",
       "inputs": {
-        "percept": "detectMenu"
+        "meaning": "detectMenu"
       },
       "params": {
         "expectedCount": "${config.expectedMenuCount}",

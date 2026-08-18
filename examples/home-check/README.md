@@ -23,24 +23,24 @@ invalid/     ★ 일부러 틀린 것들 — 등록·단위테스트가 잡는 �
 
 | 타입 | 스크립트 | 노드 | 하는 일 |
 |---|---|---|---|
-| **Vantage** | `scripts/vantage_pick_page.py` | `nodes/pick_page.json` | 볼 HTML 파일 하나를 관측 지점으로 잡는다 |
-| **Sense** | `scripts/sense_read_html.py` | `nodes/read_html.json` | 파일을 읽어 해석 없는 원시 HTML |
-| **Perceive** | `scripts/perceive_buttons.py` · `perceive_menu.py` | `nodes/detect_buttons.json` · `detect_menu.json` | **무엇이 버튼인가**·메뉴 순서 |
-| **Reckon** | `scripts/reckon_count.py` | `nodes/check_count.json` | 기댓값(`Args.params`)과 대조 |
-| **Action** | `scripts/action_audit.py` | `nodes/audit.json` | 감사 로그 한 줄. 값은 그대로 통과 |
+| **Prepare** | `scripts/prepare_pick_page.py` | `nodes/pick_page.json` | 볼 HTML 파일 하나를 관측 지점으로 잡는다 |
+| **Collect** | `scripts/collect_read_html.py` | `nodes/read_html.json` | 파일을 읽어 해석 없는 원시 HTML |
+| **Extract** | `scripts/extract_buttons.py` · `extract_menu.py` | `nodes/detect_buttons.json` · `detect_menu.json` | **무엇이 버튼인가**·메뉴 순서 |
+| **Judge** | `scripts/judge_count.py` | `nodes/check_count.json` | 기댓값(`Args.params`)과 대조 |
+| **Act** | `scripts/act_audit.py` | `nodes/audit.json` | 감사 로그 한 줄. 값은 그대로 통과 |
 
 ### 이 예제가 보여주는 것
 
-- **Action 투명성** — `readHtml → audit → detectButtons` 배선이 타입 검사를 그대로 통과한다.
-  Action 은 `input == output` 이라 타입 관점에서 투명하다 (`pipelines/page_check.json`).
-- **상태머신** — `detectButtons` 는 자기 어휘 `ready` 로 쓰고(`perceive_buttons.py` 의 `Args.state`),
+- **Act 투명성** — `readHtml → audit → detectButtons` 배선이 타입 검사를 그대로 통과한다.
+  Act 는 `input == output` 이라 타입 관점에서 투명하다 (`pipelines/page_check.json`).
+- **상태머신** — `detectButtons` 는 자기 어휘 `ready` 로 쓰고(`extract_buttons.py` 의 `Args.state`),
   파이프라인이 `{"ready": "observed"}` 로 매핑한다. 전이는 `transitions` 가 관리한다.
 - **노드 재사용** — `nodes/check_count.json` **하나**를 `checkButtons` 와 `checkMenu`
   두 자리에 `params` 만 바꿔 배선했다. 재사용은 별도 문법이 아니라 근본 동작이다.
 - **★ 비교 파이프라인** — `targets/variant_{alpha,beta,gamma}.html` 은 마크업이
   **완전히 다르다**(`<button>` / `class="btn"` / `role="button"`). 대상마다 인식
   스크립트가 다르고(`scripts/cmp_buttons_*.py`), 개념 층(버튼 개수·라벨)이 같으므로
-  **통과한다.** Reckon 은 없다 — 동등 비교는 엔진이 한다.
+  **통과한다.** Judge 는 없다 — 동등 비교는 엔진이 한다.
 - **도메인 지식은 사용자 쪽에만 있다** — `targets/home.html` 의
   `<div class="hero" data-decoy="true" role="button">배경 이미지</div>` 는
   *누를 수 있게 생긴 배경 장식*이라 버튼이 아니다. 이 판단은
@@ -53,7 +53,7 @@ invalid/     ★ 일부러 틀린 것들 — 등록·단위테스트가 잡는 �
 
 ## 돌리는 법
 
-경로 두 개를 환경변수로 준다 — **입력**(이 디렉터리)과 **출력**(Action 로그·비교 리포트).
+경로 두 개를 환경변수로 준다 — **입력**(이 디렉터리)과 **출력**(Act 로그·비교 리포트).
 
 ```bash
 export LINTOMATA_EXAMPLE_ROOT=/절대경로/lintomata/examples/home-check

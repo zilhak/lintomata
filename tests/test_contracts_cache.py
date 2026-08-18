@@ -41,7 +41,7 @@ def runNode(args: Args) -> Buttons:
     return returnResult(Buttons(count=len(args.input.text)))
 '''
 
-PATH = "/abs/perceive.py"
+PATH = "/abs/extract.py"
 
 
 class Counter:
@@ -120,13 +120,13 @@ def test_파싱_실패는_캐시하지_않는다(monkeypatch: pytest.MonkeyPatch
 
 def test_캐시를_써도_check_script_결과가_같다() -> None:
     """**검사를 건너뛰는 것이 아니다.** 계약 추출만 재사용한다."""
-    plain = script_checks.check_script(SOURCE, PATH, "perceive")
-    cached = script_checks.check_script(SOURCE, PATH, "perceive", cache=ScriptCache())
+    plain = script_checks.check_script(SOURCE, PATH, "extract")
+    cached = script_checks.check_script(SOURCE, PATH, "extract", cache=ScriptCache())
 
     assert [item.model_dump() for item in plain] == [item.model_dump() for item in cached]
 
 
-@pytest.mark.parametrize("node_type", ["reckon", "action"])
+@pytest.mark.parametrize("node_type", ["judge", "act"])
 def test_캐시를_써도_타입별_형식_판정이_같다(node_type: str) -> None:
     """`LNT-CONTRACT-005/006/007` 은 계약을 재사용해도 그대로 나야 한다."""
     plain = script_checks.check_script(SOURCE, PATH, node_type)  # type: ignore[arg-type]

@@ -16,7 +16,7 @@ from typing import Optional
 
 
 @dataclass
-class Sensum:
+class Data:
     source: str
     html: str
     notes: dict
@@ -30,18 +30,18 @@ class BadState:
 
 @dataclass
 class Args:
-    input: Sensum
+    input: Data
     state: BadState
 
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
 
 
-def runNode(args: Args) -> Percept:
+def runNode(args: Args) -> Meaning:
     subprocess.run(["ls"], check=False)
     seed = int(time.time()) + random.randint(0, 9)
     if args.state.nowhere:
         seed += 1
-    return returnResult(Percept(count=seed))
+    return returnResult(Meaning(count=seed))

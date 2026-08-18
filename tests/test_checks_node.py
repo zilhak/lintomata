@@ -29,7 +29,7 @@ def store(tmp_path) -> Store:
     return Store(home=tmp_path / "home")
 
 
-def node_of(script: str, *, kind: str = "perceive", name: str = "detect-buttons") -> Node:
+def node_of(script: str, *, kind: str = "extract", name: str = "detect-buttons") -> Node:
     return Node.model_validate(
         {
             "info": {"name": name, "description": "무엇이 버튼인지 판정한다"},
@@ -50,14 +50,14 @@ def test_load_node_reads_the_three_fields():
     node, findings = node_checks.load_node(
         {
             "info": {"name": "detect", "description": "설명"},
-            "type": "reckon",
+            "type": "judge",
             "script": "/abs/x.py",
         },
         "n.json",
     )
     assert findings == []
     assert node is not None
-    assert (node.info.name, node.type, node.script) == ("detect", "reckon", "/abs/x.py")
+    assert (node.info.name, node.type, node.script) == ("detect", "judge", "/abs/x.py")
 
 
 def test_load_node_rejects_unknown_key_and_unknown_type():
@@ -176,7 +176,7 @@ def test_resolve_script_missing_target_config_is_cmp_004(store):
 
 
 def test_check_node_passes_node_type_to_script_checker(store, tmp_path, monkeypatch):
-    """노드 타입별로 갈리는 검사(Reckon 기댓값·Action 투명성)의 유일한 통로다."""
+    """노드 타입별로 갈리는 검사(Judge 기댓값·Act 투명성)의 유일한 통로다."""
     src = tmp_path / "judge.py"
     src.write_text("def runNode(args): ...\n", encoding="utf-8")
     stub = ScriptStub()
@@ -184,11 +184,11 @@ def test_check_node_passes_node_type_to_script_checker(store, tmp_path, monkeypa
     stub.install(monkeypatch)
 
     contract, findings = node_checks.check_node(
-        node_of(str(src), kind="reckon"), "judge.json", store=store, env={}
+        node_of(str(src), kind="judge"), "judge.json", store=store, env={}
     )
     assert findings == []
     assert contract is not None and contract.output_type == "Verdict"
-    assert stub.seen_types == [(str(src), "reckon")]
+    assert stub.seen_types == [(str(src), "judge")]
 
 
 def test_check_node_fills_source_path_on_resolve_findings(store):
@@ -265,14 +265,14 @@ def test_check_registration_runs_node_checks_with_the_declared_type(
         json.dumps(
             {
                 "info": {"name": "judge", "description": "d"},
-                "type": "action",
+                "type": "act",
                 "script": str(src),
             }
         ),
         encoding="utf-8",
     )
     assert checks.check_registration("node", node_file, store) == []
-    assert stub.seen_types == [(str(src), "action")]
+    assert stub.seen_types == [(str(src), "act")]
 
 
 def test_check_registration_accepts_a_well_formed_pipeline(tmp_path, store, monkeypatch):
@@ -296,7 +296,7 @@ def test_check_registration_accepts_a_well_formed_pipeline(tmp_path, store, monk
     stub_reachability(monkeypatch)
 
     node_files = {}
-    for name, kind in (("capture", "sense"), ("detect", "perceive")):
+    for name, kind in (("capture", "collect"), ("detect", "extract")):
         path = tmp_path / f"{name}.json"
         path.write_text(
             json.dumps(
@@ -330,8 +330,8 @@ def test_check_registration_accepts_a_well_formed_pipeline(tmp_path, store, monk
     )
     assert checks.check_registration("pipeline", pipeline_file, store) == []
     assert set(stub.seen_types) == {
-        (str(scripts["capture"]), "sense"),
-        (str(scripts["detect"]), "perceive"),
+        (str(scripts["capture"]), "collect"),
+        (str(scripts["detect"]), "extract"),
     }
 
 
@@ -349,7 +349,7 @@ def test_check_registration_reports_a_broken_pipeline(tmp_path, store, monkeypat
         json.dumps(
             {
                 "info": {"name": "detect", "description": "d"},
-                "type": "perceive",
+                "type": "extract",
                 "script": str(src),
             }
         ),

@@ -6,8 +6,8 @@
 
 짚는 것:
   - 3단계가 **각자 자기 규칙 id** 로 나오는가 (①은 테스트가, ②③은 스크립트가 틀린 것)
-  - **Action 의 값 동일성이 `expect` 없이도** 자동 검사되는가
-  - **Reckon 반응성** — 대조쌍이 없으면 `-006`, 있는데 판정이 같으면 `-007`.
+  - **Act 의 값 동일성이 `expect` 없이도** 자동 검사되는가
+  - **Judge 반응성** — 대조쌍이 없으면 `-006`, 있는데 판정이 같으면 `-007`.
     **기댓값을 하드코딩한 스크립트를 실제로 만들어** `-007` 이 나오는지 본다
   - 입력 없는 노드(`Args` 에 `input` 필드 없음)의 fixture 가 도는가
   - `bytes` fixture(`{"$file": ...}`)가 실제 파일에서 채워지는가
@@ -99,70 +99,70 @@ def statuses(findings: list[Finding]) -> list[str]:
 
 # ── 스크립트 본문들 ──────────────────────────────────────────────────────────
 
-PERCEIVE = """
+EXTRACT = """
     from dataclasses import dataclass
 
     @dataclass
-    class Sensum:
+    class Data:
         html: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Sensum
+        input: Data
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count=args.input.html.count("<button")))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count=args.input.html.count("<button")))
 """
 
-PERCEIVE_BAD_OUTPUT = """
+EXTRACT_BAD_OUTPUT = """
     from dataclasses import dataclass
 
     @dataclass
-    class Sensum:
+    class Data:
         html: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Sensum
+        input: Data
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count="셋"))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count="셋"))
 """
 
-PERCEIVE_RAISES = """
+EXTRACT_RAISES = """
     from dataclasses import dataclass
 
     @dataclass
-    class Sensum:
+    class Data:
         html: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Sensum
+        input: Data
 
-    def runNode(args: Args) -> Percept:
+    def runNode(args: Args) -> Meaning:
         if not args.input.html:
             raise ValueError("버튼을 셀 수 없습니다")
-        return returnResult(Percept(count=1))
+        return returnResult(Meaning(count=1))
 """
 
-RECKON = """
+JUDGE = """
     from dataclasses import dataclass
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
@@ -176,7 +176,7 @@ RECKON = """
 
     @dataclass
     class Args:
-        input: Percept
+        input: Meaning
         params: Params
 
     def runNode(args: Args) -> Verdict:
@@ -184,11 +184,11 @@ RECKON = """
         return returnResult(Verdict(passed=ok, message="" if ok else "개수가 다릅니다"))
 """
 
-RECKON_HARDCODED = """
+JUDGE_HARDCODED = """
     from dataclasses import dataclass
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
@@ -202,7 +202,7 @@ RECKON_HARDCODED = """
 
     @dataclass
     class Args:
-        input: Percept
+        input: Meaning
         params: Params
 
     def runNode(args: Args) -> Verdict:
@@ -210,37 +210,37 @@ RECKON_HARDCODED = """
         return returnResult(Verdict(passed=ok, message="" if ok else "개수가 다릅니다"))
 """
 
-ACTION_PASSTHROUGH = """
+ACT_PASSTHROUGH = """
     from dataclasses import dataclass
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Percept
+        input: Meaning
 
     def runNode(args: Args):
         return returnResult(args.input)
 """
 
-ACTION_MUTATES = """
+ACT_MUTATES = """
     from dataclasses import dataclass
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Percept
+        input: Meaning
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count=args.input.count + 1))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count=args.input.count + 1))
 """
 
-VANTAGE = """
+PREPARE = """
     from dataclasses import dataclass
 
     @dataclass
@@ -248,18 +248,18 @@ VANTAGE = """
         url: str
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
     class Args:
         params: Params
 
-    def runNode(args: Args) -> Scene:
-        return returnResult(Scene(url=args.params.url))
+    def runNode(args: Args) -> Context:
+        return returnResult(Context(url=args.params.url))
 """
 
-SENSE_BYTES = """
+COLLECT_BYTES = """
     from dataclasses import dataclass
 
     @dataclass
@@ -278,7 +278,7 @@ SENSE_BYTES = """
         return returnResult(Size(size=len(args.input.image)))
 """
 
-SENSE_BYTES_LIST = """
+COLLECT_BYTES_LIST = """
     from dataclasses import dataclass
 
     @dataclass
@@ -301,19 +301,19 @@ FORGOT_RETURN = """
     from dataclasses import dataclass
 
     @dataclass
-    class Sensum:
+    class Data:
         html: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Sensum
+        input: Data
 
-    def runNode(args: Args) -> Percept:
-        returnResult(Percept(count=1))
+    def runNode(args: Args) -> Meaning:
+        returnResult(Meaning(count=1))
 """
 
 UNIMPORTABLE = """
@@ -321,19 +321,19 @@ UNIMPORTABLE = """
     from dataclasses import dataclass
 
     @dataclass
-    class Sensum:
+    class Data:
         html: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Sensum
+        input: Data
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count=0))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count=0))
 """
 
 BANNED = """
@@ -341,31 +341,31 @@ BANNED = """
     from dataclasses import dataclass
 
     @dataclass
-    class Sensum:
+    class Data:
         html: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Sensum
+        input: Data
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count=int(time.time())))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count=int(time.time())))
 """
 
 
-def perceive_node(project: Project, body: str = PERCEIVE, name: str = "detect") -> Path:
-    return project.node(name, "perceive", project.script(name, body))
+def extract_node(project: Project, body: str = EXTRACT, name: str = "detect") -> Path:
+    return project.node(name, "extract", project.script(name, body))
 
 
 # ── 로드 ─────────────────────────────────────────────────────────────────────
 
 
 def test_load_node_test_reads_file(project: Project) -> None:
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     path = write_json(
         project.root / "nodes" / "detect.test.json",
         {"node": str(node_path), "cases": [{"name": "평범", "args": {"input": {"html": ""}}}]},
@@ -409,7 +409,7 @@ def test_load_node_test_broken_json_is_an_error(project: Project) -> None:
 
 
 def test_load_node_test_accepts_registered_ref(project: Project) -> None:
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     entry = project.store.add("node", node_path)
     path = write_json(
         project.root / "x.test.json",
@@ -442,7 +442,7 @@ def test_unregistered_ref_is_reg_not_found(project: Project) -> None:
 
 
 def test_registered_node_runs(project: Project) -> None:
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     entry = project.store.add("node", node_path)
     node_test = project.test_file(
         f"${{ref.{entry.id}}}",
@@ -455,7 +455,7 @@ def test_registered_node_runs(project: Project) -> None:
 
 
 def test_static_failure_stops_before_running(project: Project) -> None:
-    node_path = project.node("banned", "perceive", project.script("banned", BANNED))
+    node_path = project.node("banned", "extract", project.script("banned", BANNED))
     node_test = project.test_file(
         node_path, [{"name": "돌면 안 된다", "args": {"input": {"html": ""}}}]
     )
@@ -470,7 +470,7 @@ def test_static_failure_stops_before_running(project: Project) -> None:
 
 
 def test_stage1_missing_fixture_field_blames_the_test(project: Project) -> None:
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     node_test = project.test_file(node_path, [{"name": "빈 fixture", "args": {"input": {}}}])
 
     findings = project.run(node_test)
@@ -480,7 +480,7 @@ def test_stage1_missing_fixture_field_blames_the_test(project: Project) -> None:
 
 
 def test_stage1_wrong_fixture_type_blames_the_test(project: Project) -> None:
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     node_test = project.test_file(node_path, [{"name": "타입 어긋남", "args": {"input": {"html": 3}}}])
 
     findings = project.run(node_test)
@@ -489,7 +489,7 @@ def test_stage1_wrong_fixture_type_blames_the_test(project: Project) -> None:
 
 
 def test_stage1_unknown_args_key_blames_the_test(project: Project) -> None:
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     node_test = project.test_file(
         node_path,
         [{"name": "모르는 자리", "args": {"input": {"html": ""}, "params": {"expected": 1}}}],
@@ -501,7 +501,7 @@ def test_stage1_unknown_args_key_blames_the_test(project: Project) -> None:
 
 
 def test_stage2_script_exception(project: Project) -> None:
-    node_path = perceive_node(project, PERCEIVE_RAISES, "boom")
+    node_path = extract_node(project, EXTRACT_RAISES, "boom")
     node_test = project.test_file(node_path, [{"name": "터진다", "args": {"input": {"html": ""}}}])
 
     findings = project.run(node_test)
@@ -511,18 +511,18 @@ def test_stage2_script_exception(project: Project) -> None:
 
 
 def test_stage3_output_type_mismatch(project: Project) -> None:
-    node_path = perceive_node(project, PERCEIVE_BAD_OUTPUT, "badout")
+    node_path = extract_node(project, EXTRACT_BAD_OUTPUT, "badout")
     node_test = project.test_file(node_path, [{"name": "타입 어긋남", "args": {"input": {"html": ""}}}])
 
     findings = project.run(node_test)
 
     assert ids(findings) == ["LNT-TEST-003"]
-    assert "Percept" in findings[0].message
+    assert "Meaning" in findings[0].message
 
 
 def test_stages_run_in_order(project: Project) -> None:
     """fixture 가 틀리면 스크립트를 아예 돌리지 않는다 — ① 이 ② 보다 먼저다."""
-    node_path = perceive_node(project, PERCEIVE_RAISES, "order")
+    node_path = extract_node(project, EXTRACT_RAISES, "order")
     node_test = project.test_file(node_path, [{"name": "fixture 부터 틀렸다", "args": {"input": {}}}])
 
     findings = project.run(node_test)
@@ -534,7 +534,7 @@ def test_stages_run_in_order(project: Project) -> None:
 
 
 def test_expect_match_passes(project: Project) -> None:
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     node_test = project.test_file(
         node_path,
         [
@@ -552,7 +552,7 @@ def test_expect_match_passes(project: Project) -> None:
 
 
 def test_expect_mismatch(project: Project) -> None:
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     node_test = project.test_file(
         node_path,
         [{"name": "하나뿐", "args": {"input": {"html": "<button>"}}, "expect": {"count": 3}}],
@@ -566,17 +566,17 @@ def test_expect_mismatch(project: Project) -> None:
 
 def test_no_expect_still_type_checks(project: Project) -> None:
     """기대값을 안 써도 타입 검증은 공짜로 따라온다."""
-    node_path = perceive_node(project, PERCEIVE_BAD_OUTPUT, "freebie")
+    node_path = extract_node(project, EXTRACT_BAD_OUTPUT, "freebie")
     node_test = project.test_file(node_path, [{"name": "expect 없음", "args": {"input": {"html": ""}}}])
 
     assert ids(project.run(node_test)) == ["LNT-TEST-003"]
 
 
-# ── Action — 값 동일성 ───────────────────────────────────────────────────────
+# ── Act — 값 동일성 ───────────────────────────────────────────────────────
 
 
-def test_action_transparency_checked_without_expect(project: Project) -> None:
-    node_path = project.node("click", "action", project.script("click", ACTION_MUTATES))
+def test_act_transparency_checked_without_expect(project: Project) -> None:
+    node_path = project.node("click", "act", project.script("click", ACT_MUTATES))
     node_test = project.test_file(node_path, [{"name": "값을 건드린다", "args": {"input": {"count": 1}}}])
 
     findings = project.run(node_test)
@@ -584,12 +584,12 @@ def test_action_transparency_checked_without_expect(project: Project) -> None:
     assert ids(findings) == ["LNT-TEST-005"]
     assert "값을 건드린다" in findings[0].message
     # 다른 TEST 규칙은 전부 `node` 가 차 있다 — 여기만 비면 리포트의 노드 칸이
-    # Action 결과에서만 빈다 (R6-3).
+    # Act 결과에서만 빈다 (R6-3).
     assert findings[0].node == "click"
 
 
-def test_action_passthrough_passes(project: Project) -> None:
-    node_path = project.node("pass", "action", project.script("pass", ACTION_PASSTHROUGH))
+def test_act_passthrough_passes(project: Project) -> None:
+    node_path = project.node("pass", "act", project.script("pass", ACT_PASSTHROUGH))
     node_test = project.test_file(node_path, [{"name": "그대로 흘린다", "args": {"input": {"count": 2}}}])
 
     findings = project.run(node_test)
@@ -597,7 +597,7 @@ def test_action_passthrough_passes(project: Project) -> None:
     assert statuses(findings) == ["pass"]
 
 
-def test_action_transparency_compares_by_structure() -> None:
+def test_act_transparency_compares_by_structure() -> None:
     """이름이 달라도 구조가 같으면 같은 값이다 (`schema.md` 7절). 중첩·리스트도 그렇다."""
     from dataclasses import dataclass, field
 
@@ -616,16 +616,16 @@ def test_action_transparency_compares_by_structure() -> None:
         items: list = field(default_factory=list)
 
     case = Case.model_validate({"name": "n", "args": {}})
-    assert harness.check_action_transparency(case, Left(1, [Item("a")]), Right(1, [Item("a")])) == []
+    assert harness.check_act_transparency(case, Left(1, [Item("a")]), Right(1, [Item("a")])) == []
     assert ids(
-        harness.check_action_transparency(case, Left(1, [Item("a")]), Right(1, [Item("b")]))
+        harness.check_act_transparency(case, Left(1, [Item("a")]), Right(1, [Item("b")]))
     ) == ["LNT-TEST-005"]
 
 
-# ── Reckon — 기댓값 반응성 ───────────────────────────────────────────────────
+# ── Judge — 기댓값 반응성 ───────────────────────────────────────────────────
 
 
-def reckon_cases(*pairs: tuple[int, int]) -> list[dict[str, Any]]:
+def judge_cases(*pairs: tuple[int, int]) -> list[dict[str, Any]]:
     return [
         {
             "name": f"count={count} expected={expected}",
@@ -635,9 +635,9 @@ def reckon_cases(*pairs: tuple[int, int]) -> list[dict[str, Any]]:
     ]
 
 
-def test_reckon_with_contrast_pair_passes(project: Project) -> None:
-    node_path = project.node("judge", "reckon", project.script("judge", RECKON))
-    node_test = project.test_file(node_path, reckon_cases((3, 3), (3, 4)))
+def test_judge_with_contrast_pair_passes(project: Project) -> None:
+    node_path = project.node("judge", "judge", project.script("judge", JUDGE))
+    node_test = project.test_file(node_path, judge_cases((3, 3), (3, 4)))
 
     findings = project.run(node_test)
 
@@ -645,9 +645,9 @@ def test_reckon_with_contrast_pair_passes(project: Project) -> None:
     assert statuses(findings) == ["pass", "pass"]
 
 
-def test_reckon_without_contrast_pair_warns(project: Project) -> None:
-    node_path = project.node("judge", "reckon", project.script("judge", RECKON))
-    node_test = project.test_file(node_path, reckon_cases((3, 3), (5, 5)))
+def test_judge_without_contrast_pair_warns(project: Project) -> None:
+    node_path = project.node("judge", "judge", project.script("judge", JUDGE))
+    node_test = project.test_file(node_path, judge_cases((3, 3), (5, 5)))
 
     findings = project.run(node_test)
 
@@ -656,10 +656,10 @@ def test_reckon_without_contrast_pair_warns(project: Project) -> None:
     assert warned[0].status == "violation"  # 경고 — 정상 결과지 도구 실패가 아니다
 
 
-def test_reckon_hardcoded_expected_is_an_error(project: Project) -> None:
+def test_judge_hardcoded_expected_is_an_error(project: Project) -> None:
     """★ 기댓값을 하드코딩한 스크립트를 실제로 만들어 `-007` 이 나오는지 본다."""
-    node_path = project.node("hard", "reckon", project.script("hard", RECKON_HARDCODED))
-    node_test = project.test_file(node_path, reckon_cases((3, 3), (3, 4)))
+    node_path = project.node("hard", "judge", project.script("hard", JUDGE_HARDCODED))
+    node_test = project.test_file(node_path, judge_cases((3, 3), (3, 4)))
 
     findings = project.run(node_test)
 
@@ -669,22 +669,22 @@ def test_reckon_hardcoded_expected_is_an_error(project: Project) -> None:
     assert "yet both decide pass" in caught[0].message
 
 
-def test_reckon_같은_params_케이스_둘은_대조쌍이_아니다(project: Project) -> None:
+def test_judge_같은_params_케이스_둘은_대조쌍이_아니다(project: Project) -> None:
     """`params` 가 같으면 흔들어본 것이 아니다 — **쌍으로 세면 `-007` 오탐**이다.
 
     `input` 도 `params` 도 똑같은 중복 케이스 둘은 판정이 당연히 같으므로,
     쌍으로 세는 순간 "기댓값을 안 쓴다" 는 거짓 결론이 나온다. 대조쌍이 없는
     것이므로 나와야 할 것은 `-006`(경고)이다.
     """
-    node_path = project.node("judge", "reckon", project.script("judge", RECKON))
-    node_test = project.test_file(node_path, reckon_cases((3, 3), (3, 3)))
+    node_path = project.node("judge", "judge", project.script("judge", JUDGE))
+    node_test = project.test_file(node_path, judge_cases((3, 3), (3, 3)))
 
     findings = project.run(node_test)
 
     assert [item.rule_id for item in findings if item.rule_id] == ["LNT-TEST-006"]
 
 
-def test_reckon_contrast_ignores_unreadable_verdicts(project: Project) -> None:
+def test_judge_contrast_ignores_unreadable_verdicts(project: Project) -> None:
     """못 돈 케이스를 근거로 "기댓값을 안 쓴다" 고 단정하지 않는다."""
     cases = [
         Case.model_validate(
@@ -695,13 +695,13 @@ def test_reckon_contrast_ignores_unreadable_verdicts(project: Project) -> None:
         ),
     ]
 
-    findings = harness.check_reckon_contrast(cases, [None, None])
+    findings = harness.check_judge_contrast(cases, [None, None])
 
     assert ids(findings) == ["LNT-TEST-006"]
 
 
-def test_reckon_contrast_not_run_for_other_types(project: Project) -> None:
-    node_path = perceive_node(project)
+def test_judge_contrast_not_run_for_other_types(project: Project) -> None:
+    node_path = extract_node(project)
     node_test = project.test_file(node_path, [{"name": "한 건", "args": {"input": {"html": ""}}}])
 
     assert ids(project.run(node_test)) == [""]
@@ -712,7 +712,7 @@ def test_reckon_contrast_not_run_for_other_types(project: Project) -> None:
 
 def test_node_without_input_runs(project: Project) -> None:
     """`Args` 에 `input` 필드가 없는 노드도 fixture 로 돈다."""
-    node_path = project.node("open", "vantage", project.script("open", VANTAGE))
+    node_path = project.node("open", "prepare", project.script("open", PREPARE))
     node_test = project.test_file(
         node_path,
         [
@@ -731,7 +731,7 @@ def test_bytes_fixture_is_read_from_file(project: Project) -> None:
     shot = project.root / "fixtures" / "shot.png"
     shot.parent.mkdir(parents=True, exist_ok=True)
     shot.write_bytes(b"\x89PNG\r\n")
-    node_path = project.node("shot", "sense", project.script("shot", SENSE_BYTES))
+    node_path = project.node("shot", "collect", project.script("shot", COLLECT_BYTES))
     node_test = project.test_file(
         node_path,
         [
@@ -747,7 +747,7 @@ def test_bytes_fixture_is_read_from_file(project: Project) -> None:
 
 
 def test_bytes_fixture_missing_file_blames_the_test(project: Project) -> None:
-    node_path = project.node("shot", "sense", project.script("shot", SENSE_BYTES))
+    node_path = project.node("shot", "collect", project.script("shot", COLLECT_BYTES))
     node_test = project.test_file(
         node_path,
         [
@@ -762,7 +762,7 @@ def test_bytes_fixture_missing_file_blames_the_test(project: Project) -> None:
 
 
 def test_bytes_fixture_relative_path_is_caught(project: Project) -> None:
-    node_path = project.node("shot", "sense", project.script("shot", SENSE_BYTES))
+    node_path = project.node("shot", "collect", project.script("shot", COLLECT_BYTES))
     node_test = project.test_file(
         node_path,
         [{"name": "상대경로", "args": {"input": {"image": {"$file": "fixtures/shot.png"}}}}],
@@ -778,7 +778,7 @@ def test_bytes_fixture_relative_path_is_caught(project: Project) -> None:
 
 
 def test_file_marker_must_be_alone(project: Project) -> None:
-    node_path = project.node("shot", "sense", project.script("shot", SENSE_BYTES))
+    node_path = project.node("shot", "collect", project.script("shot", COLLECT_BYTES))
     node_test = project.test_file(
         node_path,
         [
@@ -794,7 +794,7 @@ def test_file_marker_must_be_alone(project: Project) -> None:
 
 def test_every_case_runs_even_if_one_fails(project: Project) -> None:
     """실패는 최대한 모은다 — 한 케이스가 깨져도 나머지는 전부 돈다."""
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     node_test = project.test_file(
         node_path,
         [
@@ -815,7 +815,7 @@ def test_every_case_runs_even_if_one_fails(project: Project) -> None:
 
 
 def test_findings_carry_the_node_name(project: Project) -> None:
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     node_test = project.test_file(node_path, [{"name": "a", "args": {"input": {}}}])
 
     assert {item.node for item in project.run(node_test)} == {"detect"}
@@ -825,7 +825,7 @@ def test_bytes_list_fixture(project: Project) -> None:
     shot = project.root / "fixtures" / "a.png"
     shot.parent.mkdir(parents=True, exist_ok=True)
     shot.write_bytes(b"1234")
-    node_path = project.node("shots", "sense", project.script("shots", SENSE_BYTES_LIST))
+    node_path = project.node("shots", "collect", project.script("shots", COLLECT_BYTES_LIST))
     node_test = project.test_file(
         node_path,
         [
@@ -841,7 +841,7 @@ def test_bytes_list_fixture(project: Project) -> None:
 
 
 def test_file_marker_value_must_be_a_path(project: Project) -> None:
-    node_path = project.node("shot", "sense", project.script("shot", SENSE_BYTES))
+    node_path = project.node("shot", "collect", project.script("shot", COLLECT_BYTES))
     node_test = project.test_file(
         node_path, [{"name": "숫자", "args": {"input": {"image": {"$file": 7}}}}]
     )
@@ -853,7 +853,7 @@ def test_bad_file_marker_in_expect_blames_the_test(project: Project) -> None:
     shot = project.root / "fixtures" / "a.png"
     shot.parent.mkdir(parents=True, exist_ok=True)
     shot.write_bytes(b"1234")
-    node_path = project.node("shot", "sense", project.script("shot", SENSE_BYTES))
+    node_path = project.node("shot", "collect", project.script("shot", COLLECT_BYTES))
     node_test = project.test_file(
         node_path,
         [
@@ -870,7 +870,7 @@ def test_bad_file_marker_in_expect_blames_the_test(project: Project) -> None:
 
 def test_forgotten_return_is_output_mismatch(project: Project) -> None:
     """`returnResult()` 를 부르고 `return` 을 빠뜨리면 반환값이 없다 — ③ 이 잡는다."""
-    node_path = perceive_node(project, FORGOT_RETURN, "forgot")
+    node_path = extract_node(project, FORGOT_RETURN, "forgot")
     node_test = project.test_file(node_path, [{"name": "반환 없음", "args": {"input": {"html": ""}}}])
 
     findings = project.run(node_test)
@@ -879,18 +879,18 @@ def test_forgotten_return_is_output_mismatch(project: Project) -> None:
     assert "(none)" in findings[0].message
 
 
-def test_action_transparency_skips_when_no_input() -> None:
-    """입력 없는 Action 은 대조할 것이 없다 — `LNT-CONTRACT-006` 이 등록 때 잡는다."""
+def test_act_transparency_skips_when_no_input() -> None:
+    """입력 없는 Act 는 대조할 것이 없다 — `LNT-CONTRACT-006` 이 등록 때 잡는다."""
     case = Case.model_validate({"name": "n", "args": {}})
 
-    assert harness.check_action_transparency(case, None, object()) == []
+    assert harness.check_act_transparency(case, None, object()) == []
 
 
 # ── 참조·파일이 깨진 경우 ────────────────────────────────────────────────────
 
 
 def test_wrong_ref_kind_on_load(project: Project) -> None:
-    script_path = project.script("detect", PERCEIVE)
+    script_path = project.script("detect", EXTRACT)
     entry = project.store.add("script", script_path)
     path = write_json(project.root / "x.test.json", {"node": f"${{ref.{entry.id}}}", "cases": []})
 
@@ -901,7 +901,7 @@ def test_wrong_ref_kind_on_load(project: Project) -> None:
 
 
 def test_wrong_ref_kind_on_run(project: Project) -> None:
-    script_path = project.script("detect", PERCEIVE)
+    script_path = project.script("detect", EXTRACT)
     entry = project.store.add("script", script_path)
 
     findings = project.run(project.test_file(f"${{ref.{entry.id}}}", []))
@@ -948,7 +948,7 @@ def test_test_file_must_be_utf8(project: Project) -> None:
 
 def test_unimportable_script_is_an_error(project: Project) -> None:
     """모듈 최상위에서 터지는 것은 정적 검사가 못 잡는다 — 돌려봐야 안다."""
-    node_path = perceive_node(project, UNIMPORTABLE, "unimportable")
+    node_path = extract_node(project, UNIMPORTABLE, "unimportable")
     node_test = project.test_file(node_path, [{"name": "로드 실패", "args": {"input": {"html": ""}}}])
 
     findings = project.run(node_test)
@@ -976,7 +976,7 @@ def test_id_로_부르면_등록소_노드를_돌린다(project: Project) -> Non
     해석해 버리면 **요청하지 않은 노드를 돌리고 통과를 보고**한다 — lint 도구에서
     가장 나쁜 종류의 거짓 리포트다.
     """
-    node_path = project.node("open", "vantage", project.script("open", VANTAGE))
+    node_path = project.node("open", "prepare", project.script("open", PREPARE))
     node_id = project.register(node_path)
     node_test = project.test_file(
         node_path,
@@ -991,8 +991,8 @@ def test_id_로_부르면_등록소_노드를_돌린다(project: Project) -> Non
 
 def test_테스트가_다른_노드를_가리키면_STR_TEST_008(project: Project) -> None:
     """conductor 가 재현한 그 상황이다 — a 를 요청했는데 b 가 돌았다."""
-    a = project.node("a", "vantage", project.script("a", VANTAGE))
-    b = project.node("b", "perceive", project.script("b", PERCEIVE))
+    a = project.node("a", "prepare", project.script("a", PREPARE))
+    b = project.node("b", "extract", project.script("b", EXTRACT))
     a_id = project.register(a)
     project.register(b)
 
@@ -1004,8 +1004,8 @@ def test_테스트가_다른_노드를_가리키면_STR_TEST_008(project: Projec
 
 
 def test_ref_가_다른_노드_id_면_STR_TEST_008(project: Project) -> None:
-    a = project.node("a", "vantage", project.script("a", VANTAGE))
-    b = project.node("b", "perceive", project.script("b", PERCEIVE))
+    a = project.node("a", "prepare", project.script("a", PREPARE))
+    b = project.node("b", "extract", project.script("b", EXTRACT))
     a_id = project.register(a)
     b_id = project.register(b)
 
@@ -1015,7 +1015,7 @@ def test_ref_가_다른_노드_id_면_STR_TEST_008(project: Project) -> None:
 
 
 def test_자기_id_를_ref_로_가리키면_통과한다(project: Project) -> None:
-    node_path = project.node("open", "vantage", project.script("open", VANTAGE))
+    node_path = project.node("open", "prepare", project.script("open", PREPARE))
     node_id = project.register(node_path)
     node_test = project.test_file(
         f"${{ref.{node_id}}}",
@@ -1031,7 +1031,7 @@ def test_원본이_지워져_있어도_id_로_돈다(project: Project) -> None:
     예전에는 여기서 `LNT-REF-002`(파일 없음)로 죽었다. R5-2 가 없애려던 바로 그
     상황이 `node` 재해석 때문에 남아 있었다.
     """
-    node_path = project.node("open", "vantage", project.script("open", VANTAGE))
+    node_path = project.node("open", "prepare", project.script("open", PREPARE))
     node_id = project.register(node_path)
     node_test = project.test_file(
         node_path, [{"name": "c0", "args": {"params": {"url": "https://x"}}}]
@@ -1043,7 +1043,7 @@ def test_원본이_지워져_있어도_id_로_돈다(project: Project) -> None:
 
 def test_경로로_부르면_node_필드가_실행_대상이다(project: Project) -> None:
     """`node test <경로>` 에는 요청한 id 가 없다 — 대조할 정본도 없다."""
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     node_test = project.test_file(
         node_path, [{"name": "c0", "args": {"input": {"html": "<button>"}}}]
     )
@@ -1062,7 +1062,7 @@ def test_every_test_rule_renders(project: Project) -> None:
     """
     fired: dict[str, Finding] = {}
 
-    node_path = perceive_node(project)
+    node_path = extract_node(project)
     for cases in (
         [{"name": "①", "args": {"input": {}}}],
         [{"name": "④", "args": {"input": {"html": ""}}, "expect": {"count": 7}}],
@@ -1072,25 +1072,25 @@ def test_every_test_rule_renders(project: Project) -> None:
                 fired[item.rule_id] = item
 
     for body, name, cases in (
-        (PERCEIVE_RAISES, "raiser", [{"name": "②", "args": {"input": {"html": ""}}}]),
-        (PERCEIVE_BAD_OUTPUT, "bad", [{"name": "③", "args": {"input": {"html": ""}}}]),
+        (EXTRACT_RAISES, "raiser", [{"name": "②", "args": {"input": {"html": ""}}}]),
+        (EXTRACT_BAD_OUTPUT, "bad", [{"name": "③", "args": {"input": {"html": ""}}}]),
     ):
-        for item in project.run(project.test_file(perceive_node(project, body, name), cases)):
+        for item in project.run(project.test_file(extract_node(project, body, name), cases)):
             if item.rule_id:
                 fired[item.rule_id] = item
 
-    action = project.node("act", "action", project.script("act", ACTION_MUTATES))
-    for item in project.run(project.test_file(action, [{"name": "⑤", "args": {"input": {"count": 1}}}])):
+    act = project.node("act", "act", project.script("act", ACT_MUTATES))
+    for item in project.run(project.test_file(act, [{"name": "⑤", "args": {"input": {"count": 1}}}])):
         if item.rule_id:
             fired[item.rule_id] = item
 
-    judge = project.node("judge", "reckon", project.script("judge", RECKON))
-    for item in project.run(project.test_file(judge, reckon_cases((3, 3), (5, 5)))):
+    judge = project.node("judge", "judge", project.script("judge", JUDGE))
+    for item in project.run(project.test_file(judge, judge_cases((3, 3), (5, 5)))):
         if item.rule_id:
             fired[item.rule_id] = item
 
-    hard = project.node("hard", "reckon", project.script("hard", RECKON_HARDCODED))
-    for item in project.run(project.test_file(hard, reckon_cases((3, 3), (3, 4)))):
+    hard = project.node("hard", "judge", project.script("hard", JUDGE_HARDCODED))
+    for item in project.run(project.test_file(hard, judge_cases((3, 3), (3, 4)))):
         if item.rule_id:
             fired[item.rule_id] = item
 
@@ -1099,7 +1099,7 @@ def test_every_test_rule_renders(project: Project) -> None:
     for item in project.run(project.test_file("${ref.nd_deadbeef}", [])):
         fired[item.rule_id] = item
 
-    other = project.node("other", "vantage", project.script("other", VANTAGE))
+    other = project.node("other", "prepare", project.script("other", PREPARE))
     for item in project.run_by_id(project.test_file(other, []), project.register(judge)):
         fired[item.rule_id] = item
 

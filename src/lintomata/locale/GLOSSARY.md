@@ -36,8 +36,8 @@
 | 갈래 | 고정된 이름 |
 |---|---|
 | 결과 상태 | `pass` · `violation` · `not_run` · `error` |
-| 노드 타입 | `Vantage` · `Sense` · `Perceive` · `Reckon` · `Action` |
-| 산출물 타입 | `Scene` · `Sensum` · `Percept` · `Verdict` |
+| 노드 타입 | `Prepare` · `Collect` · `Extract` · `Judge` · `Act` |
+| 산출물 타입 | `Context` · `Data` · `Meaning` · `Verdict` |
 | 고정 심볼 | `Args` · `runNode` · `returnResult` · `params` · `state` · `input` |
 | 층 | `Spec` · `Pipeline` · `Node` · `Script` · `Library` |
 
@@ -49,7 +49,7 @@
 
 ## 2. 결정한 번역 — 근거와 함께
 
-`Vantage`/`Sense`/`Percept`/`Reckon` 처럼 이미 고정된 것 말고, **이번에 정해야 했던 것들**이다.
+`Prepare`/`Collect`/`Meaning`/`Judge` 처럼 이미 고정된 것 말고, **이번에 정해야 했던 것들**이다.
 "제안"이 아니라 **확정**이다. 바꾸려면 이 표를 먼저 고친다.
 
 ### 2.1 기획 → **plan**
@@ -116,7 +116,7 @@ AI 가 엉뚱한 파일을 연다. 규칙 문구 안에서는 대개 후자이�
 ### 2.8 여파 → **fallout** (형용사구 **knocked out by**)
 
 **근거.** `CLAUDE.md` 의 *"실패는 최대한 수집하고, 여파는 not run 이다"* — 앞단 실패 때문에
-**도달 불가가 된 뒷단**을 가리킨다. `side effect` 는 Action 의 부작용에 이미 쓴다(§2.12).
+**도달 불가가 된 뒷단**을 가리킨다. `side effect` 는 Act 의 부작용에 이미 쓴다(§2.12).
 `cascade`/`propagation` 은 *"실패가 전파된다"* 는 인상을 줘서, 이 도구가 일부러 피한
 **"실패 전파"** 와 헷갈린다. → 명사 **fallout**, 문장은
 **"reported as `not_run` — this is fallout from the failure above, not a failure of its own."**
@@ -155,7 +155,7 @@ AI 가 엉뚱한 파일을 연다. 규칙 문구 안에서는 대개 후자이�
 
 | 한글 | 영어 | 비고 |
 |---|---|---|
-| 기댓값 | **expected value** | `Reckon` 이 `params` 로 받는 것 |
+| 기댓값 | **expected value** | `Judge` 가 `params` 로 받는 것 |
 | 자리표시자 | **placeholder** | §2.7 |
 | 전개 (`${env.X}`) | **expansion** / **expand** | "after expansion" |
 | 절대경로 | **absolute path** | 상대경로는 **relative path** |
@@ -166,11 +166,11 @@ AI 가 엉뚱한 파일을 연다. 규칙 문구 안에서는 대개 후자이�
 | 대조쌍 | **contrast pair** | `LNT-TEST-006/007` |
 | 부분집합 병합 | **subset merge** | `typesys` |
 | 연결 성분 | **connected component** | 같은 곳 |
-| 투명하다 (`Action`) | **transparent** | 타입 검사에서 통과시킨다는 뜻 |
+| 투명하다 (`Act`) | **transparent** | 타입 검사에서 통과시킨다는 뜻 |
 | 정본 | **authoritative** / **the source of truth** | `node test <id>` 의 id 가 정본 |
-| 부작용 | **side effect** | `Action` 전용. §2.8 과 구분 |
+| 부작용 | **side effect** | `Act` 전용. §2.8 과 구분 |
 | 검사 시점 (`when`) | **check point** | N / LB / P / R / T |
-| 하드코딩 | **hard-code** (동사), **hard-coded** | `Reckon` 기댓값 |
+| 하드코딩 | **hard-code** (동사), **hard-coded** | `Judge` 기댓값 |
 | 껍데기 | **an empty shell** | *"기획 파일이 껍데기가 된다"* |
 
 ### 2.14 형제 파일 → **sibling file**

@@ -1,5 +1,5 @@
 {
   "info": { "name": "detect-menu", "description": "메뉴 항목과 그 순서를 뽑는다" },
-  "type": "perceive",
-  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/perceive_menu.py"
+  "type": "extract",
+  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/extract_menu.py"
 }

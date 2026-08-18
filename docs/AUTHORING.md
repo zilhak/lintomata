@@ -34,36 +34,36 @@ export LINTOMATA_HOME=$(mktemp -d)
 
 | 묻는 것 | 답이 곧 | 예제 |
 |---|---|---|
-| **어디를 볼 것인가?** | **Vantage** | `targets/home.html` 파일 하나를 관측 지점으로 잡는다 |
-| **거기서 원시 데이터를 어떻게 가져오는가?** | **Sense** | 그 파일을 읽어 HTML 문자열을 낸다 |
-| **그 원시 데이터에 무슨 의미를 부여하는가?** | **Perceive** | 이 마크업에서 **무엇이 버튼인가**를 판정한다 |
-| **그 의미를 기획과 어떻게 대조하는가?** | **Reckon** | 버튼이 3개인지, 라벨 순서가 맞는지 |
-| **중간에 무슨 행위를 끼워야 하는가?** | **Action** | 관측 사실을 감사 로그에 남긴다 |
+| **어디를 볼 것인가?** | **Prepare** | `targets/home.html` 파일 하나를 관측 지점으로 잡는다 |
+| **거기서 원시 데이터를 어떻게 가져오는가?** | **Collect** | 그 파일을 읽어 HTML 문자열을 낸다 |
+| **그 원시 데이터에 무슨 의미를 부여하는가?** | **Extract** | 이 마크업에서 **무엇이 버튼인가**를 판정한다 |
+| **그 의미를 기획과 어떻게 대조하는가?** | **Judge** | 버튼이 3개인지, 라벨 순서가 맞는지 |
+| **중간에 무슨 행위를 끼워야 하는가?** | **Act** | 관측 사실을 감사 로그에 남긴다 |
 
 ### 갈림길에서 쓰는 판단 기준
 
-- **Vantage / Sense** — *"대상을 정하는 것"* 과 *"대상에서 값을 꺼내는 것"* 의 경계다.
-  `vantage_pick_page.py` 는 파일 경로만 정하고 **읽지 않는다**. 읽는 것은 `sense_read_html.py` 다.
-  경로를 정하는 쪽과 읽는 쪽을 나누면 **같은 Sense 를 다른 Vantage 에 붙일 수 있다.**
-- **Sense / Perceive** — **해석이 들어가면 Perceive 다.** HTML 문자열 그 자체는 Sense,
-  *"이 요소는 버튼이다"* 는 Perceive. `perceive_buttons.py` 가 `data-decoy="true"` 를
+- **Prepare / Collect** — *"대상을 정하는 것"* 과 *"대상에서 값을 꺼내는 것"* 의 경계다.
+  `prepare_pick_page.py` 는 파일 경로만 정하고 **읽지 않는다**. 읽는 것은 `collect_read_html.py` 다.
+  경로를 정하는 쪽과 읽는 쪽을 나누면 **같은 Collect 를 다른 Prepare 에 붙일 수 있다.**
+- **Collect / Extract** — **해석이 들어가면 Extract 다.** HTML 문자열 그 자체는 Collect,
+  *"이 요소는 버튼이다"* 는 Extract. `extract_buttons.py` 가 `data-decoy="true"` 를
   버튼에서 빼는 것이 바로 해석이다.
-- **Perceive / Reckon** — **기획과 대조하면 Reckon 이다.** 버튼을 세는 것은 Perceive,
-  *"3개여야 하는데 2개다"* 는 Reckon. 대조 기준(3)은 Perceive 가 알아서는 안 된다.
-- **Action** — 지각도 판정도 아닌 **행위**다. 클릭·입력·기록. `input == output` 이라
+- **Extract / Judge** — **기획과 대조하면 Judge 다.** 버튼을 세는 것은 Extract,
+  *"3개여야 하는데 2개다"* 는 Judge. 대조 기준(3)은 Extract 가 알아서는 안 된다.
+- **Act** — 지각도 판정도 아닌 **행위**다. 클릭·입력·기록. `input == output` 이라
   타입 관점에서 투명하고 노드 사이 어디에나 끼워 넣을 수 있다.
 
 ### 이 판단이 만들어낸 그래프
 
 ```
 pickPage ─▶ readHtml ─▶ audit ─┬─▶ detectButtons ─▶ checkButtons
-(Vantage)   (Sense)   (Action) │   (Perceive)        (Reckon)
+(Prepare)   (Collect)   (Act) │   (Extract)        (Judge)
                                └─▶ detectMenu    ─▶ checkMenu
-                                   (Perceive)        (Reckon)
+                                   (Extract)        (Judge)
 ```
 
 `audit` 이 `readHtml` 과 `detectButtons` 사이에 있는데도 타입 검사가 통과한다 —
-**Action 은 투명하다.** 실제로는 `readHtml ──▶ detectButtons` 이고 그 사이에서 부작용만 난다.
+**Act 는 투명하다.** 실제로는 `readHtml ──▶ detectButtons` 이고 그 사이에서 부작용만 난다.
 
 ---
 
@@ -74,7 +74,7 @@ pickPage ─▶ readHtml ─▶ audit ─┬─▶ detectButtons ─▶ checkBut
 
 ### Script — 실제 동작 코드
 
-[`examples/home-check/scripts/vantage_pick_page.py`](../examples/home-check/scripts/vantage_pick_page.py)
+[`examples/home-check/scripts/prepare_pick_page.py`](../examples/home-check/scripts/prepare_pick_page.py)
 
 ```python
 @dataclass
@@ -82,19 +82,19 @@ class PickParams:
     pagePath: str
 
 @dataclass
-class Scene:
+class Context:
     source: str
 
 @dataclass
 class Args:
     params: PickParams
 
-def runNode(args: Args) -> Scene:
-    return returnResult(Scene(source=args.params.pagePath))
+def runNode(args: Args) -> Context:
+    return returnResult(Context(source=args.params.pagePath))
 ```
 
 여기 있는 것은 **능력 선언**이다 — *"나는 `pagePath` 라는 파라미터를 받을 수 있다"*.
-Vantage 라서 `Args` 에 `input` 이 없다.
+Prepare 라서 `Args` 에 `input` 이 없다.
 
 ### Node — 동작 정의
 
@@ -103,8 +103,8 @@ Vantage 라서 `Args` 에 `input` 이 없다.
 ```json
 {
   "info": { "name": "pick-page", "description": "검사할 HTML 파일 하나를 관측 지점으로 잡는다" },
-  "type": "vantage",
-  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/vantage_pick_page.py"
+  "type": "prepare",
+  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/prepare_pick_page.py"
 }
 ```
 
@@ -120,7 +120,7 @@ Vantage 라서 `Args` 에 `input` 이 없다.
 {
   "id": "detectButtons",
   "source": "${env.LINTOMATA_EXAMPLE_ROOT}/nodes/detect_buttons.json",
-  "inputs": { "sensum": "audit" },
+  "inputs": { "data": "audit" },
   "states": { "ready": "observed" },
   "when": { "state": "ready" }
 }
@@ -163,11 +163,11 @@ Vantage 라서 `Args` 에 `input` 이 없다.
 
 ```json
 { "id": "checkButtons", "source": "…/nodes/check_count.json",
-  "inputs": { "percept": "detectButtons" },
+  "inputs": { "meaning": "detectButtons" },
   "params": { "expectedCount": "${config.expectedButtonCount}",
               "expectedLabels": "${config.expectedButtonLabels}" } },
 { "id": "checkMenu",    "source": "…/nodes/check_count.json",
-  "inputs": { "percept": "detectMenu" },
+  "inputs": { "meaning": "detectMenu" },
   "params": { "expectedCount": "${config.expectedMenuCount}",
               "expectedLabels": "${config.expectedMenuLabels}" } }
 ```
@@ -202,9 +202,9 @@ Vantage 라서 `Args` 에 `input` 이 없다.
 `state` 는 파이프라인 상태(**읽기 전용**)다. 출처가 셋으로 갈라져 있으므로
 *"이 값이 어디서 왔는가"* 가 선언만 보고 정해진다.
 
-### ★ Reckon 은 기댓값을 `params` 로 받아야 한다
+### ★ Judge 는 기댓값을 `params` 로 받아야 한다
 
-[`scripts/reckon_count.py`](../examples/home-check/scripts/reckon_count.py) 를 보라.
+[`scripts/judge_count.py`](../examples/home-check/scripts/judge_count.py) 를 보라.
 `ExpectParams` 에 `expectedCount` / `expectedLabels` 가 있고 `runNode` 가 그 값을 쓴다.
 
 **하드코딩하면 무엇이 무너지는가:**
@@ -219,12 +219,12 @@ Vantage 라서 `Args` 에 `input` 이 없다.
 
 출력 dataclass에는 **`passed: bool` 이 있어야** 엔진이 통과/위반을 읽는다(`LNT-CONTRACT-007`).
 
-### Action 은 `input == output`
+### Act 는 `input == output`
 
-[`scripts/action_audit.py`](../examples/home-check/scripts/action_audit.py) 의 반환은
+[`scripts/act_audit.py`](../examples/home-check/scripts/act_audit.py) 의 반환은
 `returnResult(args.input)` 이다. 데이터 변환은 하지 않고 부작용만 낸다.
 input 타입과 output 타입이 다르면 등록이 실패한다(`LNT-CONTRACT-006`).
-클릭 결과를 뒷단이 알아야 하면 **후속 Sense 가 다시 관측한다.**
+클릭 결과를 뒷단이 알아야 하면 **후속 Collect 가 다시 관측한다.**
 
 ### 타입 어휘
 
@@ -253,7 +253,7 @@ input 타입과 output 타입이 다르면 등록이 실패한다(`LNT-CONTRACT-
 **그 밖에는 아무것도 금지하지 않는다.** 노드 안에서 AI 를 부르든 파일을 읽든 네트워크를
 타든 상관없다 — output 이 계약과 다르면 타입 검사에 걸린다. 순수성은 요구하지 않는다.
 
-`action_audit.py` 가 `${state.__startedAt}` 을 `params` 로 받아 로그에 찍는 것이
+`act_audit.py` 가 `${state.__startedAt}` 을 `params` 로 받아 로그에 찍는 것이
 이 규칙의 실제 사용례다. 돌리면 이렇게 남는다:
 
 ```
@@ -294,7 +294,7 @@ uv tool install lintomata --with 'selectolax>=0.3'
 > ```
 > $ uv tool install lintomata --with 'typing-extensions>=4'
 > Uninstalled 1 package in 1ms
->  - myproject-perceive-lib==0.1.0        ← 다른 스크립트가 쓰던 것이 사라졌다
+>  - myproject-extract-lib==0.1.0        ← 다른 스크립트가 쓰던 것이 사라졌다
 > ```
 >
 > 그래서 하나를 추가할 때도 **이미 쓰는 것을 전부 나열**한다:
@@ -341,8 +341,8 @@ from button_lib import is_button      # ✕ ModuleNotFoundError — 파일이 �
 (`schema.md` 1절). 네 층이 별개 파일인 이유가 이것이고, 이 문서 2절의
 `check_count` 하나가 `checkButtons`·`checkMenu` 두 자리에 쓰이는 것이 그 실물이다.
 
-**② 노드 재사용으로 안 풀리는 경우가 있다.** 예를 들어 **값 검증용 Perceive** 와
-**동일성 비교용 Perceive** 는 출력이 달라 별개 노드여야 하는데(`schema.md` 12절),
+**② 노드 재사용으로 안 풀리는 경우가 있다.** 예를 들어 **값 검증용 Extract** 와
+**동일성 비교용 Extract** 는 출력이 달라 별개 노드여야 하는데(`schema.md` 12절),
 *"무엇이 버튼인가"* 를 판정하는 로직은 같다. **그때가 라이브러리다.**
 
 ```bash
@@ -351,7 +351,7 @@ lintomata library add /abs/libraries/buttons.py       # ① 본체를 등록한�
 
 ```jsonc
 // ② 노드가 슬롯에 무엇을 쓸지 정한다 — **사용 선언**
-{ "type": "perceive", "script": "${ref.sc_a1b2c3d4}",
+{ "type": "extract", "script": "${ref.sc_a1b2c3d4}",
   "libraries": { "buttons": "${ref.lb_9f8e7d6c}" } }
 ```
 
@@ -390,16 +390,16 @@ found = buttons.collect(args.input.html, buttons.is_button)
 받지 않는다는 것이 차이다.
 
 ```
-uv tool install lintomata --with /path/to/myproject-perceive-lib --with 'selectolax>=0.3'
+uv tool install lintomata --with /path/to/myproject-extract-lib --with 'selectolax>=0.3'
 ```
 
 (`--with` 는 선언적이므로 **이미 쓰는 것을 함께 적는다** — 위 경고 참조.)
 
 ```python
 # /// script
-# dependencies = ["myproject-perceive-lib>=0.1"]
+# dependencies = ["myproject-extract-lib>=0.1"]
 # ///
-from myproject_perceive import is_button
+from myproject_extract import is_button
 ```
 
 헤더로 선언하면 **등록 시점에 확인된다**(`LNT-DEP-001`). 패키지는 파일이 아니라
@@ -440,9 +440,9 @@ from myproject_perceive import is_button
 단위테스트는 **돌린다**(선언대로 동작하는가). 저작 순서는 *등록으로 형식을 잡고 →
 테스트로 동작을 잡는다* 다.
 
-### ★ Perceive 테스트가 이 도구에서 가장 중요하다
+### ★ Extract 테스트가 이 도구에서 가장 중요하다
 
-**Perceive 가 틀리면 검사 전체가 조용히 무의미해진다.** 버튼을 잘못 세면 Reckon 은
+**Extract 가 틀리면 검사 전체가 조용히 무의미해진다.** 버튼을 잘못 세면 Judge 는
 그 잘못된 수를 기획과 대조해 통과나 위반을 낸다 — 리포트는 멀쩡해 보이는데 내용이 거짓이다.
 그래서 *"이 HTML 을 주면 버튼을 3개로 인식하는가"* 를 묻는 것이 **별도 검사 카테고리**다.
 
@@ -472,13 +472,13 @@ pass 3  violation 0  not_run 0  error 0
 EXIT=0
 ```
 
-### Action 은 `expect` 없이도 값 동일성이 자동 검사된다
+### Act 는 `expect` 없이도 값 동일성이 자동 검사된다
 
 `input == output` 이 계약이므로 **기대값이 곧 입력**이다. 적을 필요가 없다.
 [`nodes/audit.test.json`](../examples/home-check/nodes/audit.test.json) 은 케이스 하나에
 `expect` 가 없는데도 반환이 입력과 다르면 `LNT-TEST-005` 로 걸린다.
 
-### ★ Reckon 은 대조쌍이 필요하다
+### ★ Judge 는 대조쌍이 필요하다
 
 **`input` 은 같고 `params` 만 다른 통과/위반 쌍**을 둔다.
 [`nodes/check_count.test.json`](../examples/home-check/nodes/check_count.test.json) 의 앞 두 케이스가 그것이다:
@@ -498,15 +498,15 @@ EXIT=0
 안 쓰는 것이다** — 정적으로는 못 잡는 하드코딩을 여기서 잡는다.
 대조쌍 자체가 없으면 `LNT-TEST-006`(경고), 있는데 판정이 같으면 `LNT-TEST-007`(오류).
 
-`invalid/bad_reckon_hardcoded.py` 가 바로 그 경우다 — `Args.params` 에 기댓값 필드를
+`invalid/bad_judge_hardcoded.py` 가 바로 그 경우다 — `Args.params` 에 기댓값 필드를
 두고도 `runNode` 는 `args.input.count == 3` 을 박아 놨다:
 
 ```
-$ uv run lintomata node test $LINTOMATA_EXAMPLE_ROOT/invalid/bad_reckon_hardcoded.test.json
+$ uv run lintomata node test $LINTOMATA_EXAMPLE_ROOT/invalid/bad_judge_hardcoded.test.json
 pass 2  violation 0  not_run 0  error 1
-[pass] …/invalid/bad_reckon_hardcoded.json > cases[0] 기댓값 3 — 통과가 나온다 > bad-reckon-hardcoded
-[pass] …/invalid/bad_reckon_hardcoded.json > cases[1] input 은 같고 기댓값만 4 — 판정이 바뀌어야 하는데 안 바뀐다 > bad-reckon-hardcoded
-[error] …/invalid/bad_reckon_hardcoded.json > bad-reckon-hardcoded (LNT-TEST-007)
+[pass] …/invalid/bad_judge_hardcoded.json > cases[0] 기댓값 3 — 통과가 나온다 > bad-judge-hardcoded
+[pass] …/invalid/bad_judge_hardcoded.json > cases[1] input 은 같고 기댓값만 4 — 판정이 바뀌어야 하는데 안 바뀐다 > bad-judge-hardcoded
+[error] …/invalid/bad_judge_hardcoded.json > bad-judge-hardcoded (LNT-TEST-007)
     대조쌍의 판정이 같습니다.
     기댓값을 바꿨는데 판정이 안 바뀝니다 — 기댓값을 쓰지 않고 하드코딩하고 있습니다
     `기댓값 3 — 통과가 나온다` 과 `input 은 같고 기댓값만 4 — …` 은 `params` 가 다른데 판정이 둘 다 통과입니다.
@@ -517,7 +517,7 @@ EXIT=2
 **케이스 둘은 각각 통과했다.** 스크립트가 예외를 낸 것도, 타입이 틀린 것도 아니다.
 걸린 것은 *"판정이 갈리지 않는다"* 는 사실 쪽이다.
 
-> **결정성 검사(같은 입력 2회 실행 비교)는 하지 않는다** — AI 를 부르는 Perceive 가
+> **결정성 검사(같은 입력 2회 실행 비교)는 하지 않는다** — AI 를 부르는 Extract 가
 > 당연히 실패하기 때문이다.
 
 ---
@@ -532,7 +532,7 @@ uv run lintomata check     $LINTOMATA_EXAMPLE_ROOT/specs/home_ok.json
 uv run lintomata node test $LINTOMATA_EXAMPLE_ROOT/nodes/detect_buttons.test.json
 
 # (b) 등록 후 id 로. scripts → nodes → pipelines → specs 순서
-uv run lintomata script add $LINTOMATA_EXAMPLE_ROOT/scripts/perceive_buttons.py
+uv run lintomata script add $LINTOMATA_EXAMPLE_ROOT/scripts/extract_buttons.py
 uv run lintomata node   add $LINTOMATA_EXAMPLE_ROOT/nodes/detect_buttons.json
 uv run lintomata check      sp_xxxxxxxx
 uv run lintomata node test  nd_xxxxxxxx
@@ -605,7 +605,7 @@ EXIT=1
 ```
 
 **위반이 났는데도 뒷단이 멈추지 않았다** — 한 번의 실행에서 확인 가능한 실패를 전부 모은다.
-Reckon 이 낸 규칙 이름(`expectedCount`)과 문구가 리포트에 그대로 실린다.
+Judge 가 낸 규칙 이름(`expectedCount`)과 문구가 리포트에 그대로 실린다.
 
 **오류 + not run — 종료 2**
 
@@ -614,7 +614,7 @@ $ uv run lintomata check $LINTOMATA_EXAMPLE_ROOT/specs/home_missing.json
 pass 1  violation 0  not_run 5  error 1
 [pass] home_missing.json > plan[0] > page-check > pickPage
 [error] home_missing.json > plan[0] > page-check > readHtml
-    `runNode` 가 예외를 냈습니다: …/scripts/sense_read_html.py
+    `runNode` 가 예외를 냈습니다: …/scripts/collect_read_html.py
     FileNotFoundError: [Errno 2] No such file or directory: '…/targets/does_not_exist.html'
     스크립트 예외는 위반이 아니라 **오류**입니다 — 기획과 다른 것이 아니라 검사 자체가 못 돈 것입니다. 스크립트를 고치세요.
 [not_run] home_missing.json > plan[0] > page-check > audit
@@ -657,7 +657,7 @@ EXIT=0
 
 세 대상의 **HTML 은 완전히 다르다**(`<button>` / `class="btn"` / `role="button"`).
 인식 스크립트도 각각 다르다. 그런데 개념 층에서 같으므로 통과한다 — 이게 설계의 핵심 주장이다.
-**Reckon 은 없다.** 동등 비교는 도메인 지식이 아니라 일반 연산이라 엔진이 한다.
+**Judge 는 없다.** 동등 비교는 도메인 지식이 아니라 일반 연산이라 엔진이 한다.
 
 **비교 파이프라인 — 하나만 달라도 1**
 
@@ -689,13 +689,13 @@ EXIT=1
 | 시간·랜덤·subprocess·미선언 state, `dict`, `Optional` | `script add invalid/bad_banned.py` | `LNT-BAN-001/002/003/004`, `LNT-TYPE-001/002` | 시각은 `Args.state.__startedAt`, 외부 도구는 Spec 의 `tool`, 복합 타입은 dataclass, 없을 수 있는 필드는 **선언하지 않는다** |
 | 출력이 dataclass 가 아니다 (primitive 반환) | `script add invalid/bad_output_primitive.py` | `LNT-CONTRACT-003` | 값 하나라도 dataclass 로 감싼다 — 타입 동일성을 **구조로** 판정한다 |
 | PEP 723 헤더에 선언한 패키지가 환경에 없다 | `script add invalid/bad_dependency.py` | `LNT-DEP-001` | 메시지에 적힌 `uv tool install lintomata --with '...'` 를 그대로 실행한다. 헤더는 선언일 뿐이고 **격리 환경을 만들어 주지 않는다** |
-| Reckon 인데 판정 필드가 없다 (`ok` 로 지음) | `node add invalid/bad_reckon_no_verdict.json` | `LNT-CONTRACT-007` | 출력 dataclass 에 `passed: bool` 을 둔다 |
+| Judge 인데 판정 필드가 없다 (`ok` 로 지음) | `node add invalid/bad_judge_no_verdict.json` | `LNT-CONTRACT-007` | 출력 dataclass 에 `passed: bool` 을 둔다 |
 | 한 노드에 서로 다른 앞단 둘을 배선 | `pipeline add invalid/pipeline_ambiguous.json` | `LNT-GRAPH-003` | `Args.input` 은 필드 하나다. 앞단을 하나로 줄이거나 둘을 합치는 노드를 사이에 둔다 |
 | `when` 이 기다리는 상태로 가는 전이가 없다 | `pipeline add invalid/pipeline_dead_state.json` | `LNT-STATE-006` | `transitions` 를 추가하거나 `when` 을 지운다. 전이를 적는 자리는 **파이프라인 어휘** 쪽이다 |
 | 라이브러리에서 시간을 읽는다 | `library add invalid/lib_banned.py` | `LNT-BAN-001` | 금지는 스크립트와 **똑같이** 걸린다 — 여기가 뚫리면 금지가 통째로 우회된다 |
 | 라이브러리가 `dataclass` 를 선언한다 | `library add invalid/lib_dataclass.py` | `LNT-LIB-004` | 계약 타입은 스크립트에 둔다 (v1 제한) |
 | 스크립트가 요구한 슬롯을 노드가 배선 안 함 | `node add invalid/bad_unwired.json` | `LNT-LIB-001` | 노드 JSON 에 `libraries` 배선을 넣는다 |
-| Reckon 이 기댓값을 안 쓰고 하드코딩 | `node test invalid/bad_reckon_hardcoded.test.json` | `LNT-TEST-007` | `args.params` 의 기댓값을 실제로 읽는다. **정적으로는 못 잡혀 단위테스트에서 잡힌다** |
+| Judge 가 기댓값을 안 쓰고 하드코딩 | `node test invalid/bad_judge_hardcoded.test.json` | `LNT-TEST-007` | `args.params` 의 기댓값을 실제로 읽는다. **정적으로는 못 잡혀 단위테스트에서 잡힌다** |
 
 마지막 하나를 뺀 나머지는 **등록이 실패한다** — 등록소에 들어가지 않으므로 잘못된 것이 재사용될 일이 없다:
 

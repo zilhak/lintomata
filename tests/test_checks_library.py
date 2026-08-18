@@ -157,7 +157,7 @@ def node_of(script: str, libraries: dict[str, str]) -> Node:
     return Node.model_validate(
         {
             "info": {"name": "detect", "description": "설명"},
-            "type": "perceive",
+            "type": "extract",
             "script": script,
             "libraries": libraries,
         }

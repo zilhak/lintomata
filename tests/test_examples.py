@@ -94,7 +94,7 @@ def test_정상_spec_은_통과만_하고_종료코드_0(
 
     assert code == 0
     assert report["summary"] == {"pass": 7, "violation": 0, "not_run": 0, "error": 0}
-    # Action 이 실제로 부작용을 냈다 — `${state.__startedAt}` 이 들어온다.
+    # Act 가 실제로 부작용을 냈다 — `${state.__startedAt}` 이 들어온다.
     line = (example / "audit.log").read_text(encoding="utf-8").strip()
     stamp, source, size = line.split("\t")
     assert int(stamp) > 0
@@ -113,7 +113,7 @@ def test_어긋난_대상은_위반이고_종료코드_1(
 
     violations = {item["node"]: item for item in report["results"] if item["status"] == "violation"}
     assert set(violations) == {"checkButtons", "checkMenu"}
-    # Reckon 이 낸 규칙 이름과 문구가 리포트에 그대로 실린다.
+    # Judge 가 낸 규칙 이름과 문구가 리포트에 그대로 실린다.
     assert violations["checkButtons"]["rule"] == "expectedCount"
     assert "3개 기대, 2개 관측" in violations["checkButtons"]["message"]
     assert "4개 기대, 3개 관측" in violations["checkMenu"]["message"]
@@ -229,12 +229,12 @@ def test_모든_노드가_네_상태_중_정확히_하나에_들어간다(
 @pytest.mark.parametrize(
     "name",
     ["detect_buttons", "check_count", "audit"],
-    ids=["perceive", "reckon", "action"],
+    ids=["extract", "judge", "act"],
 )
 def test_노드_단위테스트가_경로로_돈다(
     example: Path, capsys: pytest.CaptureFixture[str], name: str
 ) -> None:
-    """Perceive(값검사) · Reckon(대조쌍) · Action(값 동일성 자동검사)."""
+    """Extract(값검사) · Judge(대조쌍) · Act(값 동일성 자동검사)."""
     code, report = run_json(capsys, "node", "test", str(NODES / f"{name}.test.json"))
 
     assert code == 0, report
@@ -272,9 +272,9 @@ def test_노드_단위테스트가_경로로_돈다(
             id="선언한-패키지가-환경에-없음",
         ),
         pytest.param(
-            ("node", "add", str(INVALID / "bad_reckon_no_verdict.json")),
+            ("node", "add", str(INVALID / "bad_judge_no_verdict.json")),
             {"LNT-CONTRACT-007"},
-            id="판정-필드-없는-Reckon",
+            id="판정-필드-없는-Judge",
         ),
         pytest.param(
             ("library", "add", str(INVALID / "lib_banned.py")),
@@ -332,7 +332,7 @@ def test_기댓값_하드코딩은_단위테스트가_잡는다(
     않았다). 걸리는 것은 **판정이 갈리지 않는다**는 사실 쪽이다.
     """
     code, report = run_json(
-        capsys, "node", "test", str(INVALID / "bad_reckon_hardcoded.test.json")
+        capsys, "node", "test", str(INVALID / "bad_judge_hardcoded.test.json")
     )
 
     assert code == 2

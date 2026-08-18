@@ -5,9 +5,9 @@
 | 카테고리 | 검사 대상 | 묻는 것 | 어디서 |
 |---|---|---|---|
 | 프로그램 검사 | Target | 기획대로 돌아가는가 | Spec 실행 |
-| **Perceive 스크립트 검사** | **Perceive 스크립트** | **개념을 제대로 인식하는가** | **여기** |
+| **Extract 스크립트 검사** | **Extract 스크립트** | **개념을 제대로 인식하는가** | **여기** |
 
-*"이 HTML 을 주면 버튼을 3개로 인식하는가"* 가 정확히 이것이다. Perceive 스크립트가
+*"이 HTML 을 주면 버튼을 3개로 인식하는가"* 가 정확히 이것이다. Extract 스크립트가
 틀리면 검사 전체가 **조용히** 무의미해지므로 별도 카테고리로 둔다. 별도 파이프라인은
 필요 없다 — `.test.json` 이 하는 일이 이미 그것이다.
 
@@ -36,9 +36,9 @@
 
 ### 노드 타입별로 추가되는 기본 검사
 
-- **Action — 값 동일성.** `input == output` 이 계약이므로 타입이 아니라 **값**이 같은지를
+- **Act — 값 동일성.** `input == output` 이 계약이므로 타입이 아니라 **값**이 같은지를
   자동 검사한다. 사용자가 `expect` 를 안 써도 된다 — **기대값이 곧 입력**이다 (`LNT-TEST-005`).
-- **Reckon — 기댓값 반응성.** "기댓값 하드코딩 금지" 는 정적으로는 `Args.params` 에 필드가
+- **Judge — 기댓값 반응성.** "기댓값 하드코딩 금지" 는 정적으로는 `Args.params` 에 필드가
   *있는지*까지만 본다. 받아놓고 안 쓰면 못 잡는다. `input` 이 같고 `params` 만 다른
   대조쌍이 없으면 **경고**(`LNT-TEST-006`), 있는데 판정이 전부 같으면 **오류**(`LNT-TEST-007`).
   → **정적으로는 못 잡는 하드코딩을 여기서 잡는다.**
@@ -46,7 +46,7 @@
 ### 결정성 검사는 하지 않는다
 
 같은 입력으로 두 번 돌려 같은 결과가 나오는지 보는 건 값싸고 강력하지만,
-**Perceive 안에서 AI 를 부르면 당연히 실패한다.** "노드 내부는 input/output 만 맞추면
+**Extract 안에서 AI 를 부르면 당연히 실패한다.** "노드 내부는 input/output 만 맞추면
 된다" 와 정면으로 충돌하므로 하지 않는다 (`schema.md` 16절 — 폐기된 안).
 
 ### ★ `LNT-TEST-006` 의 `status` 가 `violation` 인 이유
@@ -90,8 +90,8 @@ __all__ = [
     "check_requested_node",
     "run_case",
     "materialize_args",
-    "check_action_transparency",
-    "check_reckon_contrast",
+    "check_act_transparency",
+    "check_judge_contrast",
 ]
 
 
@@ -190,7 +190,7 @@ def run_node_test(
 ) -> list[Finding]:
     """단위테스트 전체를 돌린다. `lintomata node test <id>` 의 본체.
 
-    케이스별 결과 + 노드 타입별 추가 검사(Action 값 동일성, Reckon 대조쌍)를 합친다.
+    케이스별 결과 + 노드 타입별 추가 검사(Act 값 동일성, Judge 대조쌍)를 합친다.
 
     **★ `node_id` 를 받으면 그 id 의 등록소 노드가 정본이다** (R6-1).
     `node test <id>` 로 부른 경우가 그것이다 — 요청한 것이 그 노드이므로 테스트
@@ -274,12 +274,12 @@ def run_node_test(
         else:
             results.append(Finding(status="pass", path=where, node=node.info.name))
 
-    if node.type == "reckon":
+    if node.type == "judge":
         results.extend(
             item.model_copy(
                 update={"path": item.path or label, "node": item.node or node.info.name}
             )
-            for item in check_reckon_contrast(list(node_test.cases), outputs)
+            for item in check_judge_contrast(list(node_test.cases), outputs)
         )
     return results
 
@@ -413,7 +413,7 @@ def run_case(
     부수 효과로 **스텁 라이브러리를 배선해 스크립트를 단위테스트**할 수 있다
     (`schema.md` 6.5절).
 
-    반환값은 Reckon 대조쌍 검사가 이어서 쓴다. **믿을 수 없는 값은 `None` 으로 준다** —
+    반환값은 Judge 대조쌍 검사가 이어서 쓴다. **믿을 수 없는 값은 `None` 으로 준다** —
     타입이 안 맞는 출력으로 반응성을 논하면 결론이 거짓이 된다.
 
     `path` 는 비워 둔다 — 몇 번째 케이스인지는 부르는 쪽이 안다 (`run_node_test`).
@@ -494,13 +494,13 @@ def run_case(
                 )
             )
 
-    # ⑤ 노드 타입별 추가 — Action 은 `expect` 없이도 값 동일성을 본다.
-    if node.type == "action":
+    # ⑤ 노드 타입별 추가 — Act 는 `expect` 없이도 값 동일성을 본다.
+    if node.type == "act":
         # 노드 이름을 여기서 채운다 — 다른 TEST 규칙은 전부 `node` 가 차 있는데
-        # Action 결과만 비면 리포트의 노드 칸이 그 줄에서만 빈다 (R6-3).
+        # Act 결과만 비면 리포트의 노드 칸이 그 줄에서만 빈다 (R6-3).
         findings.extend(
             item.model_copy(update={"node": item.node or who})
-            for item in check_action_transparency(
+            for item in check_act_transparency(
                 case, getattr(args, "input", None), output
             )
         )
@@ -586,17 +586,17 @@ def _read_bytes(value: Mapping[str, Any], env: Mapping[str, str], contract: Scri
 # ── 노드 타입별 추가 검사 ────────────────────────────────────────────────────
 
 
-def check_action_transparency(case: TestCase, input_value: Any, output_value: Any) -> list[Finding]:
-    """Action 노드의 **값 동일성** 검사 (`LNT-TEST-005`).
+def check_act_transparency(case: TestCase, input_value: Any, output_value: Any) -> list[Finding]:
+    """Act 노드의 **값 동일성** 검사 (`LNT-TEST-005`).
 
-    Action 은 데이터를 그대로 통과시켜야 한다 — 부작용만 일으키고 값은 건드리지 않는다.
+    Act 는 데이터를 그대로 통과시켜야 한다 — 부작용만 일으키고 값은 건드리지 않는다.
     `input == output` 이 계약이므로 **기대값이 곧 입력**이고, 사용자가 `expect` 를 쓰지
     않아도 자동으로 검사된다.
 
     비교는 **표현을 벗겨낸 값**으로 한다. 앞단 dataclass 와 반환 dataclass 는 이름이
     달라도 되고(타입 동일성은 구조로 판정한다), 같은 구조면 같은 값이어야 한다.
 
-    입력이 없으면 대조할 것이 없다 — `Args.input` 없는 Action 은 `LNT-CONTRACT-006` 이
+    입력이 없으면 대조할 것이 없다 — `Args.input` 없는 Act 는 `LNT-CONTRACT-006` 이
     등록 시점에 이미 잡는다.
     """
     if input_value is None:
@@ -618,11 +618,11 @@ def check_action_transparency(case: TestCase, input_value: Any, output_value: An
     ]
 
 
-def check_reckon_contrast(
+def check_judge_contrast(
     cases: list[TestCase],
     outputs: list[Any],
 ) -> list[Finding]:
-    """Reckon 노드의 **기댓값 반응성** 검사 (`LNT-TEST-006` 경고 / `-007` 오류).
+    """Judge 노드의 **기댓값 반응성** 검사 (`LNT-TEST-006` 경고 / `-007` 오류).
 
     `input` 이 같고 `params` 만 다른 대조쌍을 찾아 **판정이 실제로 갈리는지** 본다.
     값을 흔들어보는 것만으론 안 된다 — `expected=3` 도 `expected=4` 도 실제가 2개면
@@ -688,7 +688,7 @@ def check_reckon_contrast(
 
 
 def _verdict_of(output: Any) -> bool | None:
-    """Reckon 출력에서 판정을 읽는다. 읽을 수 없으면 `None`.
+    """Judge 출력에서 판정을 읽는다. 읽을 수 없으면 `None`.
 
     필드 이름은 `engine.runtime` 이 정본이다 — 여기서 다시 정의하면 두 벌이 된다.
     """

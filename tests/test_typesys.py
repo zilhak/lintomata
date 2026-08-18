@@ -429,14 +429,14 @@ def test_same_field_name_same_type_across_a_component_is_fine() -> None:
 
 
 def test_merged_field_type_resolves_in_the_contributing_origin() -> None:
-    """(a) 가장 흔한 노드 조합 — Sense 의 `Args` 가 Reckon 의 `Args` 와 병합된다."""
+    """(a) 가장 흔한 노드 조합 — Collect 의 `Args` 가 Judge 의 `Args` 와 병합된다."""
     reg = normalized(
-        dc("Args", origin="sense.py", input="str"),
-        dc("P", origin="reckon.py", expected="int"),
-        dc("Args", origin="reckon.py", input="str", params="P"),
+        dc("Args", origin="collect.py", input="str"),
+        dc("P", origin="judge.py", expected="int"),
+        dc("Args", origin="judge.py", input="str", params="P"),
     )
-    model = reg.build_model(k("Args", "sense.py"))
-    # `params` 는 reckon.py 가 기여한 필드다 — sense.py 에는 `P` 가 없다
+    model = reg.build_model(k("Args", "collect.py"))
+    # `params` 는 judge.py 가 기여한 필드다 — collect.py 에는 `P` 가 없다
     assert set(model.model_fields) == {"input", "params"}
     assert model.model_validate({"input": "x"}).params is None
     assert model.model_validate({"input": "x", "params": {"expected": 3}}).params.expected == 3

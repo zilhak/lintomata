@@ -33,11 +33,11 @@ from lintomata.store.entries import Store
 
 # ── 스크립트 본문 ────────────────────────────────────────────────────────────
 
-VANTAGE = """
+PREPARE = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
@@ -48,15 +48,15 @@ VANTAGE = """
     class Args:
         params: Params
 
-    def runNode(args: Args) -> Scene:
-        return returnResult(Scene(url=args.params.url))
+    def runNode(args: Args) -> Context:
+        return returnResult(Context(url=args.params.url))
 """
 
-VANTAGE_TITLE = """
+PREPARE_TITLE = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         title: str
 
     @dataclass
@@ -67,34 +67,34 @@ VANTAGE_TITLE = """
     class Args:
         params: Params
 
-    def runNode(args: Args) -> Scene:
-        return returnResult(Scene(title=args.params.url))
+    def runNode(args: Args) -> Context:
+        return returnResult(Context(title=args.params.url))
 """
 
-PERCEIVE = """
+EXTRACT = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count=len(args.input.url)))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count=len(args.input.url)))
 """
 
-RECKON = """
+JUDGE = """
     from dataclasses import dataclass
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
@@ -109,7 +109,7 @@ RECKON = """
 
     @dataclass
     class Args:
-        input: Percept
+        input: Meaning
         params: Expect
 
     def runNode(args: Args) -> Verdict:
@@ -125,30 +125,30 @@ RAISES = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
 
-    def runNode(args: Args) -> Percept:
+    def runNode(args: Args) -> Meaning:
         raise RuntimeError("여기서 터진다")
 """
 
-PERCEIVE_WHEN = """
+EXTRACT_WHEN = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
@@ -157,18 +157,18 @@ PERCEIVE_WHEN = """
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
         state: State
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count=len(args.input.url)))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count=len(args.input.url)))
 """
 
-RECKON_WHEN = """
+JUDGE_WHEN = """
     from dataclasses import dataclass
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
@@ -187,7 +187,7 @@ RECKON_WHEN = """
 
     @dataclass
     class Args:
-        input: Percept
+        input: Meaning
         params: Expect
         state: State
 
@@ -204,21 +204,21 @@ RAISES_AT_RUN = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
 
-    def runNode(args: Args) -> Percept:
+    def runNode(args: Args) -> Meaning:
         if args.input.url:
             raise RuntimeError("여기서 터진다")
-        return returnResult(Percept(count=0))
+        return returnResult(Meaning(count=0))
 """
 """등록 검사는 통과하고 **돌려야 터지는** 스크립트 — 단위테스트가 잡는 자리다."""
 
@@ -226,11 +226,11 @@ BROKEN = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     def 진입점이_없다(args):
-        return Scene(url="x")
+        return Context(url="x")
 """
 
 LIBRARY = """
@@ -348,20 +348,20 @@ def project(tmp_path: Path) -> Project:
 
 def three_nodes(project: Project) -> tuple[Path, Path, Path]:
     """`page → buttons → check` 세 노드. 전부 절대경로로 이어 붙인다."""
-    page = project.node("page", "vantage", project.script("page", VANTAGE))
-    buttons = project.node("buttons", "perceive", project.script("buttons", PERCEIVE))
-    check = project.node("check", "reckon", project.script("check", RECKON))
+    page = project.node("page", "prepare", project.script("page", PREPARE))
+    buttons = project.node("buttons", "extract", project.script("buttons", EXTRACT))
+    check = project.node("check", "judge", project.script("check", JUDGE))
     return page, buttons, check
 
 
 def wiring(page: Path, buttons: Path, check: Path) -> list[dict[str, Any]]:
     return [
         {"id": "page", "source": str(page), "params": {"url": "${config.url}"}},
-        {"id": "buttons", "source": str(buttons), "inputs": {"scene": "page"}},
+        {"id": "buttons", "source": str(buttons), "inputs": {"context": "page"}},
         {
             "id": "check",
             "source": str(check),
-            "inputs": {"percept": "buttons"},
+            "inputs": {"meaning": "buttons"},
             "params": {"expected": "${config.expected}"},
         },
     ]
@@ -386,15 +386,15 @@ def rule_ids(out: str) -> set[str]:
 
 def register_all(project: Project) -> dict[str, str]:
     """스크립트 → 노드 → 파이프라인 → Spec 을 **참조로 이어서** 전부 등록한다."""
-    page_script = project.script("page", VANTAGE)
-    buttons_script = project.script("buttons", PERCEIVE)
+    page_script = project.script("page", PREPARE)
+    buttons_script = project.script("buttons", EXTRACT)
     assert project.run("script", "add", str(page_script)) == 0
     assert project.run("script", "add", str(buttons_script)) == 0
     sc_page = project.id_of("script", "page")
     sc_buttons = project.id_of("script", "buttons")
 
-    page = project.node("page", "vantage", f"${{ref.{sc_page}}}")
-    buttons = project.node("buttons", "perceive", f"${{ref.{sc_buttons}}}")
+    page = project.node("page", "prepare", f"${{ref.{sc_page}}}")
+    buttons = project.node("buttons", "extract", f"${{ref.{sc_buttons}}}")
     assert project.run("node", "add", str(page)) == 0
     assert project.run("node", "add", str(buttons)) == 0
     nd_page = project.id_of("node", "page")
@@ -411,7 +411,7 @@ def register_all(project: Project) -> dict[str, str]:
             {
                 "id": "buttons",
                 "source": f"${{ref.{nd_buttons}}}",
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
         ],
     )
@@ -492,7 +492,7 @@ def test_CRUD_넷이_종류_다섯_모두에_대해_돈다(
 def test_json_출력이_기계가_읽는_형태다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert project.run("script", "add", str(project.script("page", VANTAGE))) == 0
+    assert project.run("script", "add", str(project.script("page", PREPARE))) == 0
     entry_id = project.only("script")
     capsys.readouterr()
 
@@ -576,7 +576,7 @@ def test_아무도_안_쓰는_라이브러리는_목록에_드러난다(
 
 
 def test_잘못된_노드를_add_하면_등록되지_않는다(project: Project) -> None:
-    node = project.node("bad", "perceive", project.script("bad", BROKEN))
+    node = project.node("bad", "extract", project.script("bad", BROKEN))
     assert project.run("node", "add", str(node)) == 2
     assert project.ids("node") == []
 
@@ -591,7 +591,7 @@ def test_앞단이_모호한_파이프라인은_add_에서_걸린다(
     """
     page, buttons, check = three_nodes(project)
     nodes = wiring(page, buttons, check)
-    nodes[2]["inputs"] = {"percept": "buttons", "other": "page"}
+    nodes[2]["inputs"] = {"meaning": "buttons", "other": "page"}
     ambiguous = project.pipeline("ambiguous", nodes)
 
     assert project.run("pipeline", "add", str(ambiguous)) == 2
@@ -607,7 +607,7 @@ def test_같은_앞단을_두_이름으로_받는_파이프라인은_그대로_�
     """값은 하나이므로 모호할 것이 없다 — 걸리는 것은 **서로 다른 노드**뿐이다."""
     page, buttons, check = three_nodes(project)
     nodes = wiring(page, buttons, check)
-    nodes[2]["inputs"] = {"percept": "buttons", "also": "buttons"}
+    nodes[2]["inputs"] = {"meaning": "buttons", "also": "buttons"}
 
     assert project.run("pipeline", "add", str(project.pipeline("twice", nodes))) == 0
 
@@ -622,7 +622,7 @@ def test_없는_파일을_add_하면_오류다(
 def test_update_도_통과해야_성사된다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    good = project.script("page", VANTAGE)
+    good = project.script("page", PREPARE)
     assert project.run("script", "add", str(good)) == 0
     entry_id = project.only("script")
     before = project.store.read(entry_id)
@@ -644,7 +644,7 @@ def test_update_는_id_를_유지하고_상위를_전이적으로_재검증한�
     capsys.readouterr()
 
     # 스크립트의 출력 타입을 바꾼다 — 스크립트 자체는 여전히 정상이다.
-    changed = project.script("page", VANTAGE_TITLE)
+    changed = project.script("page", PREPARE_TITLE)
     assert project.run("script", "update", ids["script"], str(changed)) == 1
 
     out = capsys.readouterr().out
@@ -673,7 +673,7 @@ def test_참조_대상이_검증_깨짐이면_상위도_깨짐으로_나온다(
     **돌릴 수 없다.** `spec list` 만 보는 사람에게 `○` 는 거짓말이다.
     """
     ids = register_all(project)
-    assert project.run("script", "update", ids["script"], str(project.script("page", VANTAGE_TITLE))) == 1
+    assert project.run("script", "update", ids["script"], str(project.script("page", PREPARE_TITLE))) == 1
     capsys.readouterr()
 
     assert project.run("spec", "list") == 1
@@ -692,8 +692,8 @@ def test_아래가_고쳐지면_상위의_전이_표시도_사라진다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ids = register_all(project)
-    assert project.run("script", "update", ids["script"], str(project.script("page", VANTAGE_TITLE))) == 1
-    assert project.run("script", "update", ids["script"], str(project.script("page", VANTAGE))) == 0
+    assert project.run("script", "update", ids["script"], str(project.script("page", PREPARE_TITLE))) == 1
+    assert project.run("script", "update", ids["script"], str(project.script("page", PREPARE))) == 0
     capsys.readouterr()
 
     assert project.run("spec", "list") == 0
@@ -720,8 +720,8 @@ def test_상위가_다시_통과하면_검증_깨짐_표시가_걷힌다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ids = register_all(project)
-    assert project.run("script", "update", ids["script"], str(project.script("page", VANTAGE_TITLE))) == 1
-    assert project.run("script", "update", ids["script"], str(project.script("page", VANTAGE))) == 0
+    assert project.run("script", "update", ids["script"], str(project.script("page", PREPARE_TITLE))) == 1
+    assert project.run("script", "update", ids["script"], str(project.script("page", PREPARE))) == 0
     capsys.readouterr()
 
     assert project.store.show(ids["pipeline"]).broken == ""
@@ -755,7 +755,7 @@ def test_remove_후_list_가_참조_깨짐을_표시한다(
 def test_참조가_없으면_remove_는_0_이다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert project.run("script", "add", str(project.script("page", VANTAGE))) == 0
+    assert project.run("script", "add", str(project.script("page", PREPARE))) == 0
     entry_id = project.only("script")
     capsys.readouterr()
     assert project.run("script", "remove", entry_id) == 0
@@ -768,7 +768,7 @@ def test_참조가_없으면_remove_는_0_이다(
 def test_종류가_다른_id_를_주면_사용법_오류다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert project.run("script", "add", str(project.script("page", VANTAGE))) == 0
+    assert project.run("script", "add", str(project.script("page", PREPARE))) == 0
     entry_id = project.only("script")
     capsys.readouterr()
 
@@ -836,18 +836,18 @@ def test_위반은_error_카운트를_올리지_않는다(
 def test_스크립트가_터지면_2_다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    page = project.node("page", "vantage", project.script("page", VANTAGE))
-    boom = project.node("boom", "perceive", project.script("boom", RAISES))
-    check = project.node("check", "reckon", project.script("check", RECKON))
+    page = project.node("page", "prepare", project.script("page", PREPARE))
+    boom = project.node("boom", "extract", project.script("boom", RAISES))
+    check = project.node("check", "judge", project.script("check", JUDGE))
     pipeline = project.pipeline(
         "boom",
         [
             {"id": "page", "source": str(page), "params": {"url": "${config.url}"}},
-            {"id": "boom", "source": str(boom), "inputs": {"scene": "page"}},
+            {"id": "boom", "source": str(boom), "inputs": {"context": "page"}},
             {
                 "id": "check",
                 "source": str(check),
-                "inputs": {"percept": "boom"},
+                "inputs": {"meaning": "boom"},
                 "params": {"expected": "${config.expected}"},
             },
         ],
@@ -1007,9 +1007,9 @@ def test_not_run_만_나와도_종료_코드는_1_이다(
     하지 않고(등록 통과), config 가 풀린 실행 시점에 못 닿은 것으로 밝혀진다.
     그건 등록 실패도 오류도 아니라 **`not_run(state_unreachable)`** 이다.
     """
-    page = project.node("page", "vantage", project.script("page", VANTAGE))
-    seen = project.node("seen", "perceive", project.script("seen", PERCEIVE_WHEN))
-    late = project.node("late", "reckon", project.script("late", RECKON_WHEN))
+    page = project.node("page", "prepare", project.script("page", PREPARE))
+    seen = project.node("seen", "extract", project.script("seen", EXTRACT_WHEN))
+    late = project.node("late", "judge", project.script("late", JUDGE_WHEN))
     pipeline = project.pipeline(
         "settle",
         [
@@ -1017,14 +1017,14 @@ def test_not_run_만_나와도_종료_코드는_1_이다(
             {
                 "id": "seen",
                 "source": str(seen),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
                 "states": {"ready": "done"},
                 "when": {"state": "ready"},
             },
             {
                 "id": "late",
                 "source": str(late),
-                "inputs": {"percept": "seen"},
+                "inputs": {"meaning": "seen"},
                 "params": {"expected": "${config.expected}"},
                 "states": {"fresh": "loading"},
                 "when": {"state": "fresh"},
@@ -1099,7 +1099,7 @@ def test_tool_경로가_규칙을_지키면_그냥_돈다(
 
 def node_with_test(project: Project) -> tuple[Path, Path]:
     """노드 파일과 **그 옆의** `<노드파일>.test.json` 을 만든다."""
-    node = project.node("page", "vantage", project.script("page", VANTAGE))
+    node = project.node("page", "prepare", project.script("page", PREPARE))
     test = write_json(
         node.with_suffix(".test.json"),
         {
@@ -1175,7 +1175,7 @@ def test_ref_로_노드를_가리킨_테스트는_원본을_지워도_돈다(
 
 def test_테스트가_없는_노드도_정상_등록된다(project: Project) -> None:
     """**없으면 그냥 없는 것이다 — 오류가 아니다.**"""
-    node = project.node("page", "vantage", project.script("page", VANTAGE))
+    node = project.node("page", "prepare", project.script("page", PREPARE))
     assert project.run("node", "add", str(node)) == 0
     assert project.store.has_test(project.only("node")) is False
 
@@ -1192,25 +1192,25 @@ def test_node_show_가_단위테스트_유무를_드러낸다(
     assert "단위테스트" in capsys.readouterr().out
 
 
-VANTAGE_PEP723 = """
+PREPARE_PEP723 = """
     # /// script
     # requires-python = ">=3.11"
     # dependencies = ["pydantic>=2"]
     # ///
-""" + VANTAGE
+""" + PREPARE
 
-VANTAGE_MISSING_DEP = """
+PREPARE_MISSING_DEP = """
     # /// script
     # dependencies = ["definitely-not-installed-xyz"]
     # ///
-""" + VANTAGE
+""" + PREPARE
 
 
 def test_script_show_가_선언된_의존성을_드러낸다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """PEP 723 선언이 등록소에 기록되고 `show` 에 보인다 (`schema.md` 6절)."""
-    assert project.run("script", "add", str(project.script("page", VANTAGE_PEP723))) == 0
+    assert project.run("script", "add", str(project.script("page", PREPARE_PEP723))) == 0
     script_id = project.only("script")
     capsys.readouterr()
 
@@ -1223,7 +1223,7 @@ def test_선언한_패키지가_없으면_등록되지_않는다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """**오류(2) 다** — 위반이 아니라 도구가 못 도는 상태다. 메시지에 설치 명령이 있다."""
-    source = project.script("page", VANTAGE_MISSING_DEP)
+    source = project.script("page", PREPARE_MISSING_DEP)
     assert project.run("script", "add", str(source)) == 2
     out = capsys.readouterr().out
     assert "LNT-DEP-001" in out
@@ -1236,17 +1236,17 @@ def test_안내_명령이_등록소의_선언을_전부_포함한다(
 ) -> None:
     """★ `uv tool install --with` 는 **선언적**이다 — 하나만 안내하면 그대로 따른 AI 가
     **다른 스크립트의 의존성을 지운다.** 등록소가 아는 선언을 전부 넣는다."""
-    first = VANTAGE_PEP723  # pydantic>=2
+    first = PREPARE_PEP723  # pydantic>=2
     second = """
     # /// script
     # dependencies = ["packaging>=23"]
     # ///
-""" + VANTAGE
+""" + PREPARE
     assert project.run("script", "add", str(project.script("a", first))) == 0
     assert project.run("script", "add", str(project.script("b", second))) == 0
     capsys.readouterr()
 
-    assert project.run("script", "add", str(project.script("c", VANTAGE_MISSING_DEP))) == 2
+    assert project.run("script", "add", str(project.script("c", PREPARE_MISSING_DEP))) == 2
     out = capsys.readouterr().out
     assert "--with 'definitely-not-installed-xyz'" in out
     assert "--with 'pydantic>=2'" in out
@@ -1258,7 +1258,7 @@ def test_등록소가_비어도_안내가_나온다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """폴백 — 단순 형태. 여기서 예외를 내지 않는다."""
-    assert project.run("script", "add", str(project.script("c", VANTAGE_MISSING_DEP))) == 2
+    assert project.run("script", "add", str(project.script("c", PREPARE_MISSING_DEP))) == 2
     out = capsys.readouterr().out
     assert (
         "uv tool install lintomata --with 'definitely-not-installed-xyz'" in out
@@ -1322,7 +1322,7 @@ def test_node_test_는_실패를_그대로_종료_코드로_낸다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """스크립트가 터지면 `LNT-TEST-002` 이고 **오류이므로 종료 코드 2** 다."""
-    node = project.node("boom", "perceive", project.script("boom", RAISES_AT_RUN))
+    node = project.node("boom", "extract", project.script("boom", RAISES_AT_RUN))
     test_file = write_json(
         node.with_suffix(".test.json"),
         {
@@ -1347,8 +1347,8 @@ def test_id_로_부르면_테스트가_다른_노드를_가리켜도_그_id_를_
     노드를 돌리고 `[pass]`** 를 낸다. lint 도구에서 가장 나쁜 종류다 —
     통과했다고 보고하는데 검사한 것이 다른 것이다.
     """
-    a = project.node("a", "vantage", project.script("a", VANTAGE))
-    b = project.node("b", "vantage", project.script("b", VANTAGE_TITLE))
+    a = project.node("a", "prepare", project.script("a", PREPARE))
+    b = project.node("b", "prepare", project.script("b", PREPARE_TITLE))
     # a 의 테스트가 **b 를 가리킨다.**
     write_json(
         a.with_suffix(".test.json"),
@@ -1380,7 +1380,7 @@ def test_경로로_부르면_지금처럼_node_필드를_따른다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`node test <경로>` 에는 요청한 id 가 없다 — `node` 필드가 실행 대상이다."""
-    b = project.node("b", "vantage", project.script("b", VANTAGE_TITLE))
+    b = project.node("b", "prepare", project.script("b", PREPARE_TITLE))
     test_file = write_json(
         project.root / "nodes" / "a.test.json",
         {
@@ -1441,7 +1441,7 @@ def test_등록소의_test_json_을_직접_고치면_STR_REG_001(
 def test_test_json_이_없으면_오류다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert project.run("node", "add", str(project.node("page", "vantage", project.script("page", VANTAGE)))) == 0
+    assert project.run("node", "add", str(project.node("page", "prepare", project.script("page", PREPARE)))) == 0
     node_id = project.only("node")
     capsys.readouterr()
 
@@ -1497,7 +1497,7 @@ def test_LINTOMATA_HOME_을_따른다(
     monkeypatch.setenv("HOME", str(fake_user_home))
 
     project = Project(tmp_path)
-    script = project.script("page", VANTAGE)
+    script = project.script("page", PREPARE)
 
     # `--home` 없이 — `$LINTOMATA_HOME` 이 잡는다
     assert cli.main(["script", "add", str(script)]) == 0
@@ -1531,19 +1531,19 @@ USES_LIBRARY = """
     from lintomata_lib import shared
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count=shared.measure(args.input.url)))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count=shared.measure(args.input.url)))
 """
 
 USES_OTHER_SLOT = """
@@ -1552,31 +1552,31 @@ USES_OTHER_SLOT = """
     from lintomata_lib import 다른슬롯
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count=다른슬롯.measure(args.input.url)))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count=다른슬롯.measure(args.input.url)))
 """
 
 
 def node_with_libraries(
     project: Project, name: str, script: Path, libraries: dict[str, str]
 ) -> Path:
-    """`libraries` 배선을 갖는 Perceive 노드 파일."""
+    """`libraries` 배선을 갖는 Extract 노드 파일."""
     return write_json(
         project.root / "nodes" / f"{name}.json",
         {
             "info": {"name": name, "description": f"{name} 노드"},
-            "type": "perceive",
+            "type": "extract",
             "script": str(script),
             "libraries": libraries,
         },
@@ -1595,7 +1595,7 @@ def library_project(project: Project, *, by_ref: bool) -> dict[str, str]:
 
     buttons = project.script("buttons", USES_LIBRARY)
     wiring_value = f"${{ref.{lb}}}" if by_ref else str(library)
-    page = project.node("page", "vantage", project.script("page", VANTAGE))
+    page = project.node("page", "prepare", project.script("page", PREPARE))
     node = node_with_libraries(project, "buttons", buttons, {"shared": wiring_value})
     assert project.run("node", "add", str(page)) == 0
     assert project.run("node", "add", str(node)) == 0
@@ -1605,7 +1605,7 @@ def library_project(project: Project, *, by_ref: bool) -> dict[str, str]:
         "with-library",
         [
             {"id": "page", "source": str(page), "params": {"url": "${config.url}"}},
-            {"id": "buttons", "source": f"${{ref.{nd}}}", "inputs": {"scene": "page"}},
+            {"id": "buttons", "source": f"${{ref.{nd}}}", "inputs": {"context": "page"}},
         ],
     )
     assert project.run("pipeline", "add", str(pipeline)) == 0
@@ -1631,7 +1631,7 @@ def test_슬롯을_요구하는데_배선이_없으면_등록되지_않는다(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """능력 선언(스크립트)에 사용 선언(노드)이 답하지 않았다."""
-    node = project.node("buttons", "perceive", project.script("buttons", USES_LIBRARY))
+    node = project.node("buttons", "extract", project.script("buttons", USES_LIBRARY))
 
     assert project.run("node", "add", str(node)) == 2
 
@@ -1648,7 +1648,7 @@ def test_안_쓰는_배선은_등록되지_않는다(
     capsys.readouterr()
 
     node = node_with_libraries(
-        project, "buttons", project.script("buttons", PERCEIVE), {"shared": str(library)}
+        project, "buttons", project.script("buttons", EXTRACT), {"shared": str(library)}
     )
     assert project.run("node", "add", str(node)) == 2
 
@@ -1659,7 +1659,7 @@ def test_라이브러리_자리에_스크립트를_배선하면_STR_REG_003(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """**새 규칙을 파지 않았다** — 자리와 접두가 안 맞는 것은 이미 그 규칙의 자리다."""
-    assert project.run("script", "add", str(project.script("page", VANTAGE))) == 0
+    assert project.run("script", "add", str(project.script("page", PREPARE))) == 0
     sc = project.only("script")
     capsys.readouterr()
 

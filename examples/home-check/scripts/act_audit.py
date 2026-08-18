@@ -1,4 +1,4 @@
-"""Action — 행위. 관측 사실을 감사 로그에 한 줄 남기고 **값은 그대로 흘려보낸다.**
+"""Act — 행위. 관측 사실을 감사 로그에 한 줄 남기고 **값은 그대로 흘려보낸다.**
 
 `input == output` 이 계약이다. 데이터 변환은 하지 않고 부작용만 일으킨다.
 실행 시각은 엔진이 `${state.__startedAt}` 로 `params` 에 넣어 준다 — 스크립트가
@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 @dataclass
-class Sensum:
+class Data:
     source: str
     html: str
 
@@ -23,11 +23,11 @@ class AuditParams:
 
 @dataclass
 class Args:
-    input: Sensum
+    input: Data
     params: AuditParams
 
 
-def runNode(args: Args) -> Sensum:
+def runNode(args: Args) -> Data:
     line = f"{args.params.startedAt}\t{args.input.source}\t{len(args.input.html)}\n"
     Path(args.params.logPath).parent.mkdir(parents=True, exist_ok=True)
     with open(args.params.logPath, "a", encoding="utf-8") as handle:

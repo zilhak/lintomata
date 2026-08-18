@@ -1,0 +1,5 @@
+{
+  "info": { "name": "bad-judge-no-verdict", "description": "판정 필드가 없는 Judge — 등록이 실패해야 한다" },
+  "type": "judge",
+  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/invalid/bad_judge_no_verdict.py"
+}

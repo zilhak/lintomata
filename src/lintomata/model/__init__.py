@@ -60,7 +60,7 @@ ID_PREFIXES: dict[str, EntryKind] = {
 }
 """자동 발급 id 의 접두 → 종류. **종류는 id 접두가 말해준다** (`schema.md` 2절)."""
 
-NodeType = Literal["vantage", "sense", "perceive", "reckon", "action"]
+NodeType = Literal["prepare", "collect", "extract", "judge", "act"]
 """다섯 노드 타입 (`schema.md` 5절). 노드 파일의 `type` 필드."""
 
 PipelineKind = Literal["verify", "compare"]
@@ -286,7 +286,7 @@ class Pipeline(BaseModel):
 
     compare: list[str] = Field(default_factory=list)
     """**`kind: compare` 전용.** 어느 노드의 출력을 target 간에 비교하는지.
-    비교는 `Percept` 층에서 한다 — `Sensum` 은 비교 대상이 아니다."""
+    비교는 `Meaning` 층에서 한다 — `Data` 는 비교 대상이 아니다."""
 
 
 # ── Node (`schema.md` 5절) ───────────────────────────────────────────────────

@@ -47,12 +47,12 @@ def registered(
         return out.split()[0]
 
     library_id = add("library", work / "libraries" / "buttons.py")
-    script_id = add("script", work / "scripts" / "perceive_buttons.py")
+    script_id = add("script", work / "scripts" / "extract_buttons.py")
     node_file = work / "nodes" / "detect_buttons.json"
     node_file.write_text(
         node_file.read_text("utf-8")
         .replace(
-            "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/perceive_buttons.py",
+            "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/extract_buttons.py",
             "${ref." + script_id + "}",
         )
         .replace(

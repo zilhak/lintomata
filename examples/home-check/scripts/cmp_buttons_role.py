@@ -1,4 +1,4 @@
-"""비교용 Perceive (target: gamma) — `role="button"` 으로 버튼을 인식한다.
+"""비교용 Extract (target: gamma) — `role="button"` 으로 버튼을 인식한다.
 
 마크업은 `<a>` 링크지만 역할이 버튼이므로 버튼으로 센다.
 
@@ -11,24 +11,24 @@ from lintomata_lib import buttons
 
 
 @dataclass
-class Sensum:
+class Data:
     source: str
     html: str
 
 
 @dataclass
 class Args:
-    input: Sensum
+    input: Data
 
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
     labels: list[str]
 
 
-def runNode(args: Args) -> Percept:
+def runNode(args: Args) -> Meaning:
     labels = buttons.collect(
         args.input.html, lambda tag, attrs: attrs.get("role") == "button"
     )
-    return returnResult(Percept(count=len(labels), labels=labels))
+    return returnResult(Meaning(count=len(labels), labels=labels))

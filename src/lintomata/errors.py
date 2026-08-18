@@ -73,7 +73,7 @@ class Finding(BaseModel):
     """노드 id. 리포트 누적 단위는 **노드별**이다."""
 
     rule_id: str = Field(default="", serialization_alias="rule")
-    """`LNT-<CATEGORY>-<NNN>` (`rules.md` 1절). 값 검증 위반은 Reckon 이 낸 규칙 이름이 올 수도 있다."""
+    """`LNT-<CATEGORY>-<NNN>` (`rules.md` 1절). 값 검증 위반은 Judge 가 낸 규칙 이름이 올 수도 있다."""
 
     message: str = ""
     """사람/AI 가 읽는 설명. 규칙의 `message` + `guide` 가 이어붙은 것."""

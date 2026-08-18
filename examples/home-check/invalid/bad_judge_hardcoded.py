@@ -1,4 +1,4 @@
-"""★ 일부러 기댓값을 하드코딩한 Reckon — **등록은 통과하고 단위테스트가 잡아야** 정상이다.
+"""★ 일부러 기댓값을 하드코딩한 Judge — **등록은 통과하고 단위테스트가 잡아야** 정상이다.
 
 `Args.params` 에 기댓값 필드가 **있기는 하다**(그래서 `LNT-CONTRACT-005` 는 안 걸린다).
 그런데 `runNode` 가 그 값을 쓰지 않고 3 을 박아 놨다. 정적으로는 못 잡는 자리이고,
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
     labels: list[str]
 
@@ -30,7 +30,7 @@ class Verdict:
 
 @dataclass
 class Args:
-    input: Percept
+    input: Meaning
     params: ExpectParams
 
 

@@ -36,7 +36,7 @@
 
 ⚠ 오배선 탐지력이 약해지는 것은 **감수한다**. `ButtonCount(count:int)` 와
 `MenuCount(count:int)` 는 동일하다. 배선은 파이프라인 JSON 에 노드 id 로 명시적으로
-쓰므로 타입 검사가 잡아주길 기대할 실수가 아니고, 값의 의미는 Reckon 이 잡는다.
+쓰므로 타입 검사가 잡아주길 기대할 실수가 아니고, 값의 의미는 Judge 가 잡는다.
 """
 
 from __future__ import annotations

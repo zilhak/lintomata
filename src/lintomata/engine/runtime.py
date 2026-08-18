@@ -71,9 +71,9 @@ __all__ = [
 
 
 VERDICT_PASSED = "passed"
-"""Reckon 의 출력(`Verdict`)에서 **판정**을 담는 필드 이름. `bool`.
+"""Judge 의 출력(`Verdict`)에서 **판정**을 담는 필드 이름. `bool`.
 
-값 검증 파이프라인이 성립하려면 엔진이 Reckon 의 출력을 통과/위반으로 읽을 수
+값 검증 파이프라인이 성립하려면 엔진이 Judge 의 출력을 통과/위반으로 읽을 수
 있어야 한다. 비교 파이프라인에서 **동등 비교를 엔진이 하는 것**과 같은 자리다 —
 `schema.md` 12절: *"내장 동작 없음 원칙과 충돌하지 않는다. 동등 비교는 도메인
 지식이 아니라 일반 연산이다."* 무엇이 통과인지의 **판단은 여전히 스크립트가** 하고,
@@ -81,7 +81,7 @@ VERDICT_PASSED = "passed"
 
 VERDICT_RULE = "rule"
 """위반일 때 리포트의 `rule` 자리에 나갈 이름. 없으면 비운다
-(`schema.md` 11절 예시의 `"rule": "expectedCount"` — Reckon 이 낸 규칙 이름)."""
+(`schema.md` 11절 예시의 `"rule": "expectedCount"` — Judge 가 낸 규칙 이름)."""
 
 VERDICT_MESSAGE = "message"
 """위반일 때 리포트의 `message` 자리에 나갈 설명."""
@@ -509,12 +509,12 @@ def _errored(node_id: str, findings: list[Finding]) -> NodeOutcome:
 
 
 def _node_finding(node_id: str, node_type: NodeType, output: Any, path: str) -> Finding:
-    """노드 하나의 결과 1건. **Reckon 만 위반을 낼 수 있다.**
+    """노드 하나의 결과 1건. **Judge 만 위반을 낼 수 있다.**
 
     나머지 네 타입은 기획과 대조하지 않으므로 (`schema.md` 5절) 돌아간 것 자체가
-    통과다. Reckon 의 출력에서 `passed` 를 읽어 통과/위반을 가른다.
+    통과다. Judge 의 출력에서 `passed` 를 읽어 통과/위반을 가른다.
     """
-    if node_type != "reckon":
+    if node_type != "judge":
         return Finding(status="pass", path=path, node=node_id)
 
     try:
@@ -528,9 +528,9 @@ def _node_finding(node_id: str, node_type: NodeType, output: Any, path: str) -> 
             path=path,
             node=node_id,
             message=_msg(
-                "The Reckon output has no `{passed}: bool` field "
+                "The Judge output has no `{passed}: bool` field "
                 "(fields: {fields})\n"
-                "A Reckon is the node that produces a decision, so its return "
+                "A Judge is the node that produces a decision, so its return "
                 "dataclass must carry `{passed}: bool` for the engine to read "
                 "pass/violation off it. Emit the violation text as "
                 "`{message}: str` and the rule name as `{rule}: str` alongside it "
@@ -558,7 +558,7 @@ def _node_finding(node_id: str, node_type: NodeType, output: Any, path: str) -> 
 
 
 def _default_violation_message(data: Mapping[str, Any]) -> str:
-    """Reckon 이 설명을 안 붙였을 때의 최소 문구.
+    """Judge 가 설명을 안 붙였을 때의 최소 문구.
 
     **비워 두지 않는다** — 사람이 읽는 것은 AI 요약이고, 요약할 것이 없으면
     "어떤 규칙인지" 가 전달되지 않는다 (`CLAUDE.md` 의도 필드 절).
@@ -566,7 +566,7 @@ def _default_violation_message(data: Mapping[str, Any]) -> str:
     shown = ", ".join(f"{k}={v!r}" for k, v in sorted(data.items()) if k != VERDICT_PASSED)
     return _msg(
         "Differs from the plan. Verdict: {verdict}\n"
-        "Put a `{message}: str` on the Reckon's return dataclass and its text "
+        "Put a `{message}: str` on the Judge's return dataclass and its text "
         "lands right here instead.",
         verdict=shown or translate("(no explanatory field)"),
         message=VERDICT_MESSAGE,

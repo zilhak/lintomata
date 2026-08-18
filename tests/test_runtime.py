@@ -110,11 +110,11 @@ def project(tmp_path: Path) -> Project:
 
 # ── 스크립트 본문들 ──────────────────────────────────────────────────────────
 
-VANTAGE = """
+PREPARE = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
@@ -125,34 +125,34 @@ VANTAGE = """
     class Args:
         params: Params
 
-    def runNode(args: Args) -> Scene:
-        return returnResult(Scene(url=args.params.url))
+    def runNode(args: Args) -> Context:
+        return returnResult(Context(url=args.params.url))
 """
 
-PERCEIVE = """
+EXTRACT = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count=len(args.input.url)))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count=len(args.input.url)))
 """
 
-RECKON = """
+JUDGE = """
     from dataclasses import dataclass
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
@@ -167,7 +167,7 @@ RECKON = """
 
     @dataclass
     class Args:
-        input: Percept
+        input: Meaning
         params: Expect
 
     def runNode(args: Args) -> Verdict:
@@ -183,27 +183,27 @@ PASSTHROUGH = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
 
     def runNode(args: Args):
         return returnResult(args.input)
 """
 
-PASSTHROUGH_PERCEPT = """
+PASSTHROUGH_MEANING = """
     from dataclasses import dataclass
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Percept
+        input: Meaning
 
     def runNode(args: Args):
         return returnResult(args.input)
@@ -213,47 +213,47 @@ RAISES = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
 
-    def runNode(args: Args) -> Percept:
+    def runNode(args: Args) -> Meaning:
         if args.input.url:
             raise RuntimeError("여기서 터진다")
-        return returnResult(Percept(count=0))
+        return returnResult(Meaning(count=0))
 """
 
 WRONG_OUTPUT = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count="셋이요"))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count="셋이요"))
 """
 
 WAITING = """
     from dataclasses import dataclass
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
@@ -266,7 +266,7 @@ WAITING = """
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
         state: St
 
     def runNode(args: Args) -> Traffic:
@@ -274,11 +274,11 @@ WAITING = """
 """
 
 
-BARE_RECKON = """
+BARE_JUDGE = """
     from dataclasses import dataclass
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
@@ -291,18 +291,18 @@ BARE_RECKON = """
 
     @dataclass
     class Args:
-        input: Percept
+        input: Meaning
         params: Expect
 
     def runNode(args: Args) -> Verdict:
         return returnResult(Verdict(note="판정을 안 담았다"))
 """
 
-QUIET_RECKON = """
+QUIET_JUDGE = """
     from dataclasses import dataclass
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
@@ -315,7 +315,7 @@ QUIET_RECKON = """
 
     @dataclass
     class Args:
-        input: Percept
+        input: Meaning
         params: Expect
 
     def runNode(args: Args) -> Verdict:
@@ -330,7 +330,7 @@ TOOL_USER = """
         url: str
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
@@ -340,17 +340,17 @@ TOOL_USER = """
     def launch(binary):
         return binary
 
-    def runNode(args: Args) -> Scene:
+    def runNode(args: Args) -> Context:
         launch("/opt/playwright/playwright")
-        return returnResult(Scene(url=args.params.url))
+        return returnResult(Context(url=args.params.url))
 """
 
 
 def basic(project: Project) -> Path:
     """`page → buttons → check` 세 노드짜리 값 검증 파이프라인."""
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("buttons", "perceive", project.script("buttons", PERCEIVE))
-    project.node("check", "reckon", project.script("check", RECKON))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("buttons", "extract", project.script("buttons", EXTRACT))
+    project.node("check", "judge", project.script("check", JUDGE))
     return project.pipeline(
         "basic",
         config={
@@ -366,12 +366,12 @@ def basic(project: Project) -> Path:
             {
                 "id": "buttons",
                 "source": str(project.root / "nodes" / "buttons.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
             {
                 "id": "check",
                 "source": str(project.root / "nodes" / "check.json"),
-                "inputs": {"percept": "buttons"},
+                "inputs": {"meaning": "buttons"},
                 "params": {"expected": "${config.expected}"},
             },
         ],
@@ -424,13 +424,13 @@ def test_모든_노드가_통과하면_pass_만_나온다(project: Project) -> N
     assert set(result.outcomes) == {"page", "buttons", "check"}
 
 
-def test_reckon_이_기댓값과_다르면_violation_이다(project: Project) -> None:
+def test_judge_이_기댓값과_다르면_violation_이다(project: Project) -> None:
     path = basic(project)
     result = project.run(path, {"url": "https://x", "expected": 3})
 
     violations = [f for f in result.findings if f.status == "violation"]
     assert [f.node for f in violations] == ["check"]
-    # `rule` 은 Reckon 이 낸 이름이 그대로 실린다 (`schema.md` 11절 예시).
+    # `rule` 은 Judge 가 낸 이름이 그대로 실린다 (`schema.md` 11절 예시).
     assert violations[0].rule_id == "expectedCount"
     assert "3개 기대" in violations[0].message
     # 위반은 정상 결과다 — 오류가 아니고, 뒷단이 not run 이 되지도 않는다.
@@ -451,9 +451,9 @@ def test_같은_입력이면_결과가_결정적이다(project: Project) -> None
 
 def test_통과형_스크립트가_값을_그대로_흘려보낸다(project: Project) -> None:
     """조건 분기는 엔진 문법이 아니라 **스크립트가 `input` 을 반환**하는 것이다."""
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("relay", "action", project.script("relay", PASSTHROUGH))
-    project.node("buttons", "perceive", project.script("buttons", PERCEIVE))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("relay", "act", project.script("relay", PASSTHROUGH))
+    project.node("buttons", "extract", project.script("buttons", EXTRACT))
     path = project.pipeline(
         "relay",
         config={"url": {"type": "str", "required": True}},
@@ -466,12 +466,12 @@ def test_통과형_스크립트가_값을_그대로_흘려보낸다(project: Pro
             {
                 "id": "relay",
                 "source": str(project.root / "nodes" / "relay.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
             {
                 "id": "buttons",
                 "source": str(project.root / "nodes" / "buttons.json"),
-                "inputs": {"scene": "relay"},
+                "inputs": {"context": "relay"},
             },
         ],
     )
@@ -486,8 +486,8 @@ def test_통과형_스크립트가_값을_그대로_흘려보낸다(project: Pro
 
 
 def test_스크립트_예외는_위반이_아니라_오류다(project: Project) -> None:
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("boom", "perceive", project.script("boom", RAISES))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("boom", "extract", project.script("boom", RAISES))
     path = project.pipeline(
         "boom",
         config={"url": {"type": "str", "required": True}},
@@ -500,7 +500,7 @@ def test_스크립트_예외는_위반이_아니라_오류다(project: Project) 
             {
                 "id": "boom",
                 "source": str(project.root / "nodes" / "boom.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
         ],
     )
@@ -513,8 +513,8 @@ def test_스크립트_예외는_위반이_아니라_오류다(project: Project) 
 
 
 def test_출력이_선언된_타입과_다르면_오류다(project: Project) -> None:
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("bad", "perceive", project.script("bad", WRONG_OUTPUT))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("bad", "extract", project.script("bad", WRONG_OUTPUT))
     path = project.pipeline(
         "bad",
         config={"url": {"type": "str", "required": True}},
@@ -527,7 +527,7 @@ def test_출력이_선언된_타입과_다르면_오류다(project: Project) -> 
             {
                 "id": "bad",
                 "source": str(project.root / "nodes" / "bad.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
         ],
     )
@@ -539,9 +539,9 @@ def test_출력이_선언된_타입과_다르면_오류다(project: Project) -> 
 
 def test_한_노드가_실패해도_독립한_노드는_전부_돈다(project: Project) -> None:
     """실패는 최대한 수집한다 — 실패한 가지 밖은 멈추지 않는다."""
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("boom", "perceive", project.script("boom", RAISES))
-    project.node("buttons", "perceive", project.script("buttons", PERCEIVE))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("boom", "extract", project.script("boom", RAISES))
+    project.node("buttons", "extract", project.script("buttons", EXTRACT))
     path = project.pipeline(
         "mixed",
         config={"url": {"type": "str", "required": True}},
@@ -554,12 +554,12 @@ def test_한_노드가_실패해도_독립한_노드는_전부_돈다(project: P
             {
                 "id": "boom",
                 "source": str(project.root / "nodes" / "boom.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
             {
                 "id": "buttons",
                 "source": str(project.root / "nodes" / "buttons.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
         ],
     )
@@ -574,9 +574,9 @@ def test_한_노드가_실패해도_독립한_노드는_전부_돈다(project: P
 
 
 def test_데이터_의존_경로로_not_run_이_전파된다(project: Project) -> None:
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("boom", "perceive", project.script("boom", RAISES))
-    project.node("check", "reckon", project.script("check", RECKON))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("boom", "extract", project.script("boom", RAISES))
+    project.node("check", "judge", project.script("check", JUDGE))
     path = project.pipeline(
         "chain",
         config={
@@ -592,12 +592,12 @@ def test_데이터_의존_경로로_not_run_이_전파된다(project: Project) -
             {
                 "id": "boom",
                 "source": str(project.root / "nodes" / "boom.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
             {
                 "id": "check",
                 "source": str(project.root / "nodes" / "check.json"),
-                "inputs": {"percept": "boom"},
+                "inputs": {"meaning": "boom"},
                 "params": {"expected": "${config.expected}"},
             },
         ],
@@ -620,9 +620,9 @@ def test_데이터_의존_경로로_not_run_이_전파된다(project: Project) -
 def test_상태_의존_경로로_not_run_이_전파된다(project: Project) -> None:
     """`transitions.after` 가 실패하면 그 전이가 안 일어나고, 그 상태를 기다리던
     노드는 영원히 조건을 만족하지 못한다 — **두 번째 전파 경로**."""
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("boom", "perceive", project.script("boom", RAISES))
-    project.node("wait", "sense", project.script("wait", WAITING))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("boom", "extract", project.script("boom", RAISES))
+    project.node("wait", "collect", project.script("wait", WAITING))
     path = project.pipeline(
         "stateful",
         config={"url": {"type": "str", "required": True}},
@@ -637,12 +637,12 @@ def test_상태_의존_경로로_not_run_이_전파된다(project: Project) -> N
             {
                 "id": "boom",
                 "source": str(project.root / "nodes" / "boom.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
             {
                 "id": "wait",
                 "source": str(project.root / "nodes" / "wait.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
                 "states": {"stop": "settled"},
                 "when": {"state": "stop"},
             },
@@ -662,10 +662,10 @@ def test_상태_의존_경로로_not_run_이_전파된다(project: Project) -> N
 
 
 def test_두_전파_경로가_한_실행에서_함께_갈린다(project: Project) -> None:
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("boom", "perceive", project.script("boom", RAISES))
-    project.node("check", "reckon", project.script("check", RECKON))
-    project.node("wait", "sense", project.script("wait", WAITING))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("boom", "extract", project.script("boom", RAISES))
+    project.node("check", "judge", project.script("check", JUDGE))
+    project.node("wait", "collect", project.script("wait", WAITING))
     path = project.pipeline(
         "both",
         config={
@@ -683,18 +683,18 @@ def test_두_전파_경로가_한_실행에서_함께_갈린다(project: Project
             {
                 "id": "boom",
                 "source": str(project.root / "nodes" / "boom.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
             {
                 "id": "check",
                 "source": str(project.root / "nodes" / "check.json"),
-                "inputs": {"percept": "boom"},
+                "inputs": {"meaning": "boom"},
                 "params": {"expected": "${config.expected}"},
             },
             {
                 "id": "wait",
                 "source": str(project.root / "nodes" / "wait.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
                 "states": {"stop": "settled"},
                 "when": {"state": "stop"},
             },
@@ -715,10 +715,10 @@ def test_두_전파_경로가_한_실행에서_함께_갈린다(project: Project
 
 def test_not_run_은_전이적으로_전파된다(project: Project) -> None:
     """not run 이 된 노드가 밀어야 할 전이도 일어나지 않는다."""
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("boom", "perceive", project.script("boom", RAISES))
-    project.node("relay", "action", project.script("relay", PASSTHROUGH_PERCEPT))
-    project.node("wait", "sense", project.script("wait", WAITING))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("boom", "extract", project.script("boom", RAISES))
+    project.node("relay", "act", project.script("relay", PASSTHROUGH_MEANING))
+    project.node("wait", "collect", project.script("wait", WAITING))
     path = project.pipeline(
         "transitive",
         config={"url": {"type": "str", "required": True}},
@@ -733,17 +733,17 @@ def test_not_run_은_전이적으로_전파된다(project: Project) -> None:
             {
                 "id": "boom",
                 "source": str(project.root / "nodes" / "boom.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
             {
                 "id": "relay",
                 "source": str(project.root / "nodes" / "relay.json"),
-                "inputs": {"scene": "boom"},
+                "inputs": {"context": "boom"},
             },
             {
                 "id": "wait",
                 "source": str(project.root / "nodes" / "wait.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
                 "states": {"stop": "settled"},
                 "when": {"state": "stop"},
             },
@@ -777,10 +777,10 @@ def test_propagate_not_run_은_아무_일도_없으면_아무것도_안_낸다(p
 def test_실행_순서는_simulate_order_와_같다(project: Project) -> None:
     """동시에 실행 가능한 노드는 파이프라인 `nodes` 선언 순서로 돈다 —
     `reachability.simulate().order` 가 참조 구현이다 (MODULES.md R3-7)."""
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("a", "perceive", project.script("a", PERCEIVE))
-    project.node("b", "perceive", project.script("b", PERCEIVE))
-    project.node("wait", "sense", project.script("wait", WAITING))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("a", "extract", project.script("a", EXTRACT))
+    project.node("b", "extract", project.script("b", EXTRACT))
+    project.node("wait", "collect", project.script("wait", WAITING))
     path = project.pipeline(
         "ordered",
         config={"url": {"type": "str", "required": True}},
@@ -795,14 +795,14 @@ def test_실행_순서는_simulate_order_와_같다(project: Project) -> None:
             {
                 "id": "wait",
                 "source": str(project.root / "nodes" / "wait.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
                 "states": {"stop": "settled"},
                 "when": {"state": "stop"},
             },
             {"id": "a", "source": str(project.root / "nodes" / "a.json"),
-             "inputs": {"scene": "page"}},
+             "inputs": {"context": "page"}},
             {"id": "b", "source": str(project.root / "nodes" / "b.json"),
-             "inputs": {"scene": "page"}},
+             "inputs": {"context": "page"}},
         ],
     )
     pipeline = project.load_pipeline(path)
@@ -824,10 +824,10 @@ def test_정적_topo_정렬로는_이_순서가_안_나온다(project: Project) 
     돌려버린다 — 그러면 `wait` 는 아직 `idle` 이라 못 돌고 **통과할 노드에 거짓
     not run** 이 찍힌다. `ready()` 재스캔은 `a` 가 상태를 민 뒤 `wait` 를 집는다.
     """
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("a", "perceive", project.script("a", PERCEIVE))
-    project.node("b", "perceive", project.script("b", PERCEIVE))
-    project.node("wait", "sense", project.script("wait", WAITING))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("a", "extract", project.script("a", EXTRACT))
+    project.node("b", "extract", project.script("b", EXTRACT))
+    project.node("wait", "collect", project.script("wait", WAITING))
     path = project.pipeline(
         "dynamic",
         config={"url": {"type": "str", "required": True}},
@@ -842,14 +842,14 @@ def test_정적_topo_정렬로는_이_순서가_안_나온다(project: Project) 
             {
                 "id": "wait",
                 "source": str(project.root / "nodes" / "wait.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
                 "states": {"stop": "settled"},
                 "when": {"state": "stop"},
             },
             {"id": "a", "source": str(project.root / "nodes" / "a.json"),
-             "inputs": {"scene": "page"}},
+             "inputs": {"context": "page"}},
             {"id": "b", "source": str(project.root / "nodes" / "b.json"),
-             "inputs": {"scene": "page"}},
+             "inputs": {"context": "page"}},
         ],
     )
     result = project.run(path, {"url": "abcd"})
@@ -866,9 +866,9 @@ def test_정적_topo_정렬로는_이_순서가_안_나온다(project: Project) 
 def test_구간_전이의_중간_상태에서도_노드가_돈다(project: Project) -> None:
     """같은 `after` 의 전이 둘은 **구간**이다 (R3-6). 통째로 밀면 중간 상태를
     기다리던 노드가 통째로 `not_run` 이 된다 — 재현 케이스 ①."""
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("capture", "perceive", project.script("capture", PERCEIVE))
-    project.node("watch", "sense", project.script("watch", WAITING))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("capture", "extract", project.script("capture", EXTRACT))
+    project.node("watch", "collect", project.script("watch", WAITING))
     path = project.pipeline(
         "interval",
         config={"url": {"type": "str", "required": True}},
@@ -886,12 +886,12 @@ def test_구간_전이의_중간_상태에서도_노드가_돈다(project: Proje
             {
                 "id": "capture",
                 "source": str(project.root / "nodes" / "capture.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
             {
                 "id": "watch",
                 "source": str(project.root / "nodes" / "watch.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
                 "states": {"stop": "loading"},
                 "when": {"state": "stop"},
             },
@@ -937,10 +937,10 @@ def config_ordered(project: Project) -> Path:
     `w` 는 `loading` 을 기다리는데 그때 앞단 `b`(= `done` 대기)가 아직 안 돌았다.
     그래서 `loading` 이 `done` **뒤에** 와야만 `w` 가 돈다 — 도달성이 config 에 달렸다.
     """
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("a", "perceive", project.script("a", PERCEIVE))
-    project.node("b", "sense", project.script("b", WAITING))
-    project.node("w", "sense", project.script("w", CONFIG_ORDERED))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("a", "extract", project.script("a", EXTRACT))
+    project.node("b", "collect", project.script("b", WAITING))
+    project.node("w", "collect", project.script("w", CONFIG_ORDERED))
     return project.pipeline(
         "byconfig",
         config={
@@ -960,7 +960,7 @@ def config_ordered(project: Project) -> Path:
                 "params": {"url": "${config.url}"},
             },
             {"id": "a", "source": str(project.root / "nodes" / "a.json"),
-             "inputs": {"scene": "page"}},
+             "inputs": {"context": "page"}},
             {
                 "id": "w",
                 "source": str(project.root / "nodes" / "w.json"),
@@ -971,7 +971,7 @@ def config_ordered(project: Project) -> Path:
             {
                 "id": "b",
                 "source": str(project.root / "nodes" / "b.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
                 "states": {"stop": "done"},
                 "when": {"state": "stop"},
             },
@@ -1107,8 +1107,8 @@ def test_리포트_JSON_이_11절_예시와_키_구성이_같다(project: Projec
 
 
 def test_등록소_파일이_수정되면_STR_REG_001(project: Project) -> None:
-    script = project.script("page", VANTAGE)
-    node_path = project.node("page", "vantage", script)
+    script = project.script("page", PREPARE)
+    node_path = project.node("page", "prepare", script)
     entry = project.store.add("node", node_path)
     # 정적 검사 루트를 피해 등록소 파일을 직접 고친 상황 그 자체.
     project.store.path_of(entry.id).write_text("{}", encoding="utf-8")
@@ -1131,10 +1131,10 @@ def test_등록소_파일이_수정되면_STR_REG_001(project: Project) -> None:
 
 def test_등록된_스크립트가_수정되면_STR_REG_001(project: Project) -> None:
     """노드의 `script` 자리에 있는 `${ref.sc_...}` 도 같은 대조를 받는다."""
-    entry = project.store.add("script", project.script("page", VANTAGE))
-    node_path = project.node("page", "vantage", "${ref." + entry.id + "}")
+    entry = project.store.add("script", project.script("page", PREPARE))
+    node_path = project.node("page", "prepare", "${ref." + entry.id + "}")
     project.store.path_of(entry.id).write_text(
-        dedent(VANTAGE).lstrip("\n") + "\n# 몰래 고쳤다\n", encoding="utf-8"
+        dedent(PREPARE).lstrip("\n") + "\n# 몰래 고쳤다\n", encoding="utf-8"
     )
 
     path = project.pipeline(
@@ -1169,8 +1169,8 @@ def test_등록된_파이프라인은_ref_로_실행된다(project: Project) -> 
 
 
 def test_참조한_id_가_삭제되면_STR_REG_002(project: Project) -> None:
-    script = project.script("page", VANTAGE)
-    node_path = project.node("page", "vantage", script)
+    script = project.script("page", PREPARE)
+    node_path = project.node("page", "prepare", script)
     entry = project.store.add("node", node_path)
     project.store.remove(entry.id)
 
@@ -1192,7 +1192,7 @@ def test_참조한_id_가_삭제되면_STR_REG_002(project: Project) -> None:
 
 def test_tool_미선언_경로는_STR_TOOL_002_다(project: Project) -> None:
     """`LNT-TOOL-001`/`-002` 는 **실행 시점** 규칙이다 — Spec 이 `tool` 을 갖기 때문."""
-    project.node("page", "vantage", project.script("page", TOOL_USER))
+    project.node("page", "prepare", project.script("page", TOOL_USER))
     path = project.pipeline(
         "tooled",
         config={"url": {"type": "str", "required": True}},
@@ -1216,7 +1216,7 @@ def test_tool_미선언_경로는_STR_TOOL_002_다(project: Project) -> None:
 
 
 def test_선언된_경로면_통과한다(project: Project) -> None:
-    project.node("page", "vantage", project.script("page", TOOL_USER))
+    project.node("page", "prepare", project.script("page", TOOL_USER))
     path = project.pipeline(
         "tooled",
         config={"url": {"type": "str", "required": True}},
@@ -1240,8 +1240,8 @@ def test_선언된_경로면_통과한다(project: Project) -> None:
 
 
 def test_같은_앞단을_두_이름으로_받아도_값은_하나다(project: Project) -> None:
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("buttons", "perceive", project.script("buttons", PERCEIVE))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("buttons", "extract", project.script("buttons", EXTRACT))
     path = project.pipeline(
         "twice",
         config={"url": {"type": "str", "required": True}},
@@ -1254,7 +1254,7 @@ def test_같은_앞단을_두_이름으로_받아도_값은_하나다(project: P
             {
                 "id": "buttons",
                 "source": str(project.root / "nodes" / "buttons.json"),
-                "inputs": {"scene": "page", "again": "page"},
+                "inputs": {"context": "page", "again": "page"},
             },
         ],
     )
@@ -1266,9 +1266,9 @@ def test_같은_앞단을_두_이름으로_받아도_값은_하나다(project: P
 
 def test_서로_다른_앞단을_둘_받으면_오류다(project: Project) -> None:
     """`Args.input` 은 필드 하나다 — 조용히 하나를 고르면 거짓 리포트가 된다."""
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("relay", "action", project.script("relay", PASSTHROUGH))
-    project.node("buttons", "perceive", project.script("buttons", PERCEIVE))
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("relay", "act", project.script("relay", PASSTHROUGH))
+    project.node("buttons", "extract", project.script("buttons", EXTRACT))
     path = project.pipeline(
         "two-inputs",
         config={"url": {"type": "str", "required": True}},
@@ -1281,7 +1281,7 @@ def test_서로_다른_앞단을_둘_받으면_오류다(project: Project) -> No
             {
                 "id": "relay",
                 "source": str(project.root / "nodes" / "relay.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
             {
                 "id": "buttons",
@@ -1296,13 +1296,13 @@ def test_서로_다른_앞단을_둘_받으면_오류다(project: Project) -> No
     assert "more than one distinct upstream node" in "".join(f.message for f in result.findings if f.node == "buttons")
 
 
-# ── Reckon 의 판정 읽기 ──────────────────────────────────────────────────────
+# ── Judge 의 판정 읽기 ──────────────────────────────────────────────────────
 
 
-def reckon_pipeline(project: Project, body: str) -> Path:
-    project.node("page", "vantage", project.script("page", VANTAGE))
-    project.node("buttons", "perceive", project.script("buttons", PERCEIVE))
-    project.node("check", "reckon", project.script("check", body))
+def judge_pipeline(project: Project, body: str) -> Path:
+    project.node("page", "prepare", project.script("page", PREPARE))
+    project.node("buttons", "extract", project.script("buttons", EXTRACT))
+    project.node("check", "judge", project.script("check", body))
     return project.pipeline(
         "verdict",
         config={
@@ -1318,21 +1318,21 @@ def reckon_pipeline(project: Project, body: str) -> Path:
             {
                 "id": "buttons",
                 "source": str(project.root / "nodes" / "buttons.json"),
-                "inputs": {"scene": "page"},
+                "inputs": {"context": "page"},
             },
             {
                 "id": "check",
                 "source": str(project.root / "nodes" / "check.json"),
-                "inputs": {"percept": "buttons"},
+                "inputs": {"meaning": "buttons"},
                 "params": {"expected": "${config.expected}"},
             },
         ],
     )
 
 
-def test_판정_필드가_없는_Reckon_은_오류다(project: Project) -> None:
+def test_판정_필드가_없는_Judge_은_오류다(project: Project) -> None:
     """리포트가 조용히 전부 통과로 보이면 그건 거짓 리포트다."""
-    path = reckon_pipeline(project, BARE_RECKON)
+    path = judge_pipeline(project, BARE_JUDGE)
     result = project.run(path, {"url": "abcd", "expected": 4})
 
     assert result.outcomes["check"].status == "error"
@@ -1342,7 +1342,7 @@ def test_판정_필드가_없는_Reckon_은_오류다(project: Project) -> None:
 
 def test_설명이_없는_위반에도_문구가_붙는다(project: Project) -> None:
     """사람이 읽는 것은 AI 요약이다 — 요약할 것이 없으면 규칙이 전달되지 않는다."""
-    path = reckon_pipeline(project, QUIET_RECKON)
+    path = judge_pipeline(project, QUIET_JUDGE)
     result = project.run(path, {"url": "abcd", "expected": 99})
 
     violation = next(f for f in result.findings if f.status == "violation")
@@ -1352,7 +1352,7 @@ def test_설명이_없는_위반에도_문구가_붙는다(project: Project) -> 
 
 
 def test_판정이_통과면_pass_다(project: Project) -> None:
-    path = reckon_pipeline(project, QUIET_RECKON)
+    path = judge_pipeline(project, QUIET_JUDGE)
     result = project.run(path, {"url": "abcd", "expected": 4})
 
     assert statuses(result.findings)["check"] == "pass"
@@ -1371,15 +1371,15 @@ BANNED = """
         url: str
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
     class Args:
         params: Params
 
-    def runNode(args: Args) -> Scene:
-        return returnResult(Scene(url=args.params.url + str(len(dir(time)))))
+    def runNode(args: Args) -> Context:
+        return returnResult(Context(url=args.params.url + str(len(dir(time)))))
 """
 
 STAMPED = """
@@ -1390,22 +1390,22 @@ STAMPED = """
         at: int
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
     class Args:
         params: Params
 
-    def runNode(args: Args) -> Scene:
-        return returnResult(Scene(url=str(args.params.at)))
+    def runNode(args: Args) -> Context:
+        return returnResult(Context(url=str(args.params.at)))
 """
 
 
 def test_config_가_풀린_뒤_스크립트_금지_검사가_다시_돈다(project: Project) -> None:
     """`recheck_resolved` 를 안 부르면 **노드 스크립트가 계약·금지 검사를 한 번도
     안 받는다.** 로드 경로는 계약 추출만 하지 `check_script` 를 돌리지 않는다."""
-    project.node("page", "vantage", project.script("page", BANNED))
+    project.node("page", "prepare", project.script("page", BANNED))
     path = project.pipeline(
         "banned",
         config={"url": {"type": "str", "required": True}},
@@ -1428,7 +1428,7 @@ def test_비교_파이프라인의_target_스크립트도_재검을_받는다(pr
     """비교 파이프라인의 노드 스크립트는 **등록 시점에 검사 자체가 불가능하다** —
     어느 스크립트가 도는지를 Spec `config` 가 정하기 때문이다 (R3-4). `recheck_resolved`
     를 안 부르면 계약·금지 검사를 **한 번도 안 받는다**."""
-    project.node("seed", "perceive", "${config.seedScript}")
+    project.node("seed", "extract", "${config.seedScript}")
     banned = project.script("banned", BANNED)
     path = project.pipeline(
         "cmp",
@@ -1472,7 +1472,7 @@ def test_비교_파이프라인의_target_스크립트도_재검을_받는다(pr
 
 def test_params_의_startedAt_은_엔진이_넣어준_값이다(project: Project) -> None:
     """`${state.__startedAt}` 주입을 빼면 참조가 안 풀려 오류가 난다 (R4-10)."""
-    project.node("page", "vantage", project.script("page", STAMPED))
+    project.node("page", "prepare", project.script("page", STAMPED))
     path = project.pipeline(
         "stamped",
         nodes=[
@@ -1515,7 +1515,7 @@ READS_FILE = """
         pagePath: str
 
     @dataclass
-    class Sensum:
+    class Data:
         source: str
         html: str
 
@@ -1523,15 +1523,15 @@ READS_FILE = """
     class Args:
         params: Params
 
-    def runNode(args: Args) -> Sensum:
+    def runNode(args: Args) -> Data:
         with open(args.params.pagePath, encoding="utf-8") as fp:
-            return returnResult(Sensum(source=args.params.pagePath, html=fp.read()))
+            return returnResult(Data(source=args.params.pagePath, html=fp.read()))
 """
 
 
 def _env_in_config_pipeline(project: Project) -> Path:
     """`config` 값이 `${env.X}` 를 품고, 그 값이 `params` 로 스크립트에 간다."""
-    project.node("read", "sense", project.script("read", READS_FILE))
+    project.node("read", "collect", project.script("read", READS_FILE))
     return project.pipeline(
         "envcfg",
         config={"pagePath": {"type": "str", "required": True, "path": True}},
@@ -1585,7 +1585,7 @@ def test_env_전개는_config_와_state_뒤에_온다(project: Project) -> None:
 
     env 를 먼저 풀면 config 가 끌고 들어온 `${env.Y}` 가 그대로 남는다.
     """
-    project.node("page", "vantage", project.script("page", VANTAGE))
+    project.node("page", "prepare", project.script("page", PREPARE))
     path = project.pipeline(
         "order",
         config={"url": {"type": "str", "required": True}},
@@ -1607,25 +1607,25 @@ def test_env_전개는_config_와_state_뒤에_온다(project: Project) -> None:
 
 # ── 라이브러리 — 못 풀면 그 노드는 돌리지 않는다 ─────────────────────────────
 
-PERCEIVE_WITH_LIB = """
+EXTRACT_WITH_LIB = """
     from dataclasses import dataclass
 
     from lintomata_lib import buttons
 
     @dataclass
-    class Scene:
+    class Context:
         url: str
 
     @dataclass
-    class Percept:
+    class Meaning:
         count: int
 
     @dataclass
     class Args:
-        input: Scene
+        input: Context
 
-    def runNode(args: Args) -> Percept:
-        return returnResult(Percept(count=buttons.count(args.input.url)))
+    def runNode(args: Args) -> Meaning:
+        return returnResult(Meaning(count=buttons.count(args.input.url)))
 """
 
 
@@ -1638,12 +1638,12 @@ def test_라이브러리를_못_풀면_그_노드는_로드에서_빠진다(proj
     노드 파일의 `info.name`(`detect-buttons`)과 파이프라인의 노드 id(`detectButtons`)를
     일부러 다르게 뒀다 — **파이프라인 문맥의 이름은 노드 id 하나**여야 한다.
     """
-    script = project.script("perceive", PERCEIVE_WITH_LIB)
+    script = project.script("extract", EXTRACT_WITH_LIB)
     node_file = write_json(
         project.root / "nodes" / "detect.json",
         {
             "info": {"name": "detect-buttons", "description": "버튼 인식"},
-            "type": "perceive",
+            "type": "extract",
             "script": str(script),
             "libraries": {"buttons": str(project.root / "libraries" / "없다.py")},
         },

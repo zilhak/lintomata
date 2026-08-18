@@ -1,6 +1,6 @@
 {
   "info": { "name": "compare-buttons", "description": "대상마다 자기 인식 스크립트로 버튼을 지각한다" },
-  "type": "perceive",
+  "type": "extract",
   "script": "${config.buttonScript}",
   "libraries": { "buttons": "${env.LINTOMATA_EXAMPLE_ROOT}/libraries/buttons.py" }
 }

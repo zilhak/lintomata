@@ -153,9 +153,9 @@ def test_render_keeps_reference_syntax_untouched() -> None:
 
 def test_render_accepts_keyword_named_slot() -> None:
     """`LNT-TYPE-004` 의 guide 슬롯 `{in}` 은 파이썬 예약어라 dict 로 넘긴다."""
-    text = render("LNT-TYPE-004", **{"out": "Percept", "in": "Sensum"})
-    assert "Percept" in text
-    assert "Sensum" in text
+    text = render("LNT-TYPE-004", **{"out": "Meaning", "in": "Data"})
+    assert "Meaning" in text
+    assert "Data" in text
 
 
 def test_render_missing_slot_raises() -> None:
@@ -263,9 +263,9 @@ def test_finding_slot_named_node_is_not_eaten_by_the_node_parameter() -> None:
 
 def test_finding_accepts_python_keyword_slot() -> None:
     """`LNT-TYPE-004` 의 `{in}` 은 예약어라 딕셔너리로만 넘길 수 있다."""
-    f = finding("LNT-TYPE-004", fields={"out": "Percept", "in": "Sensum"})
-    assert "Percept" in f.message
-    assert "Sensum" in f.message
+    f = finding("LNT-TYPE-004", fields={"out": "Meaning", "in": "Data"})
+    assert "Meaning" in f.message
+    assert "Data" in f.message
     assert "{in}" not in f.message
 
 
@@ -421,6 +421,6 @@ def test_contract_003_covers_non_dataclass_output() -> None:
     rule = get_rule("LNT-CONTRACT-003")
     assert rule.slots == ("file",)
 
-    text = render("LNT-CONTRACT-003", file="/abs/perceive.py")
+    text = render("LNT-CONTRACT-003", file="/abs/extract.py")
     assert "dataclass" in text
     assert "primitive" in text

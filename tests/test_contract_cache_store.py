@@ -207,7 +207,7 @@ def test_등록소_파일을_직접_고치면_여전히_STR_REG_001(
     """★ **캐시가 이걸 가리면 안 된다.** 정적 검사 루트를 피한 수정을 잡는 자리다."""
     check(capsys, registered["home_ok.json"])  # 캐시를 채워 둔다
 
-    target = Path(registered["__home__"]) / "scripts" / f"{registered['perceive_buttons.py']}.py"
+    target = Path(registered["__home__"]) / "scripts" / f"{registered['extract_buttons.py']}.py"
     target.write_text(target.read_text("utf-8") + "\n# 몰래 고쳤다\n", encoding="utf-8")
 
     code, report = check(capsys, registered["home_ok.json"])
@@ -223,14 +223,14 @@ def test_고쳐진_등록소_파일은_캐시가_아니라_다시_파싱된다(
     """키가 **내용 해시**라 무효화가 저절로 된다 — 옛 계약을 돌려주지 않는다."""
     check(capsys, registered["home_ok.json"])
 
-    target = Path(registered["__home__"]) / "scripts" / f"{registered['perceive_buttons.py']}.py"
+    target = Path(registered["__home__"]) / "scripts" / f"{registered['extract_buttons.py']}.py"
     target.write_text(target.read_text("utf-8") + "\n# 몰래 고쳤다\n", encoding="utf-8")
 
     counter = Counter(monkeypatch)
     check(capsys, registered["home_ok.json"])
 
     assert [Path(p).name for p in counter.calls] == [
-        f"{registered['perceive_buttons.py']}.py"
+        f"{registered['extract_buttons.py']}.py"
     ]
 
 
@@ -239,7 +239,7 @@ def test_항목을_지우면_캐시도_사라진다(
 ) -> None:
     """등록소에 못 쓰는 파일을 남겨 두지 않는다."""
     check(capsys, registered["home_ok.json"])
-    entry_id = registered["perceive_buttons.py"]
+    entry_id = registered["extract_buttons.py"]
     cached = Path(registered["__home__"]) / CACHE_SUBDIR / f"{entry_id}.json"
     assert cached.is_file()
 
@@ -255,11 +255,11 @@ def test_항목을_고치면_캐시도_사라진다(
 ) -> None:
     """`update` 도 마찬가지다. 해시가 달라져 어차피 안 읽히지만 **남겨 두지 않는다.**"""
     check(capsys, registered["home_ok.json"])
-    entry_id = registered["perceive_buttons.py"]
+    entry_id = registered["extract_buttons.py"]
     cached = Path(registered["__home__"]) / CACHE_SUBDIR / f"{entry_id}.json"
     assert cached.is_file()
 
-    source = Path(registered["__work__"]) / "scripts" / "perceive_buttons.py"
+    source = Path(registered["__work__"]) / "scripts" / "extract_buttons.py"
     source.write_text(source.read_text("utf-8") + "\n# 주석 한 줄\n", encoding="utf-8")
     assert cli.main(["script", "update", entry_id, str(source)]) == 0
     capsys.readouterr()

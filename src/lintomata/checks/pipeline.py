@@ -27,14 +27,14 @@
 
 **`inputs` 가 DAG 를 만든다.** 별도 `edges` 섹션이 없다 — 입력 참조가 곧 의존 관계다.
 
-### ★ Action 은 투명하다
+### ★ Act 는 투명하다
 
-`X ──▶ Action ──▶ Y` 는 실은 **`X ──▶ Y` 인데 그 사이에 Action 이 낀 형상**이다.
-`check_wiring_types` 는 **Action 을 건너뛰고 상·하단 계약을 대조**한다.
-그래서 "Action 을 어디에나 끼워 넣는다" 가 타입 체계와 충돌하지 않는다 —
+`X ──▶ Act ──▶ Y` 는 실은 **`X ──▶ Y` 인데 그 사이에 Act 가 낀 형상**이다.
+`check_wiring_types` 는 **Act 를 건너뛰고 상·하단 계약을 대조**한다.
+그래서 "Act 를 어디에나 끼워 넣는다" 가 타입 체계와 충돌하지 않는다 —
 낀 배선과 안 낀 배선의 판정이 **같아야** 하기 때문이다.
 
-다만 **투명 = 타입검사 면제가 아니다.** `X.out == Action.in` 도 함께 대조한다
+다만 **투명 = 타입검사 면제가 아니다.** `X.out == Act.in` 도 함께 대조한다
 (`LNT-CONTRACT-006` 이 `input == output` 을 이미 강제하므로 셋이 전부 같아진다).
 
 ### `transitions` 는 시간만 다룬다
@@ -223,18 +223,18 @@ def check_wiring_types(
     그래프 검사를 느슨하게 만들지 않는다 (`schema.md` 7절).
     이름이 달라도 구조가 같으면 같은 타입이다 — 판정은 `TypeRegistry` 가 한다.
 
-    **Action 은 투명하다** — `X ──▶ Action ──▶ Y` 는 실은 `X ──▶ Y` 이므로
-    상·하단 계약을 대조할 때 Action 을 건너뛴다. 그래야 "Action 을 낀 배선과
+    **Act 는 투명하다** — `X ──▶ Act ──▶ Y` 는 실은 `X ──▶ Y` 이므로
+    상·하단 계약을 대조할 때 Act 를 건너뛴다. 그래야 "Act 를 낀 배선과
     안 낀 배선의 판정이 같다" 가 성립한다.
 
-    **투명하다는 것은 타입검사 면제가 아니다** (MODULES.md R3-3). Action 스크립트도
-    그 데이터를 실제로 `Args.input` 으로 받으므로 **`X.out == Action.in` 도 대조한다.**
+    **투명하다는 것은 타입검사 면제가 아니다** (MODULES.md R3-3). Act 스크립트도
+    그 데이터를 실제로 `Args.input` 으로 받으므로 **`X.out == Act.in` 도 대조한다.**
     `input == output`(`LNT-CONTRACT-006`)이 노드 등록 시 이미 강제됐으니 이걸 더하면
     셋이 전부 같아진다 = `schema.md` 5절 "상단과 하단이 하나의 노드".
     정적으로 잡을 수 있는 불일치를 실행 시점 계약 위반으로 미룰 이유가 없다.
 
     `node_types` 가 비어 있으면 건너뛸 대상을 알 수 없으므로 엣지를 그대로 대조한다 —
-    올바른 Action(input==output)이라면 두 방식의 판정이 같다.
+    올바른 Act(input==output)이라면 두 방식의 판정이 같다.
     """
     findings: list[Finding] = []
     by_id = {pn.id: pn for pn in pipeline.nodes}
@@ -244,7 +244,7 @@ def check_wiring_types(
         if downstream is None:
             continue
         for producer_id in consumer.inputs.values():
-            real = _skip_actions(producer_id, by_id, node_types)
+            real = _skip_acts(producer_id, by_id, node_types)
             if real is None:
                 continue
             upstream = contracts.get(real)
@@ -263,17 +263,17 @@ def check_wiring_types(
     return findings
 
 
-def _skip_actions(
+def _skip_acts(
     node_id: str, by_id: Mapping[str, Any], types: Mapping[str, NodeType]
 ) -> str | None:
-    """Action 을 거슬러 올라가 **실제로 값을 만드는 노드**를 찾는다.
+    """Act 를 거슬러 올라가 **실제로 값을 만드는 노드**를 찾는다.
 
-    Action 은 데이터 변환을 하지 않고 부작용만 일으키므로, 그 출력은 곧 그 입력이다.
-    입력이 여럿이면 첫 번째를 통과 경로로 본다 — Action 의 통과 값은 하나다.
+    Act 는 데이터 변환을 하지 않고 부작용만 일으키므로, 그 출력은 곧 그 입력이다.
+    입력이 여럿이면 첫 번째를 통과 경로로 본다 — Act 의 통과 값은 하나다.
     """
     seen: set[str] = set()
     current = node_id
-    while types.get(current) == "action":
+    while types.get(current) == "act":
         if current in seen:
             return None  # 순환은 LNT-GRAPH-001 이 잡는다
         seen.add(current)

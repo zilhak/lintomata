@@ -1,4 +1,4 @@
-"""Perceive — 지각. **무엇이 버튼인가**를 판정한다. 이 프로젝트의 도메인 지식이다.
+"""Extract — 지각. **무엇이 버튼인가**를 판정한다. 이 프로젝트의 도메인 지식이다.
 
 판정 자체는 **라이브러리에 있다** (`libraries/buttons.py`) — 비교용 인식 스크립트
 셋과 같은 규칙을 써야 하기 때문이다. 노드가 그 슬롯에 무엇을 쓸지 배선하고
@@ -14,28 +14,28 @@ from lintomata_lib import buttons
 
 
 @dataclass
-class Sensum:
+class Data:
     source: str
     html: str
 
 
 @dataclass
-class PerceiveState:
+class ExtractState:
     ready: bool
 
 
 @dataclass
 class Args:
-    input: Sensum
-    state: PerceiveState
+    input: Data
+    state: ExtractState
 
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
     labels: list[str]
 
 
-def runNode(args: Args) -> Percept:
+def runNode(args: Args) -> Meaning:
     labels = buttons.collect(args.input.html, buttons.is_button)
-    return returnResult(Percept(count=len(labels), labels=labels))
+    return returnResult(Meaning(count=len(labels), labels=labels))

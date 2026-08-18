@@ -11,22 +11,22 @@ from lintomata_lib import buttons
 
 
 @dataclass
-class Sensum:
+class Data:
     source: str
     html: str
 
 
 @dataclass
 class Args:
-    input: Sensum
+    input: Data
 
 
 @dataclass
-class Percept:
+class Meaning:
     count: int
     labels: list[str]
 
 
-def runNode(args: Args) -> Percept:
+def runNode(args: Args) -> Meaning:
     labels = buttons.collect(args.input.html, buttons.is_button)
-    return returnResult(Percept(count=len(labels), labels=labels))
+    return returnResult(Meaning(count=len(labels), labels=labels))

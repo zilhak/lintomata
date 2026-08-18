@@ -1,5 +1,5 @@
 {
   "info": { "name": "check-count", "description": "지각한 개수와 라벨 순서를 기획과 대조한다" },
-  "type": "reckon",
-  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/reckon_count.py"
+  "type": "judge",
+  "script": "${env.LINTOMATA_EXAMPLE_ROOT}/scripts/judge_count.py"
 }

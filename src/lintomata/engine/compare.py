@@ -20,7 +20,7 @@
 
 ### 비교와 Verdict
 
-**Reckon 이 필요 없다** — Verdict 를 엔진이 만든다. "내장 동작 없음" 원칙과 충돌하지
+**Judge 가 필요 없다** — Verdict 를 엔진이 만든다. "내장 동작 없음" 원칙과 충돌하지
 않는다: **동등 비교는 도메인 지식이 아니라 일반 연산**이다.
 
 **위반 판정은 `targets` 목록 전부가 같은 값을 뱉느냐**이지 짝지어 비교하는 것이 아니다.
@@ -207,7 +207,7 @@ def all_same(values: Mapping[str, Any]) -> bool:
 
     "둘을 짝지어 비교"가 아니라 **전체가 한 값으로 일치하느냐**를 묻는다. 그래서
     대상이 셋이든 열이든 판정 방식이 같고, 하나만 어긋나면 위반이다.
-    비교는 `Percept` 층에서 한다 — `Sensum` 은 비교 대상이 아니다.
+    비교는 `Meaning` 층에서 한다 — `Data` 는 비교 대상이 아니다.
     """
     outputs = list(values.values())
     return all(item == outputs[0] for item in outputs[1:])
@@ -704,7 +704,7 @@ def _params_for(
 def _verdict(
     node_id: str, outputs: Mapping[str, Any], *, same: bool, path: str
 ) -> Finding:
-    """엔진이 만드는 Verdict — **Reckon 이 필요 없는 자리**.
+    """엔진이 만드는 Verdict — **Judge 가 필요 없는 자리**.
 
     "내장 동작 없음" 원칙과 충돌하지 않는다: **동등 비교는 도메인 지식이 아니라
     일반 연산**이다. 무엇을 무시해도 되는지는 스크립트가 정규화로 이미 정했다.

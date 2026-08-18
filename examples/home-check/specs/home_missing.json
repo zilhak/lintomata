@@ -1,6 +1,6 @@
 {
   "info": {
-    "description": "대상 파일이 없는 경우 — Sense 가 오류로 끝나고 그 여파가 not run 으로 표기되어야 한다",
+    "description": "대상 파일이 없는 경우 — Collect 가 오류로 끝나고 그 여파가 not run 으로 표기되어야 한다",
     "version": "0.1.0"
   },
 

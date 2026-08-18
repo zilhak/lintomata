@@ -171,7 +171,7 @@ def test_update_and_remove_purge_bytecode(tmp_path: Path) -> None:
 
 NODE = {
     "info": {"name": "count", "description": "고정된 수를 내놓는다"},
-    "type": "sense",
+    "type": "collect",
     "script": "",
 }
 
